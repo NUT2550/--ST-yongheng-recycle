@@ -50,12 +50,18 @@ export async function POST(request: NextRequest) {
     })
 
     // Set HTTP-only cookie
+    // Detect if request came through HTTPS proxy (X-Forwarded-Proto)
+    // If so, use SameSite=None + Secure=true so the cookie works inside
+    // cross-origin iframes (e.g. the web preview panel).
+    const forwardedProto = request.headers.get('x-forwarded-proto') || ''
+    const isHttps =
+      request.nextUrl.protocol === 'https:' || forwardedProto === 'https'
     response.cookies.set({
       name: getCookieName(),
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: isHttps,
+      sameSite: isHttps ? 'none' : 'lax',
       path: '/',
       maxAge: 60 * 60 * 24 * 7, // 7 days
     })

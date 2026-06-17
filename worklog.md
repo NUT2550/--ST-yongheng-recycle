@@ -172,3 +172,32 @@ Stage Summary:
 - หน้า login มีปุ่ม toggle แสดง/ซ่อนรหัสผ่านแล้ว
 - สร้างบัญชีใหม่: username "01" / password "2550" / role "staff"
 - หากต้องการให้ 01 เป็น admin แทน: แก้ role ใน prisma/create-user-01.ts เป็น "admin" แล้วรันใหม่ หรือ login ด้วย admin/admin123 แล้วไปหน้า "ผู้ใช้งาน" เพื่อเปลี่ยน role
+
+---
+Task ID: 9
+Agent: Main
+Task: แก้ปัญหา login ไม่ได้ (admin/admin123) เมื่อเข้าผ่าน Preview Panel
+
+Work Log:
+- ตรวจสอบ DB: admin user มีอยู่, isActive=true, bcrypt.compare('admin123', hash) => true → ข้อมูลถูกต้อง
+- ทดสอบ curl flow: login → cookie → /api/auth/me ตอบ 200 → ปัญหาไม่ใช่ที่โค้ด API
+- ตรวจสอบ dev log: เห็นแพทเทิร์น "POST /api/auth/login 200" ตามด้วย "GET /api/auth/me 401" ซ้ำๆ
+- วินิจฉัย: cookie ถูก set ใน login response แต่ browser ไม่ส่ง cookie กลับไป /api/auth/me เพราะ:
+  - โค้ดเดิมใช้ sameSite: 'lax' + secure: false (NODE_ENV !== production)
+  - เมื่อเข้าผ่าน Preview Panel (iframe cross-origin ผ่าน HTTPS proxy Caddy) cookie SameSite=Lax ถูกบล็อก
+- แก้ src/app/api/auth/login/route.ts:
+  - ตรวจจับ HTTPS ผ่าน X-Forwarded-Proto header (Caddy ส่งมาให้)
+  - ถ้า isHttps: sameSite='none' + secure=true → ทำงานใน cross-origin iframe ได้
+  - ถ้า http (localhost ตรงๆ): sameSite='lax' + secure=false (เหมือนเดิม)
+- แก้ src/app/api/auth/logout/route.ts ให้ใช้ logic เดียวกัน (เพื่อลบ cookie ที่ตรงกับที่ set)
+- ทดสอบด้วย Agent Browser (เข้าผ่าน http://localhost:3000 ตรงๆ):
+  - admin/admin123 → เข้าสำเร็จ แสดง "ผู้ดูแลระบบ" + badge "ผู้ดูแล"
+  - logout → กลับหน้า login
+  - 01/2550 → เข้าสำเร็จ แสดง "ผู้ใช้ 01" (ไม่มี badge เพราะเป็น staff)
+- lint: ผ่าน
+
+Stage Summary:
+- ปัญหาหลักคือ SameSite cookie policy ใน iframe cross-origin (Preview Panel)
+- แก้โดยตรวจจับ HTTPS proxy แล้วใช้ SameSite=None + Secure=true อัตโนมัติ
+- login + logout ใช้ logic สอดคล้องกัน
+- admin/admin123 และ 01/2550 ใช้งานได้ปกติแล้ว
