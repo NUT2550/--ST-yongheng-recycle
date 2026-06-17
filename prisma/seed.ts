@@ -4,8 +4,12 @@
  *
  * Creates:
  *  - Default admin user (admin / admin123)
- *  - 7 product categories (Steel + Metal)
- *  - 56 products with default buy prices
+ *  - 7 product categories (เหล็ก, ทองแดง, ทองเหลือง, แสตนเลส, อลูมีเนียม, ตะกั่ว, อื่นๆ)
+ *  - 56 products (no default buy price — user fills in per transaction)
+ *
+ * NOTE: This script uses upsert for users/categories and upsert-by-name for products,
+ *       but it does NOT delete old products. To fully replace the product list,
+ *       run `bun run prisma/reset-products.ts` first (or drop the Product/ProductCategory tables).
  */
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
@@ -31,112 +35,128 @@ async function main() {
   })
   console.log(`✓ Admin user: ${admin.username} (admin / admin123)`)
 
-  // 2. Create product categories
+  // 2. Create staff user (01 / 2550)
+  const staffHash = await bcrypt.hash('2550', 10)
+  const staff = await db.user.upsert({
+    where: { username: '01' },
+    update: {},
+    create: {
+      username: '01',
+      password: staffHash,
+      name: 'ผู้ใช้ 01',
+      role: 'staff',
+      isActive: true,
+    },
+  })
+  console.log(`✓ Staff user: ${staff.username} (01 / 2550)`)
+
+  // 3. Delete all existing products + categories (full replacement)
+  //    Must delete StockLot/BuyBillItem/etc first due to FK constraints — but for
+  //    a fresh dev DB this is safe. For production, use sql/setup_complete.sql instead.
+  console.log('🗑️  Clearing old products & categories...')
+  await db.product.deleteMany({})
+  await db.productCategory.deleteMany({})
+
+  // 4. Create product categories (7 categories)
   const categories = [
-    { name: 'เหล็กม้วน', type: 'STEEL', sortOrder: 1 },
-    { name: 'เหล็กเส้น', type: 'STEEL', sortOrder: 2 },
-    { name: 'เหล็กแผ่น', type: 'STEEL', sortOrder: 3 },
-    { name: 'เหล็กโครงสร้าง', type: 'STEEL', sortOrder: 4 },
-    { name: 'ทองแดง', type: 'METAL', sortOrder: 5 },
-    { name: 'อลูมิเนียม', type: 'METAL', sortOrder: 6 },
-    { name: 'โลหะอื่นๆ', type: 'METAL', sortOrder: 7 },
+    { name: 'เหล็ก', type: 'STEEL', sortOrder: 1 },
+    { name: 'ทองแดง', type: 'METAL', sortOrder: 2 },
+    { name: 'ทองเหลือง', type: 'METAL', sortOrder: 3 },
+    { name: 'แสตนเลส', type: 'METAL', sortOrder: 4 },
+    { name: 'อลูมีเนียม', type: 'METAL', sortOrder: 5 },
+    { name: 'ตะกั่ว', type: 'METAL', sortOrder: 6 },
+    { name: 'อื่นๆ', type: 'METAL', sortOrder: 7 },
   ]
 
   const categoryMap: Record<string, string> = {}
   for (const cat of categories) {
-    const created = await db.productCategory.upsert({
-      where: { name: cat.name },
-      update: { type: cat.type, sortOrder: cat.sortOrder },
-      create: cat,
-    })
+    const created = await db.productCategory.create({ data: cat })
     categoryMap[cat.name] = created.id
     console.log(`✓ Category: ${created.name} (${created.type})`)
   }
 
-  // 3. Create products (56 total across 7 categories)
-  type SeedProduct = { name: string; category: string; price: number }
+  // 5. Create products (56 total across 7 categories)
+  type SeedProduct = { name: string; category: string }
   const products: SeedProduct[] = [
-    // เหล็กม้วน (8)
-    { name: 'ม้วนสังกะสีเก่า', category: 'เหล็กม้วน', price: 8 },
-    { name: 'ม้วนสังกะสีใหม่', category: 'เหล็กม้วน', price: 12 },
-    { name: 'ม้วนสีฟ้า', category: 'เหล็กม้วน', price: 10 },
-    { name: 'ม้วนสีแดง', category: 'เหล็กม้วน', price: 10 },
-    { name: 'ม้วนสีเขียว', category: 'เหล็กม้วน', price: 10 },
-    { name: 'ม้วนเกรด A', category: 'เหล็กม้วน', price: 15 },
-    { name: 'ม้วนเกรด B', category: 'เหล็กม้วน', price: 9 },
-    { name: 'ม้วนเกรด C', category: 'เหล็กม้วน', price: 6 },
+    // เหล็ก (12)
+    { name: 'หนาพิเศษ', category: 'เหล็ก' },
+    { name: 'หนาสั้น(1เมตร)', category: 'เหล็ก' },
+    { name: 'หนายาว', category: 'เหล็ก' },
+    { name: 'เหล็กคละ', category: 'เหล็ก' },
+    { name: 'เหล็กบาง', category: 'เหล็ก' },
+    { name: 'เหล็กหล่อ 40', category: 'เหล็ก' },
+    { name: 'เหล็กหล่อ 80', category: 'เหล็ก' },
+    { name: 'กระป๋อง , ปี๊บ', category: 'เหล็ก' },
+    { name: 'สังกะสี', category: 'เหล็ก' },
+    { name: 'ถัง15-200ลิตร (สะอาด)', category: 'เหล็ก' },
+    { name: 'แม่พิมพ์,เหล็กแข็ง', category: 'เหล็ก' },
+    { name: 'สลิง,สแตน 1.5 ม.', category: 'เหล็ก' },
 
-    // เหล็กเส้น (8)
-    { name: 'เหล็กข้ออ้อยรีด', category: 'เหล็กเส้น', price: 14 },
-    { name: 'เหล็กข้ออ้อยเดือย', category: 'เหล็กเส้น', price: 16 },
-    { name: 'เหล็กกลม', category: 'เหล็กเส้น', price: 13 },
-    { name: 'เหล็กเส้นเล็ก', category: 'เหล็กเส้น', price: 11 },
-    { name: 'เหล็กเส้นใหญ่', category: 'เหล็กเส้น', price: 14 },
-    { name: 'เหล็กกลม SS400', category: 'เหล็กเส้น', price: 15 },
-    { name: 'เหล็กข้ออ้อย 9 มม.', category: 'เหล็กเส้น', price: 14 },
-    { name: 'เหล็กข้ออ้อย 12 มม.', category: 'เหล็กเส้น', price: 14 },
+    // ทองแดง (7)
+    { name: 'ปอก', category: 'ทองแดง' },
+    { name: 'ช๊อต', category: 'ทองแดง' },
+    { name: 'ใหญ่', category: 'ทองแดง' },
+    { name: 'เล็ก', category: 'ทองแดง' },
+    { name: 'พิเศษ', category: 'ทองแดง' },
+    { name: 'หม้อน้ำ/แดง', category: 'ทองแดง' },
+    { name: 'ทองแดงชุบ', category: 'ทองแดง' },
 
-    // เหล็กแผ่น (8)
-    { name: 'แผ่นเหล็กดำ', category: 'เหล็กแผ่น', price: 13 },
-    { name: 'แผ่นเหล็กขาว', category: 'เหล็กแผ่น', price: 14 },
-    { name: 'แผ่นเหล็กลูกฟูก', category: 'เหล็กแผ่น', price: 12 },
-    { name: 'แผ่นเหล็กฝ้า', category: 'เหล็กแผ่น', price: 10 },
-    { name: 'แผ่นเหล็กเชื่อม', category: 'เหล็กแผ่น', price: 9 },
-    { name: 'แผ่นสังกะสีเก่า', category: 'เหล็กแผ่น', price: 7 },
-    { name: 'แผ่นสังกะสีใหม่', category: 'เหล็กแผ่น', price: 11 },
-    { name: 'แผ่นสแตนเลส', category: 'เหล็กแผ่น', price: 35 },
+    // ทองเหลือง (4)
+    { name: 'เนื้อแดง', category: 'ทองเหลือง' },
+    { name: 'เหลืองหนา', category: 'ทองเหลือง' },
+    { name: 'กลึงเหลือง', category: 'ทองเหลือง' },
+    { name: 'หม้อเหลือง', category: 'ทองเหลือง' },
 
-    // เหล็กโครงสร้าง (8)
-    { name: 'เหล็กฉาก', category: 'เหล็กโครงสร้าง', price: 14 },
-    { name: 'เหล็ก I-Beam', category: 'เหล็กโครงสร้าง', price: 15 },
-    { name: 'เหล็ก H-Beam', category: 'เหล็กโครงสร้าง', price: 15 },
-    { name: 'เหล็ก U-Channel', category: 'เหล็กโครงสร้าง', price: 14 },
-    { name: 'เหล็ก L-Angle', category: 'เหล็กโครงสร้าง', price: 14 },
-    { name: 'เหล็กกล่อง', category: 'เหล็กโครงสร้าง', price: 15 },
-    { name: 'เหล็กท่อดำ', category: 'เหล็กโครงสร้าง', price: 13 },
-    { name: 'เหล็กท่อกลวง', category: 'เหล็กโครงสร้าง', price: 13 },
+    // แสตนเลส (3)
+    { name: 'แสตนเลส 304', category: 'แสตนเลส' },
+    { name: '304 ยาวเกิน 1 เมตร', category: 'แสตนเลส' },
+    { name: 'แสตนเลส 202', category: 'แสตนเลส' },
 
-    // ทองแดง (8)
-    { name: 'สายไฟทองแดง', category: 'ทองแดง', price: 180 },
-    { name: 'ทองแดงแท่ง', category: 'ทองแดง', price: 220 },
-    { name: 'ทองแดงแผ่น', category: 'ทองแดง', price: 200 },
-    { name: 'ทองแดงเส้น', category: 'ทองแดง', price: 190 },
-    { name: 'ทองแดงท่อ', category: 'ทองแดง', price: 210 },
-    { name: 'มอเตอร์ทองแดง', category: 'ทองแดง', price: 250 },
-    { name: 'ขดลวดทองแดง', category: 'ทองแดง', price: 230 },
-    { name: 'เศษทองแดง', category: 'ทองแดง', price: 170 },
+    // อลูมีเนียม (25)
+    { name: 'เนียมสายไฟ', category: 'อลูมีเนียม' },
+    { name: 'ฉาก', category: 'อลูมีเนียม' },
+    { name: 'เนียมบาง', category: 'อลูมีเนียม' },
+    { name: 'อัลลอย', category: 'อลูมีเนียม' },
+    { name: 'ล้อแม๊กซ์', category: 'อลูมีเนียม' },
+    { name: 'เนียมแข็ง', category: 'อลูมีเนียม' },
+    { name: 'ป๋องเนียม', category: 'อลูมีเนียม' },
+    { name: 'ฝาเนียมแกะ', category: 'อลูมีเนียม' },
+    { name: 'เนียมกระทะ', category: 'อลูมีเนียม' },
+    { name: 'เนียมตูดกะทะ', category: 'อลูมีเนียม' },
+    { name: 'หม้อน้ำเนียม', category: 'อลูมีเนียม' },
+    { name: 'ฝาเนียมเผา', category: 'อลูมีเนียม' },
+    { name: 'ตูดหม้อหุงข้าว', category: 'อลูมีเนียม' },
+    { name: 'ตูดกะทะไฟฟ้าล้วน', category: 'อลูมีเนียม' },
+    { name: 'ฉากสี', category: 'อลูมีเนียม' },
+    { name: 'เนียมเครื่อง', category: 'อลูมีเนียม' },
+    { name: 'ครีบหม้อน้ำ', category: 'อลูมีเนียม' },
+    { name: 'เนียมมุ้งลวด', category: 'อลูมีเนียม' },
+    { name: 'มู่ลี่', category: 'อลูมีเนียม' },
+    { name: 'เนียมเพลท', category: 'อลูมีเนียม' },
+    { name: 'มุ้งลวด', category: 'อลูมีเนียม' },
+    { name: 'ป๋องสเปรย์', category: 'อลูมีเนียม' },
+    { name: 'ปั้มกระป๋อง', category: 'อลูมีเนียม' },
+    { name: 'ฟรอยไม่ติดพลาสติก', category: 'อลูมีเนียม' },
+    { name: 'ซีรี 5,000', category: 'อลูมีเนียม' },
 
-    // อลูมิเนียม (8)
-    { name: 'อลูมิเนียมแผ่น', category: 'อลูมิเนียม', price: 45 },
-    { name: 'อลูมิเนียมฉาก', category: 'อลูมิเนียม', price: 50 },
-    { name: 'อลูมิเนียมขอบข้าง', category: 'อลูมิเนียม', price: 48 },
-    { name: 'อลูมิเนียมกรอบประตู', category: 'อลูมิเนียม', price: 42 },
-    { name: 'อลูมิเนียมหน้าต่าง', category: 'อลูมิเนียม', price: 40 },
-    { name: 'อลูมิเนียมวงแหวน', category: 'อลูมิเนียม', price: 47 },
-    { name: 'ลวดอลูมิเนียม', category: 'อลูมิเนียม', price: 38 },
-    { name: 'เศษอลูมิเนียม', category: 'อลูมิเนียม', price: 30 },
+    // ตะกั่ว (2)
+    { name: 'ตะกั่วแข็ง', category: 'ตะกั่ว' },
+    { name: 'ตะกั่วนิ่ม', category: 'ตะกั่ว' },
 
-    // โลหะอื่นๆ (8)
-    { name: 'ตะกั่ว', category: 'โลหะอื่นๆ', price: 70 },
-    { name: 'สังกะสีเหลว', category: 'โลหะอื่นๆ', price: 65 },
-    { name: 'นิเกิล', category: 'โลหะอื่นๆ', price: 120 },
-    { name: 'สแตนเลส 304', category: 'โลหะอื่นๆ', price: 40 },
-    { name: 'สแตนเลส 316', category: 'โลหะอื่นๆ', price: 50 },
-    { name: 'ทองเหลือง', category: 'โลหะอื่นๆ', price: 130 },
-    { name: 'แมกนีเซียม', category: 'โลหะอื่นๆ', price: 25 },
-    { name: 'โลหะผสม', category: 'โลหะอื่นๆ', price: 20 },
+    // อื่นๆ (3)
+    { name: 'ของแกะ', category: 'อื่นๆ' },
+    { name: 'มอเตอร์(ตัวเล็ก)', category: 'อื่นๆ' },
+    { name: 'คอมดำ(ทองแดง)', category: 'อื่นๆ' },
   ]
 
   let sortOrder = 0
   for (const p of products) {
     const categoryId = categoryMap[p.category]
     if (!categoryId) continue
-    await db.product.upsert({
-      where: { name: p.name },
-      update: { defaultBuyPrice: p.price, categoryId },
-      create: {
+    await db.product.create({
+      data: {
         name: p.name,
-        defaultBuyPrice: p.price,
+        defaultBuyPrice: 0,
         categoryId,
         sortOrder: sortOrder++,
       },
@@ -144,31 +164,36 @@ async function main() {
   }
   console.log(`✓ Created ${products.length} products`)
 
-  // 4. Create sample employees
-  const employees = [
-    { name: 'คุณสมชาย', phone: '081-234-5678', hireDate: new Date('2024-01-15') },
-    { name: 'คุณสมหญิง', phone: '082-345-6789', hireDate: new Date('2024-03-10') },
-    { name: 'คุณวิชัย', phone: '089-456-7890', hireDate: new Date('2024-06-01') },
-  ]
-  for (const emp of employees) {
-    const existing = await db.employee.findFirst({ where: { name: emp.name } })
-    if (!existing) {
+  // 6. Create sample employees (only if none exist)
+  const employeeCount = await db.employee.count()
+  if (employeeCount === 0) {
+    const employees = [
+      { name: 'คุณสมชาย', phone: '081-234-5678', hireDate: new Date('2024-01-15') },
+      { name: 'คุณสมหญิง', phone: '082-345-6789', hireDate: new Date('2024-03-10') },
+      { name: 'คุณวิชัย', phone: '089-456-7890', hireDate: new Date('2024-06-01') },
+    ]
+    for (const emp of employees) {
       await db.employee.create({ data: emp })
     }
+    console.log(`✓ Created ${employees.length} employees`)
+  } else {
+    console.log(`✓ Employees already exist (${employeeCount}), skipping`)
   }
-  console.log(`✓ Created ${employees.length} employees`)
 
-  // 5. Create sample customer
-  const existingCustomer = await db.customer.findFirst({ where: { name: 'ลูกค้าทั่วไป' } })
-  if (!existingCustomer) {
+  // 7. Create default customer (only if none exist)
+  const customerCount = await db.customer.count()
+  if (customerCount === 0) {
     await db.customer.create({
       data: { name: 'ลูกค้าทั่วไป', phone: '-' },
     })
     console.log('✓ Created default customer')
+  } else {
+    console.log(`✓ Customers already exist (${customerCount}), skipping`)
   }
 
   console.log('\n🎉 Seed complete!')
   console.log('   Admin login: admin / admin123')
+  console.log('   Staff login: 01 / 2550')
 }
 
 main()

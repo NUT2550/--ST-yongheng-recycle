@@ -245,3 +245,37 @@ Stage Summary:
 - ปัญหา SameSite cookie ใน iframe cross-origin แก้ไขจบสิ้นด้วยการใช้ localStorage + Authorization header
 - Cookie ยังคงถูก set เป็น fallback สำหรับกรณี browser ตรงๆ (ไม่ผ่าน iframe)
 - ทั้ง admin/admin123 และ 01/2550 ใช้งานได้ปกติ
+
+---
+Task ID: 12
+Agent: Main
+Task: อัปเดตรายการสินค้าทั้งหมดตามที่ user ระบุ (56 สินค้าใน 7 หมวด)
+
+Work Log:
+- User ให้รายการสินค้าใหม่ทั้งหมด มาแทน 56 สินค้าตัวอย่างเดิม
+- วิเคราะห์โครงสร้าง: 7 หมวด (เหล็ก 12, ทองแดง 7, ทองเหลือง 4, แสตนเลส 3, อลูมีเนียม 25, ตะกั่ว 2, อื่นๆ 3 = 56)
+- แก้ prisma/seed.ts:
+  - เปลี่ยน categories เดิม (เหล็กม้วน/เส้น/แผ่น/โครงสร้าง) เป็น 7 หมวดใหม่
+  - เปลี่ยน products ทั้งหมดเป็นรายการที่ user ระบุ
+  - เพิ่ม db.product.deleteMany({}) + db.productCategory.deleteMany({}) ก่อน seed (full replacement)
+  - เพิ่ม staff user (01/2550) ใน seed script
+  - ตั้ง default price = 0 ทั้งหมด (user กรอกเองในแต่ละ transaction)
+- แก้ sql/setup_complete.sql:
+  - แทนที่ส่วน INSERT ProductCategory + Product ด้วยรายการใหม่ (ใช้ Python script)
+  - คงไว้: schema (DDL), User inserts, Employee/Customer inserts
+- Re-seed local SQLite:
+  - ลบ db/custom.db ทิ้ง (เพราะมี FK constraint จาก buy bill เดิม)
+  - prisma db push (สร้างตารางใหม่)
+  - bun run prisma/seed.ts -> สำเร็จ
+- รีสตาร์ท dev server
+- ทดสอบด้วย Agent Browser:
+  - Login admin/admin123 สำเร็จ
+  - หน้ารับซื้อ: combobox แสดงครบ 56 products grouped by category
+  - หน้าสต๊อก: แสดง 7 หมวดพร้อมจำนวนที่ถูกต้อง (12/7/4/3/25/2/3)
+- Commit + push ไป GitHub (commit d717ecb)
+
+Stage Summary:
+- รายการสินค้าอัปเดตทั้ง local + Supabase SQL
+- 56 products ใน 7 categories: เหล็ก/ทองแดง/ทองเหลือง/แสตนเลส/อลูมีเนียม/ตะกั่ว/อื่นๆ
+- ราคา default = 0 (user กรอกเองในแต่ละรายการ)
+- สำหรับ Supabase: รัน sql/setup_complete.sql ใหม่ใน SQL Editor (ถ้าเคยรันไปแล้ว ต้อง TRUNCATE ตาราง Product ก่อน หรือรัน script ลบสินค้าเก่าก่อน)
