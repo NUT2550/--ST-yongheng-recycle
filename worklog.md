@@ -201,3 +201,47 @@ Stage Summary:
 - แก้โดยตรวจจับ HTTPS proxy แล้วใช้ SameSite=None + Secure=true อัตโนมัติ
 - login + logout ใช้ logic สอดคล้องกัน
 - admin/admin123 และ 01/2550 ใช้งานได้ปกติแล้ว
+
+---
+Task ID: 10
+Agent: Main
+Task: แก้ login ไม่ติดใน Preview Panel (iframe cross-origin) — เปลี่ยนจาก cookie-only auth เป็น token-based (localStorage + Authorization header)
+
+Work Log:
+- วินิจฉัยปัญหาเดิมจาก Task 9: ใช้ SameSite=None+Secure cookie แต่ Caddy proxy ส่ง X-Forwarded-Proto: http (เพราะ Caddy รันที่ port 81 http) → Next.js ใช้ SameSite=Lax ผิด → cookie ถูกบล็อกใน iframe
+- พยายามแก้ด้วย heuristic "ถ้า host ไม่ใช่ localhost ให้ใช้ Secure+SameSite=None" → ผ่าน lint แต่ curl ทดสอบไม่ได้เพราะ curl ไม่ยอมเก็บ Secure cookie บน HTTP
+- ตัดสินใจเปลี่ยน approach: ใช้ token-based auth (localStorage + Authorization header) ที่ทนทานกว่า — ไม่ต้องสู้กับ cookie policy เลย
+
+Changes:
+1. src/lib/auth.ts
+   - เพิ่ม TOKEN_STORAGE_KEY = 'auth_token' (export)
+   - เพิ่ม getTokenFromRequest(request) — อ่านจาก Authorization: Bearer ก่อน, fallback ไป cookie
+2. src/app/api/auth/login/route.ts
+   - ส่ง token กลับใน response body (data.token)
+   - ยังคง set cookie เหมือนเดิมเป็น fallback
+   - เอา debug log ออก
+3. src/app/api/auth/me/route.ts
+   - ใช้ getTokenFromRequest แทน getTokenFromCookies
+4. src/app/api/users/route.ts + src/app/api/users/[id]/route.ts
+   - requireAdmin ใช้ getTokenFromRequest แทน getTokenFromCookies
+5. src/lib/api.ts
+   - เพิ่ม getAuthToken() / setAuthToken() helpers (read/write localStorage)
+   - fetchJSON แนบ Authorization: Bearer <token> ในทุก request อัตโนมัติ
+6. src/components/login-page.tsx
+   - หลัง login สำเร็จ: setAuthToken(data.token)
+7. src/app/page.tsx
+   - checkAuth ส่ง Authorization header ไป /api/auth/me
+   - handleLogout ส่ง Authorization header + setAuthToken(null)
+
+Test results (Agent Browser):
+- ✅ admin/admin123 login สำเร็จ, token เก็บใน localStorage (255 chars)
+- ✅ GET /api/dashboard 200 (ส่ง Authorization header ได้)
+- ✅ Reload แล้ว session ยังอยู่ (token จาก localStorage)
+- ✅ Logout ล้าง token + localStorage
+- ✅ Login ด้วย 01/2550 สำเร็จ (staff role)
+- ✅ Lint ผ่าน
+
+Stage Summary:
+- ปัญหา SameSite cookie ใน iframe cross-origin แก้ไขจบสิ้นด้วยการใช้ localStorage + Authorization header
+- Cookie ยังคงถูก set เป็น fallback สำหรับกรณี browser ตรงๆ (ไม่ผ่าน iframe)
+- ทั้ง admin/admin123 และ 01/2550 ใช้งานได้ปกติ

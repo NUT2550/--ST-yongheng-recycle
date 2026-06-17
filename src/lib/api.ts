@@ -18,16 +18,48 @@ import {
   PayCreditRequest,
   CreditPayment,
 } from './types';
+import { TOKEN_STORAGE_KEY } from './auth';
 
 const API_BASE = '/api';
 
+// Read the auth token from localStorage (client-side only).
+// Used to attach an Authorization: Bearer header to every API call
+// so auth works even inside cross-origin iframes where cookies are
+// blocked by SameSite policies.
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (token) {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options?.headers as Record<string, string>) || {}),
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   const res = await fetch(`${API_BASE}${url}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
     ...options,
+    headers,
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Unknown error' }));

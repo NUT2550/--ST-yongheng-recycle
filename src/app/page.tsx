@@ -35,6 +35,7 @@ import { HistoryPage } from '@/components/history-page';
 import UsersPage from '@/components/users-page';
 import LoginPage from '@/components/login-page';
 import { toast } from 'sonner';
+import { getAuthToken, setAuthToken } from '@/lib/api';
 
 // Navigation items configuration
 const navItems: Array<{
@@ -155,7 +156,10 @@ export default function Home() {
   // Check auth on mount
   const checkAuth = useCallback(async () => {
     try {
-      const res = await fetch('/api/auth/me');
+      const token = getAuthToken();
+      const res = await fetch('/api/auth/me', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
@@ -175,7 +179,12 @@ export default function Home() {
 
   async function handleLogout() {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const token = getAuthToken();
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setAuthToken(null);
       setUser(null);
       toast.success('ออกจากระบบสำเร็จ');
     } catch {

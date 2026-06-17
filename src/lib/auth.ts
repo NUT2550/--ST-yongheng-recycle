@@ -48,6 +48,9 @@ export function getCookieName(): string {
   return COOKIE_NAME
 }
 
+// Storage key for localStorage on the client (token-based auth)
+export const TOKEN_STORAGE_KEY = 'auth_token'
+
 // Parse cookie from request headers
 export function getTokenFromCookies(cookieHeader: string | null): string | null {
   if (!cookieHeader) return null
@@ -57,6 +60,25 @@ export function getTokenFromCookies(cookieHeader: string | null): string | null 
     if (name === COOKIE_NAME) {
       return value
     }
+  }
+  return null
+}
+
+// Extract token from a request, preferring the Authorization header (Bearer)
+// and falling back to the auth_token cookie. This makes auth work in both:
+//   - direct browser access (cookie)
+//   - cross-origin iframes where SameSite cookies may be blocked (header)
+export function getTokenFromRequest(request: Request): string | null {
+  // 1) Authorization: Bearer <token>
+  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i)
+    if (match) return match[1].trim()
+  }
+  // 2) Cookie fallback
+  const cookieHeader = request.headers.get('cookie')
+  if (cookieHeader) {
+    return getTokenFromCookies(cookieHeader)
   }
   return null
 }

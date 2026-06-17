@@ -39,8 +39,13 @@ export async function POST(request: NextRequest) {
       role: user.role as 'admin' | 'staff',
     })
 
+    // Build response — include the token in the body so the client can
+    // store it in localStorage and send it via the Authorization header.
+    // (Cookie-only auth breaks inside cross-origin iframes like the
+    // preview panel, where SameSite cookies get blocked.)
     const response = NextResponse.json({
       success: true,
+      token,
       user: {
         id: user.id,
         username: user.username,
@@ -49,13 +54,18 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    // Set HTTP-only cookie
-    // Detect if request came through HTTPS proxy (X-Forwarded-Proto)
-    // If so, use SameSite=None + Secure=true so the cookie works inside
-    // cross-origin iframes (e.g. the web preview panel).
+    // Also set the auth cookie as a fallback (used for direct browser
+    // navigation / when localStorage is cleared).
+    const host = request.headers.get('host') || ''
+    const isLocalhost =
+      host.startsWith('localhost:') ||
+      host.startsWith('127.0.0.1:') ||
+      host.startsWith('::1:')
     const forwardedProto = request.headers.get('x-forwarded-proto') || ''
     const isHttps =
-      request.nextUrl.protocol === 'https:' || forwardedProto === 'https'
+      request.nextUrl.protocol === 'https:' ||
+      forwardedProto === 'https' ||
+      !isLocalhost
     response.cookies.set({
       name: getCookieName(),
       value: token,

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
+import { setAuthToken } from '@/lib/api'
 
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [username, setUsername] = useState('')
@@ -28,6 +29,12 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
       if (!res.ok) {
         toast.error(data.error || 'เข้าสู่ระบบไม่สำเร็จ')
         return
+      }
+      // Store the token in localStorage so it can be sent via
+      // Authorization header on subsequent requests (works inside
+      // cross-origin iframes where cookies are blocked).
+      if (data.token) {
+        setAuthToken(data.token)
       }
       toast.success(`ยินดีต้อนรับ ${data.user.name}`)
       onSuccess()

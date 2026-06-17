@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { hashPassword, verifyToken, getTokenFromCookies } from '@/lib/auth'
+import { hashPassword, verifyToken, getTokenFromRequest } from '@/lib/auth'
 
 // Helper to check admin
 async function requireAdmin(request: NextRequest) {
-  const token = getTokenFromCookies(request.headers.get('cookie'))
+  const token = getTokenFromRequest(request)
   if (!token) return null
   const payload = await verifyToken(token)
   if (!payload || payload.role !== 'admin') return null
