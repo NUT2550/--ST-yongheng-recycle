@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Loader2, LogIn, Recycle } from 'lucide-react'
+import { Eye, EyeOff, Loader2, LogIn, Recycle } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -70,15 +71,33 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">รหัสผ่าน</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="กรอกรหัสผ่าน"
-                  required
-                  autoComplete="current-password"
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="กรอกรหัสผ่าน"
+                    required
+                    autoComplete="current-password"
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full w-10 hover:bg-transparent text-gray-400 hover:text-gray-600"
+                    onClick={() => setShowPassword((s) => !s)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
               <Button
                 type="submit"
@@ -94,7 +113,7 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
               </Button>
             </form>
             <p className="text-xs text-center text-muted-foreground mt-4">
-              ค่าเริ่มต้น: admin / admin123
+              บัญชี: admin / admin123 · 01 / 2550
             </p>
           </CardContent>
         </Card>

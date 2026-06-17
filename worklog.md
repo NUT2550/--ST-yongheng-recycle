@@ -141,3 +141,34 @@ Stage Summary:
 - ระบบ login + buy + stock + history + users ทำงานครบ
 - แก้ React Hooks order bug ใน page.tsx (lint ผ่าน)
 - พบ issue เดิมจาก repo: sidebar auto-hide ใช้ CSS transform ทำให้ agent-browser คลิกปุ่มใน sidebar ไม่ได้ตรงๆ (ต้อง click ผ่าน JS) — แต่ user ใช้เมาส์จริงได้ปกติเพราะ hover-to-reveal
+
+---
+Task ID: 8
+Agent: Main
+Task: เพิ่มปุ่ม show/hide password ในหน้า login + สร้าง user 01/2550
+
+Work Log:
+- แก้ src/components/login-page.tsx:
+  - เพิ่ม import Eye, EyeOff จาก lucide-react
+  - เพิ่ม state showPassword (boolean)
+  - เปลี่ยน <Input type="password"> เป็น type={showPassword ? 'text' : 'password'}
+  - ครอบด้วย <div className="relative"> แล้วใส่ปุ่ม Eye/EyeOff absolute ขวาสุด
+  - ปุ่มเป็น type="button" (ไม่ submit), variant="ghost", tabIndex=-1 (ไม่ขัดจังหวะ tab flow)
+  - aria-label สลับ "แสดงรหัสผ่าน" / "ซ่อนรหัสผ่าน"
+  - เพิ่ม className="pr-10" ที่ input เพื่อไม่ให้ตัวอักษรซ้อนปุ่ม
+  - อัปเดต hint ด้านล่าง: "บัญชี: admin / admin123 · 01 / 2550"
+- สร้าง prisma/create-user-01.ts:
+  - ใช้ bcrypt hash password "2550"
+  - upsert user username="01", name="ผู้ใช้ 01", role="staff", isActive=true
+- รัน script: สร้าง user 01 สำเร็จ
+- ทดสอบด้วย Agent Browser:
+  - คลิกปุ่ม Eye -> input เปลี่ยน type=password เป็น type=text, เห็นค่า "2550", aria-label เปลี่ยนเป็น "ซ่อนรหัสผ่าน"
+  - คลิกอีกครั้ง -> type กลับเป็น password
+  - login ด้วย 01/2550 สำเร้า -> POST /api/auth/login 200, เข้าหน้าแดชบอร์ด, header แสดง "ผู้ใช้ 01" ไม่มี badge ผู้ดูแล
+  - ตรวจ nav: staff เห็น 8 เมนู (ไม่มี "ผู้ใช้งาน") ตาม RBAC ที่ออกแบบไว้
+- lint: ผ่าน
+
+Stage Summary:
+- หน้า login มีปุ่ม toggle แสดง/ซ่อนรหัสผ่านแล้ว
+- สร้างบัญชีใหม่: username "01" / password "2550" / role "staff"
+- หากต้องการให้ 01 เป็น admin แทน: แก้ role ใน prisma/create-user-01.ts เป็น "admin" แล้วรันใหม่ หรือ login ด้วย admin/admin123 แล้วไปหน้า "ผู้ใช้งาน" เพื่อเปลี่ยน role
