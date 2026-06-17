@@ -79,8 +79,15 @@ export async function POST(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Login error:', error)
+    // Include detailed error info for debugging (remove in production later)
+    const errorDetail = error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : String(error)
     return NextResponse.json(
-      { error: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ' },
+      {
+        error: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ',
+        detail: errorDetail,
+      },
       { status: 500 }
     )
   }
