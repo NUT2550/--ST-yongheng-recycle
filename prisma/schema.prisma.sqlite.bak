@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "sqlite"
+  url       = env("DATABASE_URL")
+}
+
+model ProductCategory {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  type      String    // STEEL, METAL
+  sortOrder Int       @default(0)
+  products  Product[]
+}
+
+model Product {
+  id              String          @id @default(cuid())
+  name            String          @unique
+  categoryId      String
+  category        ProductCategory @relation(fields: [categoryId], references: [id])
+  defaultBuyPrice Float           @default(0)
+  sortOrder       Int             @default(0)
+  stockLots       StockLot[]
+  buyItems        BuyBillItem[]
+  sellItems       SellBillItem[]
+  sortingSource   SortingBill[]   @relation("SortingSource")
+  sortingItems    SortingBillItem[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model StockLot {
+  id              String   @id @default(cuid())
+  productId       String
+  product         Product  @relation(fields: [productId], references: [id])
+  remainingWeight Float
+  costPerKg       Float
+  dateAdded       DateTime @default(now())
+  source          String   // BUY, SORTING
+  sourceId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model BuyBill {
+  id          String        @id @default(cuid())
+  date        DateTime      @default(now())
+  isCredit    Boolean       @default(false)
+  note        String?
+  items       BuyBillItem[]
+  totalAmount Float         @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model BuyBillItem {
+  id          String  @id @default(cuid())
+  buyBillId   String
+  buyBill     BuyBill @relation(fields: [buyBillId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  weight      Float
+  pricePerKg  Float
+  totalAmount Float
+}
+
+model SellBill {
+  id          String         @id @default(cuid())
+  date        DateTime       @default(now())
+  customerId  String?
+  customer    Customer?      @relation(fields: [customerId], references: [id])
+  isCredit    Boolean        @default(false)
+  note        String?
+  items       SellBillItem[]
+  totalAmount Float          @default(0)
+  totalCost   Float          @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model SellBillItem {
+  id          String   @id @default(cuid())
+  sellBillId  String
+  sellBill    SellBill @relation(fields: [sellBillId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  weight      Float
+  pricePerKg  Float
+  totalAmount Float
+  costPerKg   Float    @default(0)
+  totalCost   Float    @default(0)
+}
+
+model SortingBill {
+  id               String            @id @default(cuid())
+  date             DateTime          @default(now())
+  sourceProductId  String
+  sourceProduct    Product           @relation("SortingSource", fields: [sourceProductId], references: [id])
+  sourceWeight     Float
+  sourcePricePerKg Float             @default(0) // ราคารับซื้อสินค้าต้นทาง (พนักงานใส่, ใช้คิดโบนัส)
+  weighedTotal     Float             @default(0)
+  lossWeight       Float             @default(0)
+  lossCost         Float             @default(0)
+  note             String?
+  items            SortingBillItem[]
+  bonuses          SortingBonus[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model SortingBillItem {
+  id               String       @id @default(cuid())
+  sortingBillId    String
+  sortingBill      SortingBill  @relation(fields: [sortingBillId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product      @relation(fields: [productId], references: [id])
+  weight           Float
+  isWaste          Boolean      @default(false)
+  costPerKg        Float        @default(0) // ต้นทุน FIFO (บัญชี)
+  totalCost        Float        @default(0)
+  sortedPricePerKg Float        @default(0) // ราคารับซื้อสินค้าที่คัดได้ (พนักงานใส่)
+  bonusAmount      Float        @default(0) // โบนัส = (sortedPricePerKg - sourcePricePerKg) * weight * 10%
+}
+
+model Customer {
+  id          String        @id @default(cuid())
+  name        String
+  phone       String?
+  sellBills   SellBill[]
+  creditEntry CreditEntry[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model CreditEntry {
+  id            String          @id @default(cuid())
+  type          String          // RECEIVABLE (ค้างรับ), PAYABLE (ค้างจ่าย)
+  amount        Float
+  paidAmount    Float           @default(0)
+  customerId    String?         // Only for RECEIVABLE
+  customer      Customer?       @relation(fields: [customerId], references: [id])
+  referenceType String          // BUY_BILL, SELL_BILL
+  referenceId   String?
+  description   String?
+  date          DateTime        @default(now())
+  isSettled     Boolean         @default(false)
+  payments      CreditPayment[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+}
+
+model CreditPayment {
+  id            String      @id @default(cuid())
+  creditEntryId String
+  creditEntry   CreditEntry @relation(fields: [creditEntryId], references: [id], onDelete: Cascade)
+  amount        Float
+  date          DateTime    @default(now())
+  note          String?
+  createdAt     DateTime    @default(now())
+}
+
+model Employee {
+  id        String          @id @default(cuid())
+  name      String
+  phone     String?
+  hireDate  DateTime?       // วันเริ่มงาน (ใช้คำนวณสัดส่วนโบนัส)
+  isActive  Boolean         @default(true)
+  bonuses   SortingBonus[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+}
+
+model SortingBonus {
+  id            String       @id @default(cuid())
+  date          DateTime     @default(now())
+  employeeId    String
+  employee      Employee     @relation(fields: [employeeId], references: [id])
+  sortingBillId String?
+  sortingBill   SortingBill? @relation(fields: [sortingBillId], references: [id])
+  totalWeight   Float        @default(0) // น้ำหนักรวมที่คัดแยก
+  ratePerKg     Float        @default(0) // อัตราโบนัส บาท/กก.
+  totalAmount   Float        @default(0) // ยอดโบนัสรวม
+  note          String?
+  isPaid        Boolean      @default(false)
+  paidDate      DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+model User {
+  id        String   @id @default(cuid())
+  username  String   @unique
+  password  String
+  name      String
+  role      String   @default("staff") // admin, staff
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
