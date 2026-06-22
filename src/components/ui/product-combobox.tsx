@@ -36,6 +36,8 @@ interface ProductComboboxProps {
   renderLabel?: (product: Product) => React.ReactNode;
   className?: string;
   id?: string;
+  /** Called when a product is selected (after onValueChange) — useful for focusing next field */
+  onSelect?: () => void;
 }
 
 export function ProductCombobox({
@@ -48,6 +50,7 @@ export function ProductCombobox({
   renderLabel,
   className,
   id,
+  onSelect,
 }: ProductComboboxProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -91,6 +94,10 @@ export function ProductCombobox({
                     onSelect={() => {
                       onValueChange(product.id === value ? '' : product.id);
                       setOpen(false);
+                      // Call onSelect callback after a short delay to allow state update
+                      if (onSelect) {
+                        setTimeout(onSelect, 50);
+                      }
                     }}
                   >
                     <Check

@@ -186,7 +186,7 @@ export interface DashboardData {
   }>;
 }
 
-export type PageTab = 'dashboard' | 'buy' | 'sell' | 'sort' | 'stock' | 'credit' | 'bonus' | 'history' | 'users';
+export type PageTab = 'dashboard' | 'buy' | 'sell' | 'sort' | 'stock' | 'credit' | 'bonus' | 'history' | 'users' | 'products';
 
 // Employee types
 export interface Employee {

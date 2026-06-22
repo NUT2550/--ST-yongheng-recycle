@@ -371,13 +371,14 @@ export function SortPage() {
             <div className="space-y-2">
               <Label htmlFor="sort-source">เลือกสินค้าต้นทาง</Label>
               <ProductCombobox
-                groups={steelProductsForCombobox}
+                groups={groupedProductsForCombobox}
                 value={sortSourceProductId}
                 onValueChange={setSortSourceProduct}
-                placeholder="เลือกสินค้าเหล็ก"
-                searchPlaceholder="พิมพ์ค้นหาสินค้าเหล็ก..."
+                placeholder="เลือกสินค้าต้นทาง"
+                searchPlaceholder="พิมพ์ค้นหาสินค้า..."
                 id="sort-source"
                 renderLabel={(product) => `${product.name} (${formatWeight(product.stock?.totalWeight ?? 0)})`}
+                onSelect={() => document.getElementById('sort-source-weight')?.focus()}
               />
             </div>
 
@@ -514,6 +515,7 @@ export function SortPage() {
                 searchPlaceholder="พิมพ์ค้นหาสินค้า..."
                 id="sort-product"
                 renderLabel={(product) => product.name}
+                onSelect={() => document.getElementById('sort-item-weight')?.focus()}
               />
             </div>
 

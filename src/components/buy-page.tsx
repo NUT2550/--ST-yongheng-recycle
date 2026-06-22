@@ -226,6 +226,7 @@ export function BuyPage() {
                 searchPlaceholder="พิมพ์ค้นหาสินค้า..."
                 id="buy-product"
                 renderLabel={(product) => `${product.name} - ${formatBaht(product.defaultBuyPrice)}/กก.`}
+                onSelect={() => document.getElementById('buy-weight')?.focus()}
               />
             </div>
 

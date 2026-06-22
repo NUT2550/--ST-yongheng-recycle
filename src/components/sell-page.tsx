@@ -321,6 +321,7 @@ export function SellPage() {
                 searchPlaceholder="พิมพ์ค้นหาสินค้า..."
                 id="sell-product"
                 renderLabel={(product) => `${product.name} (${formatWeight(product.stock?.totalWeight ?? 0)}) - ${formatBaht(product.defaultBuyPrice)}/กก.`}
+                onSelect={() => document.getElementById('sell-weight')?.focus()}
               />
             </div>
 

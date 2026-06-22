@@ -33,6 +33,7 @@ import { CreditPage } from '@/components/credit-page';
 import { BonusPage } from '@/components/bonus-page';
 import { HistoryPage } from '@/components/history-page';
 import UsersPage from '@/components/users-page';
+import ProductsPage from '@/components/products-page';
 import LoginPage from '@/components/login-page';
 import { toast } from 'sonner';
 import { getAuthToken, setAuthToken } from '@/lib/api';
@@ -75,6 +76,8 @@ function PageContent({ activeTab }: { activeTab: PageTab }) {
       return <HistoryPage />;
     case 'users':
       return <UsersPage />;
+    case 'products':
+      return <ProductsPage />;
     default:
       return <DashboardPage />;
   }
@@ -281,9 +284,11 @@ export default function Home() {
     return <LoginPage onSuccess={checkAuth} />;
   }
 
-  // Filter nav items based on role (admin only for users tab)
+  // Filter nav items based on role (admin only for users + products tabs)
   const visibleNavItems = user.role === 'admin'
-    ? [...navItems, { tab: 'users' as PageTab, label: 'ผู้ใช้งาน', icon: Users, color: 'text-purple-600' }]
+    ? [...navItems,
+       { tab: 'products' as PageTab, label: 'สินค้า', icon: Package, color: 'text-indigo-600' },
+       { tab: 'users' as PageTab, label: 'ผู้ใช้งาน', icon: Users, color: 'text-purple-600' }]
     : navItems;
 
   return (
