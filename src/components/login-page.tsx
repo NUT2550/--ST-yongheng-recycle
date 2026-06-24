@@ -119,9 +119,6 @@ export default function LoginPage({ onSuccess }: { onSuccess: () => void }) {
                 เข้าสู่ระบบ
               </Button>
             </form>
-            <p className="text-xs text-center text-muted-foreground mt-4">
-              บัญชี: admin / admin123 · 01 / 2550
-            </p>
           </CardContent>
         </Card>
       </motion.div>

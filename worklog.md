@@ -113,7 +113,7 @@ Work Log:
 - พบข้อจำกัด: sandbox บล็อก outbound TCP port 5432 (Can't reach Supabase Postgres)
   - ตรวจสอบ: TCP 5432 Network unreachable, TCP 443 OK, Supabase REST API ตอบ 401 = project active
 - สลับไปใช้ SQLite ชั่วคราว: เปลี่ยน prisma provider postgresql -> sqlite, backup schema เดิมไว้ที่ prisma/schema.prisma.postgres.bak
-- ตั้ง DATABASE_URL=file:./db/custom.db (local SQLite)
+- ตั้ง DATABASE_URL=local SQLite (file-based)
 - prisma db push: สร้างตารางทั้งหมดใน SQLite สำเร็จ
 - สร้าง prisma/seed.ts และรัน:
   - admin user (admin / [REDACTED-DEFAULT-PASSWORD]) ผ่าน bcrypt hash
@@ -350,4 +350,68 @@ Stage Summary:
 - บัญชี `admin` ถูก deactivate ไม่ได้ hard delete — เก็บไว้เป็น audit trail
 - ถ้าต้องการ re-activate ในอนาคต: `UPDATE "User" SET isActive = true WHERE username = 'admin'` (ต้อง rotate รหัสก่อน)
 - ถ้าต้องการ hard delete: สามารถทำได้หลังยืนยันว่า 01 ใช้งานได้ปกติ 7 วัน
+
+
+---
+
+## บันทึกการทำงาน — Task 19: Secret Cleanup + Repo Hardening
+
+**Task ID**: 19
+**Agent**: Main
+**Date**: 2026-06-24
+**Task**: ทำ secret cleanup ให้ repo สะอาดพร้อม push โดยไม่มี secret/credential/temp file
+
+### สิ่งที่ลบ/แก้ไข
+
+#### ลบไฟล์:
+1. `prisma/fix-stock.ts` — temp script ที่มี production Supabase credentials ฝังอยู่
+2. `prisma/schema.prisma.postgres.bak` — backup file (ไม่จำเป็น)
+3. `prisma/schema.prisma.sqlite.bak` — backup file (ไม่จำเป็น)
+4. `tool-results/*` — untrack ออกจาก git (2 files)
+
+#### แก้ไขไฟล์:
+1. `src/lib/auth.ts`:
+   - เพิ่ม `import 'server-only'` (บังคับ server-only usage)
+   - ลบ hardcoded JWT_SECRET fallback string
+   - เปลี่ยนเป็น throw error ถ้าไม่มี JWT_SECRET env var
+   - import TOKEN_STORAGE_KEY จาก auth-constants (แยก client/server)
+   - ลบ duplicate TOKEN_STORAGE_KEY declaration
+
+2. `src/components/login-page.tsx`:
+   - ลบบรรทัดที่แสดง default credentials "[REDACTED]" บน UI
+
+3. `prisma/seed.ts`:
+   - Redact default passwords (admin123, 2550) → [REDACTED-DEFAULT]
+
+4. `prisma/create-user-01.ts`:
+   - Redact password [REDACTED] → รับจาก CLI arg
+   - Redact [REDACTED] ใน comments
+
+5. `.gitignore`:
+   - เพิ่ม: _tmp_*.mjs, _tmp_*.ts, fix-*.mjs, get-*.mjs, check-*.mjs, list-*.mjs, cleanup-*.mjs, verify-*.mjs
+   - เพิ่ม: /tool-results/
+   - เพิ่ม: *.bak, *.backup
+   - เพิ่ม: /upload/, /mini-services/, /examples/
+   - เพิ่ม: worklog.md (agent work records — not for public repo)
+
+6. `worklog.md`:
+   - Redact Supabase password → [REDACTED-SUPABASE-PASSWORD]
+   - Redact temp passwords → [REDACTED-TEMP-PASSWORD]
+   - Redact default passwords → [REDACTED-DEFAULT-PASSWORD]
+   - Redact local DB path → "local SQLite (file-based)"
+
+### Verification
+- ✅ `git ls-files .env` = empty (.env ไม่ถูก track)
+- ✅ `git log --all -- .env` = empty (.env ไม่อยู่ใน history)
+- ✅ Secret scan ผ่าน (ไม่มี real credentials ใน repo)
+- ✅ ไม่มี temp scripts ใน tracking
+- ✅ ไม่มี tool-results/ ใน tracking
+- ✅ ไม่มี .bak files ใน tracking
+- ✅ auth.ts ไม่มี hardcoded fallback
+- ✅ login-page.tsx ไม่แสดง default credentials
+
+### หมายเหตุ
+- `.env` ไฟล์จริงยังอยู่ในเครื่อง (local SQLite) แต่ untracked + ignored
+- Secret ที่เคยรั่ว (Supabase password) ควร rotate ทันทีเมื่อมีโอกาส
+- JWT_SECRET ใน Vercel env vars ยังใช้ค่าเดิม — ควร rotate ด้วย
 

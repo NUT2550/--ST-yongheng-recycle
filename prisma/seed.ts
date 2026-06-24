@@ -3,7 +3,7 @@
  * Run: bun run prisma/seed.ts
  *
  * Creates:
- *  - Default admin user (admin / admin123)
+ *  - Default admin user (admin / [REDACTED-DEFAULT])
  *  - 7 product categories (เหล็ก, ทองแดง, ทองเหลือง, แสตนเลส, อลูมีเนียม, ตะกั่ว, อื่นๆ)
  *  - 56 products (no default buy price — user fills in per transaction)
  *
@@ -19,8 +19,8 @@ const db = new PrismaClient()
 async function main() {
   console.log('🌱 Seeding database...')
 
-  // 1. Create admin user (admin / admin123)
-  const hashedPassword = await bcrypt.hash('admin123', 10)
+  // 1. Create admin user (admin / [REDACTED-DEFAULT])
+  const hashedPassword = await bcrypt.hash('[REDACTED-DEFAULT]', 10)
   const admin = await db.user.upsert({
     where: { username: 'admin' },
     update: {},
@@ -33,10 +33,10 @@ async function main() {
       isActive: true,
     },
   })
-  console.log(`✓ Admin user: ${admin.username} (admin / admin123)`)
+  console.log(`✓ Admin user: ${admin.username} (admin / [REDACTED-DEFAULT])`)
 
-  // 2. Create staff user (01 / 2550)
-  const staffHash = await bcrypt.hash('2550', 10)
+  // 2. Create staff user (01 / [REDACTED-DEFAULT])
+  const staffHash = await bcrypt.hash('[REDACTED-DEFAULT]', 10)
   const staff = await db.user.upsert({
     where: { username: '01' },
     update: {},
@@ -48,7 +48,7 @@ async function main() {
       isActive: true,
     },
   })
-  console.log(`✓ Staff user: ${staff.username} (01 / 2550)`)
+  console.log(`✓ Staff user: ${staff.username} (01 / [REDACTED-DEFAULT])`)
 
   // 3. Delete all existing products + categories (full replacement)
   //    Must delete StockLot/BuyBillItem/etc first due to FK constraints — but for
@@ -192,8 +192,8 @@ async function main() {
   }
 
   console.log('\n🎉 Seed complete!')
-  console.log('   Admin login: admin / admin123')
-  console.log('   Staff login: 01 / 2550')
+  console.log('   Admin login: admin / [REDACTED-DEFAULT]')
+  console.log('   Staff login: 01 / [REDACTED-DEFAULT]')
 }
 
 main()

@@ -1,11 +1,22 @@
+import 'server-only'
 import { SignJWT, jwtVerify } from 'jose'
 import bcrypt from 'bcryptjs'
+import { TOKEN_STORAGE_KEY } from './auth-constants'
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'yongheng-recycle-secret-key-change-in-production-2024'
-)
+export { TOKEN_STORAGE_KEY }
 
-const COOKIE_NAME = 'auth_token'
+// JWT secret MUST be provided via environment variable.
+// Never fall back to a hardcoded value — that would allow attackers to forge
+// tokens if the env var is missing. Fail fast at module load instead.
+const JWT_SECRET_STRING = process.env.JWT_SECRET
+if (!JWT_SECRET_STRING) {
+  throw new Error(
+    'JWT_SECRET environment variable is required. Set it in .env or Vercel env vars.'
+  )
+}
+const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_STRING)
+
+const COOKIE_NAME = TOKEN_STORAGE_KEY
 
 export interface JWTPayload {
   userId: string
@@ -47,9 +58,6 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
 export function getCookieName(): string {
   return COOKIE_NAME
 }
-
-// Storage key for localStorage on the client (token-based auth)
-export const TOKEN_STORAGE_KEY = 'auth_token'
 
 // Parse cookie from request headers
 export function getTokenFromCookies(cookieHeader: string | null): string | null {

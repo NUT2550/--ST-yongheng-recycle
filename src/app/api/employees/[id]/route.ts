@@ -19,7 +19,7 @@ export async function PATCH(
   if (!admin) return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 })
   try {
     const { id } = await params
-    const { name, phone, hireDate, isActive } = body || await request.json()
+    const { name, phone, hireDate, isActive } = await request.json()
     const data: any = {}
     if (name !== undefined) data.name = name
     if (phone !== undefined) data.phone = phone

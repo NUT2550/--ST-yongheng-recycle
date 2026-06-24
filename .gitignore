@@ -52,3 +52,32 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Upload folder (user-uploaded files, not part of app)
+/upload/
+
+# Mini services (separate bun projects)
+/mini-services/
+
+# Examples (demo files, not part of app)
+/examples/
+
+# Worklog (agent work records)
+worklog.md
+
+# Temp scripts (one-off scripts with credentials)
+_tmp_*.mjs
+_tmp_*.ts
+fix-*.mjs
+get-*.mjs
+check-*.mjs
+list-*.mjs
+cleanup-*.mjs
+verify-*.mjs
+
+# Tool results (debug output)
+/tool-results/
+
+# Backup files
+*.bak
+*.backup

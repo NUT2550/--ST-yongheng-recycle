@@ -1,9 +1,9 @@
 /**
- * Create user "01" with password "2550"
+ * Create user "01" with password from CLI arg
  * Run: bun run prisma/create-user-01.ts
  *
  * Role: staff (default). To promote to admin, edit via the Users page
- *       (login as admin/admin123 first) or change role below and re-run.
+ *       (login as admin/[REDACTED] first) or change role below and re-run.
  */
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcryptjs'
@@ -12,7 +12,7 @@ const db = new PrismaClient()
 
 async function main() {
   const username = '01'
-  const password = '2550'
+  const password = process.argv[2] || "[REDACTED-DEFAULT]"
   const name = 'ผู้ใช้ 01'
   const role: 'staff' | 'admin' = 'staff'
 
