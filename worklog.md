@@ -102,21 +102,21 @@ Stage Summary:
 ---
 Task ID: 7
 Agent: Main (session resume)
-Task: ดึงโค้ดจาก GitHub repo NUT2550/yongheng-recycle มาทำงานต่อในเครื่อง sandbox และตั้งค่าใช้ Supabase
+Task: ดึงโค้ดจาก GitHub repo NUT[REDACTED-STAFF-PASSWORD]/yongheng-recycle มาทำงานต่อในเครื่อง sandbox และตั้งค่าใช้ Supabase
 
 Work Log:
-- Clone private repo NUT2550/yongheng-recycle ผ่าน token มาที่ /tmp/yongheng-recycle
+- Clone private repo NUT[REDACTED-STAFF-PASSWORD]/yongheng-recycle ผ่าน token มาที่ /tmp/yongheng-recycle
 - อ่าน worklog.md เดิม เข้าใจงาน 6 tasks ที่ผ่านมา (Dashboard, Buy/Sell/Sort, API, layout, login, bonus, sidebar auto-hide, ProductCombobox)
 - rsync โค้ดจาก /tmp/yongheng-recycle มาที่ /home/z/my-project (exclude .git, node_modules, .next, *.png screenshots, upload, tool-results)
-- ตั้งค่า .env ใช้ Supabase Postgres: URL-encode password `[8sY.#thcN$Bk5%G]` -> `%5B8sY.%23thcN%24Bk5%25G%5D`
+- ตั้งค่า .env ใช้ Supabase Postgres: URL-encode password `[REDACTED-SUPABASE-PASSWORD]` -> `[REDACTED]`
 - bun install: เพิ่ม @supabase/supabase-js, bcryptjs, jose
 - พบข้อจำกัด: sandbox บล็อก outbound TCP port 5432 (Can't reach Supabase Postgres)
   - ตรวจสอบ: TCP 5432 Network unreachable, TCP 443 OK, Supabase REST API ตอบ 401 = project active
 - สลับไปใช้ SQLite ชั่วคราว: เปลี่ยน prisma provider postgresql -> sqlite, backup schema เดิมไว้ที่ prisma/schema.prisma.postgres.bak
-- ตั้ง DATABASE_URL=file:/home/z/my-project/db/custom.db
+- ตั้ง DATABASE_URL=file:./db/custom.db (local SQLite)
 - prisma db push: สร้างตารางทั้งหมดใน SQLite สำเร็จ
 - สร้าง prisma/seed.ts และรัน:
-  - admin user (admin / admin123) ผ่าน bcrypt hash
+  - admin user (admin / [REDACTED-DEFAULT-PASSWORD]) ผ่าน bcrypt hash
   - 7 product categories (STEEL x4, METAL x3)
   - 56 products พร้อม default buy prices
   - 3 sample employees
@@ -127,7 +127,7 @@ Work Log:
   - แก้: ย้าย 3 hooks ไปไว้ก่อน early returns
   - lint ผ่าน, หน้าแอป render ปกติหลัง login
 - ทดสอบด้วย Agent Browser:
-  - login ด้วย admin/admin123 สำเร็จ
+  - login ด้วย admin/[REDACTED-DEFAULT-PASSWORD] สำเร็จ
   - หน้าแดชบอร์ดแสดง 0.00 กก. (ยังไม่มีข้อมูล)
   - หน้ารับซื้อ: ค้นหา "ทอง" เจอ 11 รายการ, เลือก "ทองแดงแท่ง" ราคา 220/กก. auto-fill, ใส่น้ำหนัก 100 กก. = 22,000 บาท, เพิ่มในตะกร้า, บันทึกใบรับซื้อ -> POST /api/buy-bills 201
   - หน้าสต๊อก: แสดง 100.00 กก. / 22,000.00 บาท ตรงกับที่รับซื้อ
@@ -137,7 +137,7 @@ Work Log:
 Stage Summary:
 - โปรเจกต์ yongheng-recycle รันได้ปกติใน sandbox ที่ http://localhost:3000
 - ใช้ SQLite ชั่วคราวเพราะ sandbox บล็อก port 5432; เก็บ Supabase URL และ postgres schema ไว้ในไฟล์ backup พร้อม migrate กลับได้เมื่อ network เปิด
-- ข้อมูล seed: admin/admin123, 7 categories, 56 products, 3 employees, 1 customer
+- ข้อมูล seed: admin/[REDACTED-DEFAULT-PASSWORD], 7 categories, 56 products, 3 employees, 1 customer
 - ระบบ login + buy + stock + history + users ทำงานครบ
 - แก้ React Hooks order bug ใน page.tsx (lint ผ่าน)
 - พบ issue เดิมจาก repo: sidebar auto-hide ใช้ CSS transform ทำให้ agent-browser คลิกปุ่มใน sidebar ไม่ได้ตรงๆ (ต้อง click ผ่าน JS) — แต่ user ใช้เมาส์จริงได้ปกติเพราะ hover-to-reveal
@@ -145,7 +145,7 @@ Stage Summary:
 ---
 Task ID: 8
 Agent: Main
-Task: เพิ่มปุ่ม show/hide password ในหน้า login + สร้าง user 01/2550
+Task: เพิ่มปุ่ม show/hide password ในหน้า login + สร้าง user 01/[REDACTED-STAFF-PASSWORD]
 
 Work Log:
 - แก้ src/components/login-page.tsx:
@@ -156,30 +156,30 @@ Work Log:
   - ปุ่มเป็น type="button" (ไม่ submit), variant="ghost", tabIndex=-1 (ไม่ขัดจังหวะ tab flow)
   - aria-label สลับ "แสดงรหัสผ่าน" / "ซ่อนรหัสผ่าน"
   - เพิ่ม className="pr-10" ที่ input เพื่อไม่ให้ตัวอักษรซ้อนปุ่ม
-  - อัปเดต hint ด้านล่าง: "บัญชี: admin / admin123 · 01 / 2550"
+  - อัปเดต hint ด้านล่าง: "บัญชี: admin / [REDACTED-DEFAULT-PASSWORD] · 01 / [REDACTED-STAFF-PASSWORD]"
 - สร้าง prisma/create-user-01.ts:
-  - ใช้ bcrypt hash password "2550"
+  - ใช้ bcrypt hash password "[REDACTED-STAFF-PASSWORD]"
   - upsert user username="01", name="ผู้ใช้ 01", role="staff", isActive=true
 - รัน script: สร้าง user 01 สำเร็จ
 - ทดสอบด้วย Agent Browser:
-  - คลิกปุ่ม Eye -> input เปลี่ยน type=password เป็น type=text, เห็นค่า "2550", aria-label เปลี่ยนเป็น "ซ่อนรหัสผ่าน"
+  - คลิกปุ่ม Eye -> input เปลี่ยน type=password เป็น type=text, เห็นค่า "[REDACTED-STAFF-PASSWORD]", aria-label เปลี่ยนเป็น "ซ่อนรหัสผ่าน"
   - คลิกอีกครั้ง -> type กลับเป็น password
-  - login ด้วย 01/2550 สำเร้า -> POST /api/auth/login 200, เข้าหน้าแดชบอร์ด, header แสดง "ผู้ใช้ 01" ไม่มี badge ผู้ดูแล
+  - login ด้วย 01/[REDACTED-STAFF-PASSWORD] สำเร้า -> POST /api/auth/login 200, เข้าหน้าแดชบอร์ด, header แสดง "ผู้ใช้ 01" ไม่มี badge ผู้ดูแล
   - ตรวจ nav: staff เห็น 8 เมนู (ไม่มี "ผู้ใช้งาน") ตาม RBAC ที่ออกแบบไว้
 - lint: ผ่าน
 
 Stage Summary:
 - หน้า login มีปุ่ม toggle แสดง/ซ่อนรหัสผ่านแล้ว
-- สร้างบัญชีใหม่: username "01" / password "2550" / role "staff"
-- หากต้องการให้ 01 เป็น admin แทน: แก้ role ใน prisma/create-user-01.ts เป็น "admin" แล้วรันใหม่ หรือ login ด้วย admin/admin123 แล้วไปหน้า "ผู้ใช้งาน" เพื่อเปลี่ยน role
+- สร้างบัญชีใหม่: username "01" / password "[REDACTED-STAFF-PASSWORD]" / role "staff"
+- หากต้องการให้ 01 เป็น admin แทน: แก้ role ใน prisma/create-user-01.ts เป็น "admin" แล้วรันใหม่ หรือ login ด้วย admin/[REDACTED-DEFAULT-PASSWORD] แล้วไปหน้า "ผู้ใช้งาน" เพื่อเปลี่ยน role
 
 ---
 Task ID: 9
 Agent: Main
-Task: แก้ปัญหา login ไม่ได้ (admin/admin123) เมื่อเข้าผ่าน Preview Panel
+Task: แก้ปัญหา login ไม่ได้ (admin/[REDACTED-DEFAULT-PASSWORD]) เมื่อเข้าผ่าน Preview Panel
 
 Work Log:
-- ตรวจสอบ DB: admin user มีอยู่, isActive=true, bcrypt.compare('admin123', hash) => true → ข้อมูลถูกต้อง
+- ตรวจสอบ DB: admin user มีอยู่, isActive=true, bcrypt.compare('[REDACTED-DEFAULT-PASSWORD]', hash) => true → ข้อมูลถูกต้อง
 - ทดสอบ curl flow: login → cookie → /api/auth/me ตอบ 200 → ปัญหาไม่ใช่ที่โค้ด API
 - ตรวจสอบ dev log: เห็นแพทเทิร์น "POST /api/auth/login 200" ตามด้วย "GET /api/auth/me 401" ซ้ำๆ
 - วินิจฉัย: cookie ถูก set ใน login response แต่ browser ไม่ส่ง cookie กลับไป /api/auth/me เพราะ:
@@ -191,16 +191,16 @@ Work Log:
   - ถ้า http (localhost ตรงๆ): sameSite='lax' + secure=false (เหมือนเดิม)
 - แก้ src/app/api/auth/logout/route.ts ให้ใช้ logic เดียวกัน (เพื่อลบ cookie ที่ตรงกับที่ set)
 - ทดสอบด้วย Agent Browser (เข้าผ่าน http://localhost:3000 ตรงๆ):
-  - admin/admin123 → เข้าสำเร็จ แสดง "ผู้ดูแลระบบ" + badge "ผู้ดูแล"
+  - admin/[REDACTED-DEFAULT-PASSWORD] → เข้าสำเร็จ แสดง "ผู้ดูแลระบบ" + badge "ผู้ดูแล"
   - logout → กลับหน้า login
-  - 01/2550 → เข้าสำเร็จ แสดง "ผู้ใช้ 01" (ไม่มี badge เพราะเป็น staff)
+  - 01/[REDACTED-STAFF-PASSWORD] → เข้าสำเร็จ แสดง "ผู้ใช้ 01" (ไม่มี badge เพราะเป็น staff)
 - lint: ผ่าน
 
 Stage Summary:
 - ปัญหาหลักคือ SameSite cookie policy ใน iframe cross-origin (Preview Panel)
 - แก้โดยตรวจจับ HTTPS proxy แล้วใช้ SameSite=None + Secure=true อัตโนมัติ
 - login + logout ใช้ logic สอดคล้องกัน
-- admin/admin123 และ 01/2550 ใช้งานได้ปกติแล้ว
+- admin/[REDACTED-DEFAULT-PASSWORD] และ 01/[REDACTED-STAFF-PASSWORD] ใช้งานได้ปกติแล้ว
 
 ---
 Task ID: 10
@@ -234,17 +234,17 @@ Changes:
    - handleLogout ส่ง Authorization header + setAuthToken(null)
 
 Test results (Agent Browser):
-- ✅ admin/admin123 login สำเร็จ, token เก็บใน localStorage (255 chars)
+- ✅ admin/[REDACTED-DEFAULT-PASSWORD] login สำเร็จ, token เก็บใน localStorage (255 chars)
 - ✅ GET /api/dashboard 200 (ส่ง Authorization header ได้)
 - ✅ Reload แล้ว session ยังอยู่ (token จาก localStorage)
 - ✅ Logout ล้าง token + localStorage
-- ✅ Login ด้วย 01/2550 สำเร็จ (staff role)
+- ✅ Login ด้วย 01/[REDACTED-STAFF-PASSWORD] สำเร็จ (staff role)
 - ✅ Lint ผ่าน
 
 Stage Summary:
 - ปัญหา SameSite cookie ใน iframe cross-origin แก้ไขจบสิ้นด้วยการใช้ localStorage + Authorization header
 - Cookie ยังคงถูก set เป็น fallback สำหรับกรณี browser ตรงๆ (ไม่ผ่าน iframe)
-- ทั้ง admin/admin123 และ 01/2550 ใช้งานได้ปกติ
+- ทั้ง admin/[REDACTED-DEFAULT-PASSWORD] และ 01/[REDACTED-STAFF-PASSWORD] ใช้งานได้ปกติ
 
 ---
 Task ID: 12
@@ -258,7 +258,7 @@ Work Log:
   - เปลี่ยน categories เดิม (เหล็กม้วน/เส้น/แผ่น/โครงสร้าง) เป็น 7 หมวดใหม่
   - เปลี่ยน products ทั้งหมดเป็นรายการที่ user ระบุ
   - เพิ่ม db.product.deleteMany({}) + db.productCategory.deleteMany({}) ก่อน seed (full replacement)
-  - เพิ่ม staff user (01/2550) ใน seed script
+  - เพิ่ม staff user (01/[REDACTED-STAFF-PASSWORD]) ใน seed script
   - ตั้ง default price = 0 ทั้งหมด (user กรอกเองในแต่ละ transaction)
 - แก้ sql/setup_complete.sql:
   - แทนที่ส่วน INSERT ProductCategory + Product ด้วยรายการใหม่ (ใช้ Python script)
@@ -269,7 +269,7 @@ Work Log:
   - bun run prisma/seed.ts -> สำเร็จ
 - รีสตาร์ท dev server
 - ทดสอบด้วย Agent Browser:
-  - Login admin/admin123 สำเร็จ
+  - Login admin/[REDACTED-DEFAULT-PASSWORD] สำเร็จ
   - หน้ารับซื้อ: combobox แสดงครบ 56 products grouped by category
   - หน้าสต๊อก: แสดง 7 หมวดพร้อมจำนวนที่ถูกต้อง (12/7/4/3/25/2/3)
 - Commit + push ไป GitHub (commit d717ecb)
@@ -292,7 +292,7 @@ Stage Summary:
 ### เหตุผล
 - บัญชี `01` (นัท ผู้จัดการ) คือบัญชีเจ้าของระบบ — ต้องเป็น admin
 - บัญชี `admin` เดิมเป็น default account — ควรเลิกใช้หลังยืนยัน 01 เป็น admin
-- รหัส admin ที่เพิ่งเปลี่ยน (`Yh@860927!`) ถูกพิมพ์ในแชท → ต้อง rotate ใหม่
+- รหัส admin ที่เพิ่งเปลี่ยน (`[REDACTED-TEMP-PASSWORD]`) ถูกพิมพ์ในแชท → ต้อง rotate ใหม่
 
 ### ขั้นตอนที่ทำ
 
@@ -319,7 +319,7 @@ Stage Summary:
 - Hash with bcrypt (salt rounds = 10)
 - Update admin user password
 - **รหัสไม่ถูกพิมพ์ออกมาใน log/แชท/ไฟล์ใด ๆ**
-- Old password `Yh@860927!` ถูก block แล้ว ✓
+- Old password `[REDACTED-TEMP-PASSWORD]` ถูก block แล้ว ✓
 
 #### 6. Deactivate บัญชี admin เดิม
 - Safety check: ยืนยัน 01 เป็น active admin ก่อน
@@ -340,8 +340,8 @@ Stage Summary:
 - Inactive accounts: **1** (admin / ผู้ดูแลระบบ — deactivated, ไม่ได้ hard delete)
 
 ### Security improvements
-1. ✅ รหัส admin123 (default) ไม่ใช้แล้ว
-2. ✅ รหัส Yh@860927! (ที่รั่วในแชท) ไม่ใช้แล้ว
+1. ✅ รหัส [REDACTED-DEFAULT-PASSWORD] (default) ไม่ใช้แล้ว
+2. ✅ รหัส [REDACTED-TEMP-PASSWORD] (ที่รั่วในแชท) ไม่ใช้แล้ว
 3. ✅ บัญชี admin deactivated — login ไม่ได้แม้รู้รหัส
 4. ✅ 01 (เจ้าของร้าน) เป็น admin เดียวที่ active
 5. ✅ ไม่มีรหัสผ่านใดถูกเก็บในไฟล์/log/commit
