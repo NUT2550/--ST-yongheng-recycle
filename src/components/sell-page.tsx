@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/dialog';
 import { Coins, Plus, Trash2, Loader2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
+import { parseWeightExpression } from '@/lib/safe-math';
 
 export function SellPage() {
   const {
@@ -136,7 +137,8 @@ export function SellPage() {
 
   // Auto-calculate total
   const totalAmount = useMemo(() => {
-    const w = parseFloat(weight) || 0;
+    const result = parseWeightExpression(weight);
+    const w = result.error ? 0 : result.value;
     const p = parseFloat(pricePerKg) || 0;
     return w * p;
   }, [weight, pricePerKg]);
@@ -157,7 +159,12 @@ export function SellPage() {
       toast.error('กรุณาเลือกสินค้า');
       return;
     }
-    const w = parseFloat(weight);
+    const weightResult = parseWeightExpression(weight);
+    if (weightResult.error) {
+      toast.error(`น้ำหนัก: ${weightResult.error}`);
+      return;
+    }
+    const w = weightResult.value;
     if (!w || w <= 0) {
       toast.error('กรุณากรอกน้ำหนัก');
       return;

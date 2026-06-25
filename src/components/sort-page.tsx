@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/table';
 import { RefreshCw, Plus, Trash2, Loader2, AlertTriangle, Gift } from 'lucide-react';
 import { toast } from 'sonner';
+import { parseWeightExpression } from '@/lib/safe-math';
 
 // Evaluate a math expression like "22-0.2" → 21.8
 // Supports +, -, *, / and parentheses. Returns null if invalid.
@@ -210,7 +211,8 @@ export function SortPage() {
   // Preview bonus for current item being added
   const previewBonus = useMemo(() => {
     if (isWaste || !itemWeight || !itemSortedPrice || !sortSourcePricePerKg) return 0;
-    const w = parseFloat(itemWeight) || 0;
+    const weightResult = parseWeightExpression(itemWeight);
+    const w = weightResult.error ? 0 : weightResult.value;
     const sp = parseFloat(itemSortedPrice) || 0;
     const grossProfit = (sp - sortSourcePricePerKg) * w;
     return Math.round(grossProfit * 0.1 * 100) / 100;
@@ -222,7 +224,12 @@ export function SortPage() {
       toast.error('กรุณาเลือกสินค้า');
       return;
     }
-    const w = parseFloat(itemWeight);
+    const weightResult = parseWeightExpression(itemWeight);
+    if (weightResult.error) {
+      toast.error(`น้ำหนัก: ${weightResult.error}`);
+      return;
+    }
+    const w = weightResult.value;
     if (!w || w <= 0) {
       toast.error('กรุณากรอกน้ำหนัก');
       return;

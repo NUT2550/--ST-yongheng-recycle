@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/table';
 import { ShoppingCart, Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { parseWeightExpression } from '@/lib/safe-math';
 
 export function BuyPage() {
   const {
@@ -98,7 +99,8 @@ export function BuyPage() {
 
   // Auto-calculate total
   const totalAmount = useMemo(() => {
-    const w = parseFloat(weight) || 0;
+    const result = parseWeightExpression(weight);
+    const w = result.error ? 0 : result.value;
     const p = parseFloat(pricePerKg) || 0;
     return w * p;
   }, [weight, pricePerKg]);
@@ -119,7 +121,12 @@ export function BuyPage() {
       toast.error('กรุณาเลือกสินค้า');
       return;
     }
-    const w = parseFloat(weight);
+    const weightResult = parseWeightExpression(weight);
+    if (weightResult.error) {
+      toast.error(`น้ำหนัก: ${weightResult.error}`);
+      return;
+    }
+    const w = weightResult.value;
     if (!w || w <= 0) {
       toast.error('กรุณากรอกน้ำหนัก');
       return;
@@ -142,7 +149,8 @@ export function BuyPage() {
     setSelectedProductId('');
     setWeight('');
     setPricePerKg('');
-    toast.success(`เพิ่ม "${item.productName}" ลงตะกร้าแล้ว`);
+    const formulaHint = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
+    toast.success(`เพิ่ม "${item.productName}" ลงตะกร้าแล้ว — ${w} กก.${formulaHint}`);
   };
 
   // Submit bill
