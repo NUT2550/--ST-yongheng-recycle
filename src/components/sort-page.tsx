@@ -280,7 +280,7 @@ export function SortPage() {
       return;
     }
     if (!sortSourcePricePerKg || sortSourcePricePerKg <= 0) {
-      toast.error('กรุณากรอกราคาต้นทาง/กก.');
+      toast.error('กรุณากรอกราคาต้นทาง/กก. — ถ้าไม่ทราบราคา ใส่ 0.01 ชั่วคราว');
       return;
     }
 
@@ -834,7 +834,7 @@ export function SortPage() {
           <div className="flex flex-col sm:flex-row gap-3">
             <Button
               onClick={handleSubmit}
-              disabled={sortCartItems.length === 0 || !sortSourceProductId || sortSourceWeight <= 0 || !sortSourcePricePerKg || submitting}
+              disabled={sortCartItems.length === 0 || !sortSourceProductId || sortSourceWeight <= 0 || submitting}
               className="flex-1 bg-amber-600 hover:bg-amber-700 text-white h-12 text-base font-semibold"
             >
               {submitting ? (
@@ -846,6 +846,16 @@ export function SortPage() {
                 'บันทึกใบคัดแยก'
               )}
             </Button>
+            {sortCartItems.length === 0 && sortSourceProductId && (
+              <p className="text-xs text-amber-600 text-center sm:text-right">
+                เพิ่มรายการคัดแยกก่อนบันทึก
+              </p>
+            )}
+            {!sortSourceProductId && (
+              <p className="text-xs text-amber-600 text-center sm:text-right">
+                เลือกสินค้าต้นทางก่อน
+              </p>
+            )}
             <Button
               variant="outline"
               onClick={() => {
