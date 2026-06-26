@@ -1,5 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyToken, getTokenFromRequest } from '@/lib/auth';
+import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
 
 // Helper: Deduct stock using FIFO and return weighted average cost
 async function deductStockFIFO(
@@ -47,6 +49,14 @@ async function deductStockFIFO(
 
 // POST /api/sorting-bills - Create a sorting bill
 export async function POST(request: NextRequest) {
+  // --- Auth ---
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
+  const hasPermission = payload.role === 'admin' || payload.permissions?.['sort.create'] === true;
+  if (!hasPermission) return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+
   try {
     const body = await request.json();
     const {
@@ -73,16 +83,14 @@ export async function POST(request: NextRequest) {
       }>;
     };
 
+    // --- Validation ---
     if (!items || items.length === 0) {
-      return NextResponse.json(
-        { error: 'Items are required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Items are required' }, { status: 400 });
     }
 
-    if (sourceWeight <= 0) {
+    if (typeof sourceWeight !== 'number' || sourceWeight <= 0) {
       return NextResponse.json(
-        { error: 'Source weight must be greater than 0' },
+        { error: 'น้ำหนักต้นทางต้องมากกว่า 0' },
         { status: 400 }
       );
     }
@@ -108,13 +116,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Use transaction for FIFO deduction and bill creation
-    const result = await db.$transaction(async (tx) => {
+    // --- Transaction: FIFO deduction + bill + stock lots + audit ---
+    const bill = await db.$transaction(async (tx) => {
       // Deduct source product stock using FIFO
       const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, tx);
       const sourceCostPerKg = fifoResult.costPerKg;
 
-      // Calculate loss
+      // Calculate loss = sourceWeight - sum(item weights)
       const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
       const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
       const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
@@ -130,9 +138,13 @@ export async function POST(request: NextRequest) {
         bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
       }));
 
+      // Generate bill number
+      const billNumber = await generateBillNumber(tx, 'SORT');
+
       // Create the sorting bill
-      const bill = await tx.sortingBill.create({
+      const created = await tx.sortingBill.create({
         data: {
+          billNumber,
           date: new Date(date),
           sourceProductId,
           sourceWeight,
@@ -161,16 +173,34 @@ export async function POST(request: NextRequest) {
               costPerKg: sourceCostPerKg,
               dateAdded: new Date(date),
               source: 'SORTING',
-              sourceId: bill.id,
+              sourceId: created.id,
             },
           });
         }
       }
 
-      return bill;
+      await writeAuditLog(tx, {
+        action: 'CREATE',
+        entityType: 'SORTING_BILL',
+        entityId: created.id,
+        userId: payload.userId,
+        userName: payload.name,
+        details: JSON.stringify({
+          billNumber,
+          sourceProductId,
+          sourceWeight,
+          sourceCostPerKg,
+          lossWeight,
+          lossCost,
+          itemCount: created.items.length,
+          nonWasteItemCount: items.filter((i) => !i.isWaste).length,
+        }),
+      });
+
+      return created;
     });
 
-    return NextResponse.json({ bill: result }, { status: 201 });
+    return NextResponse.json({ bill }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create sorting bill';
     console.error('Error creating sorting bill:', error);
@@ -188,10 +218,17 @@ export async function POST(request: NextRequest) {
 
 // GET /api/sorting-bills - List sorting bills with pagination
 export async function GET(request: NextRequest) {
+  // --- Auth: any authenticated user ---
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
+
   try {
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '20', 10);
+    // Pagination clamp: page min 1, limit min 1 max 100
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const skip = (page - 1) * limit;
 
     const [bills, total] = await Promise.all([

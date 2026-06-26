@@ -1,11 +1,17 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 
 // POST /api/credit/[id]/pay - Add a payment to a credit entry
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
+
   try {
     const { id } = await params;
     const body = await request.json();

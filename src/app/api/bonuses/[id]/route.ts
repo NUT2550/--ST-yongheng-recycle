@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { verifyToken, getTokenFromRequest } from "@/lib/auth";
 import { NextRequest, NextResponse } from 'next/server';
 
 // PATCH /api/bonuses/[id] - Update a bonus (mark as paid, etc.)
@@ -6,6 +7,12 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
+  if (payload.role !== 'admin') return NextResponse.json({ error: 'ต้องเป็น admin' }, { status: 403 });
+
   try {
     const { id } = await params;
     const body = await request.json();
@@ -62,6 +69,12 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
+  if (payload.role !== 'admin') return NextResponse.json({ error: 'ต้องเป็น admin' }, { status: 403 });
+
   try {
     const { id } = await params;
 
