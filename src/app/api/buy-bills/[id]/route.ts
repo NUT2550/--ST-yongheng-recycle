@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { writeAuditLog } from '@/lib/bill-helpers';
+
 
 async function requireEditPermission(request: NextRequest) {
   const token = getTokenFromRequest(request);
@@ -120,7 +120,7 @@ export async function PATCH(
                 totalAmount: itemTotal,
               },
             });
-            existingMap.delete(item.id);
+            existingMap.delete(item.id!);
           } else {
             // New item — create
             await tx.buyBillItem.create({

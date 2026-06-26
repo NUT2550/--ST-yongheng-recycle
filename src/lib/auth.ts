@@ -23,6 +23,7 @@ export interface JWTPayload {
   username: string
   name: string
   role: 'admin' | 'staff'
+  permissions?: Record<string, boolean>
 }
 
 // Hash password

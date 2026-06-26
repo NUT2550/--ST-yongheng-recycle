@@ -46,14 +46,19 @@ model StockLot {
 }
 
 model BuyBill {
-  id          String        @id @default(cuid())
-  date        DateTime      @default(now())
-  isCredit    Boolean       @default(false)
-  note        String?
-  items       BuyBillItem[]
-  totalAmount Float         @default(0)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  id            String        @id @default(cuid())
+  billNumber    String?       @unique
+  date          DateTime      @default(now())
+  isCredit      Boolean       @default(false)
+  note          String?
+  items         BuyBillItem[]
+  totalAmount   Float         @default(0)
+  isCancelled   Boolean       @default(false)
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  cancelReason  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }
 
 model BuyBillItem {
@@ -68,17 +73,22 @@ model BuyBillItem {
 }
 
 model SellBill {
-  id          String         @id @default(cuid())
-  date        DateTime       @default(now())
-  customerId  String?
-  customer    Customer?      @relation(fields: [customerId], references: [id])
-  isCredit    Boolean        @default(false)
-  note        String?
-  items       SellBillItem[]
-  totalAmount Float          @default(0)
-  totalCost   Float          @default(0)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id            String         @id @default(cuid())
+  billNumber    String?        @unique
+  date          DateTime       @default(now())
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  isCredit      Boolean        @default(false)
+  note          String?
+  items         SellBillItem[]
+  totalAmount   Float          @default(0)
+  totalCost     Float          @default(0)
+  isCancelled   Boolean        @default(false)
+  cancelledAt   DateTime?
+  cancelledBy   String?
+  cancelReason  String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model SellBillItem {
@@ -96,17 +106,22 @@ model SellBillItem {
 
 model SortingBill {
   id               String            @id @default(cuid())
+  billNumber       String?           @unique
   date             DateTime          @default(now())
   sourceProductId  String
   sourceProduct    Product           @relation("SortingSource", fields: [sourceProductId], references: [id])
   sourceWeight     Float
-  sourcePricePerKg Float             @default(0) // ราคารับซื้อสินค้าต้นทาง (พนักงานใส่, ใช้คิดโบนัส)
+  sourcePricePerKg Float             @default(0)
   weighedTotal     Float             @default(0)
   lossWeight       Float             @default(0)
   lossCost         Float             @default(0)
   note             String?
   items            SortingBillItem[]
   bonuses          SortingBonus[]
+  isCancelled      Boolean           @default(false)
+  cancelledAt      DateTime?
+  cancelledBy      String?
+  cancelReason     String?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 }
@@ -199,4 +214,19 @@ model User {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// Audit log for tracking create/edit/delete/cancel actions on bills
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String   // CREATE, UPDATE, DELETE, CANCEL
+  entityType String   // BUY_BILL, SELL_BILL, SORTING_BILL
+  entityId   String
+  userId     String?
+  userName   String?
+  details    String?  // JSON string of changes/summary
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
 }
