@@ -243,12 +243,25 @@ export function BuyPage() {
               <Label htmlFor="buy-weight">น้ำหนัก (กก.)</Label>
               <Input
                 id="buy-weight"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
+                type="text"
+                inputMode="decimal"
+                placeholder="0.00 หรือ 860-3"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const result = parseWeightExpression(weight);
+                    if (result.error) {
+                      toast.error(`น้ำหนัก: ${result.error}`);
+                      return;
+                    }
+                    if (result.isFormula && !result.error) {
+                      toast.info(`น้ำหนัก: ${result.expression} = ${result.value}`);
+                    }
+                    document.getElementById('buy-price')?.focus();
+                  }
+                }}
               />
             </div>
 

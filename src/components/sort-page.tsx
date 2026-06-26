@@ -31,28 +31,6 @@ import { RefreshCw, Plus, Trash2, Loader2, AlertTriangle, Gift } from 'lucide-re
 import { toast } from 'sonner';
 import { parseWeightExpression } from '@/lib/safe-math';
 
-// Evaluate a math expression like "22-0.2" → 21.8
-// Supports +, -, *, / and parentheses. Returns null if invalid.
-// Also stores the original expression for display in history.
-function evalExpression(expr: string): { result: number; original: string } | null {
-  const trimmed = expr.trim();
-  if (!trimmed) return null;
-  // Check if it contains math operators (not just a plain number)
-  if (!/[+\-*/()]/.test(trimmed) || /^\d+\.?\d*$/.test(trimmed)) {
-    const n = parseFloat(trimmed);
-    return isNaN(n) ? null : { result: n, original: trimmed };
-  }
-  try {
-    // Only allow numbers, operators, parentheses, spaces, and decimal points
-    if (!/^[\d+\-*/().\s]+$/.test(trimmed)) return null;
-    const result = Function(`"use strict"; return (${trimmed})`)();
-    if (typeof result !== 'number' || isNaN(result)) return null;
-    return { result: Math.round(result * 100) / 100, original: trimmed };
-  } catch {
-    return null;
-  }
-}
-
 export function SortPage() {
   const {
     sortCartItems,
@@ -77,6 +55,8 @@ export function SortPage() {
   // Form state
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [itemWeight, setItemWeight] = useState<string>('');
+  const [sourceWeightInput, setSourceWeightInput] = useState<string>('');
+  const [weighedTotalInput, setWeighedTotalInput] = useState<string>('');
   const [itemSortedPrice, setItemSortedPrice] = useState<string>('');
   const [isWaste, setIsWaste] = useState(false);
   const [dateTime, setDateTime] = useState<string>(getCurrentDateForInput());
@@ -396,27 +376,32 @@ export function SortPage() {
                 id="sort-source-weight"
                 type="text"
                 inputMode="decimal"
-                placeholder="0.00 หรือ 22-0.2"
-                value={sortSourceWeight || ''}
+                placeholder="0.00 หรือ 68.4-0.2"
+                value={sourceWeightInput}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (/^[+\-*/().\d\s]*$/.test(v)) {
-                    setSortSourceWeight(parseFloat(v) || 0);
+                    setSourceWeightInput(v);
+                    // Parse and update store for real-time calculations
+                    const result = parseWeightExpression(v);
+                    if (!result.error) {
+                      setSortSourceWeight(result.value);
+                    }
                   }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    const evald = evalExpression(input.value);
-                    if (evald) {
-                      setSortSourceWeight(evald.result);
-                      input.value = String(evald.result);
-                      if (evald.original !== String(evald.result)) {
-                        toast.info(`น้ำหนัก: ${evald.original} = ${evald.result}`);
-                      }
-                      document.getElementById('sort-source-price')?.focus();
+                    const result = parseWeightExpression(sourceWeightInput);
+                    if (result.error) {
+                      toast.error(`น้ำหนัก: ${result.error}`);
+                      return;
                     }
+                    setSortSourceWeight(result.value);
+                    if (result.isFormula) {
+                      toast.info(`น้ำหนัก: ${result.expression} = ${result.value}`);
+                    }
+                    document.getElementById('sort-source-price')?.focus();
                   }
                 }}
               />
@@ -443,27 +428,31 @@ export function SortPage() {
                 id="sort-weighed-total"
                 type="text"
                 inputMode="decimal"
-                placeholder="0.00 หรือ 22-0.2"
-                value={sortWeighedTotal || ''}
+                placeholder="0.00 หรือ 68.4-0.2"
+                value={weighedTotalInput}
                 onChange={(e) => {
                   const v = e.target.value;
                   if (/^[+\-*/().\d\s]*$/.test(v)) {
-                    setSortWeighedTotal(parseFloat(v) || 0);
+                    setWeighedTotalInput(v);
+                    const result = parseWeightExpression(v);
+                    if (!result.error) {
+                      setSortWeighedTotal(result.value);
+                    }
                   }
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    const evald = evalExpression(input.value);
-                    if (evald) {
-                      setSortWeighedTotal(evald.result);
-                      input.value = String(evald.result);
-                      if (evald.original !== String(evald.result)) {
-                        toast.info(`น้ำหนักชั่งรวม: ${evald.original} = ${evald.result}`);
-                      }
-                      document.getElementById('sort-source')?.focus();
+                    const result = parseWeightExpression(weighedTotalInput);
+                    if (result.error) {
+                      toast.error(`น้ำหนักชั่งรวม: ${result.error}`);
+                      return;
                     }
+                    setSortWeighedTotal(result.value);
+                    if (result.isFormula) {
+                      toast.info(`น้ำหนักชั่งรวม: ${result.expression} = ${result.value}`);
+                    }
+                    document.getElementById('sort-source')?.focus();
                   }
                 }}
               />
@@ -544,18 +533,18 @@ export function SortPage() {
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    const input = e.target as HTMLInputElement;
-                    const evald = evalExpression(input.value);
-                    if (evald) {
-                      setItemWeight(String(evald.result));
-                      if (evald.original !== String(evald.result)) {
-                        toast.info(`น้ำหนัก: ${evald.original} = ${evald.result}`);
-                      }
-                      if (!isWaste) {
-                        document.getElementById('sort-sorted-price')?.focus();
-                      } else {
-                        handleAddItem();
-                      }
+                    const result = parseWeightExpression(itemWeight);
+                    if (result.error) {
+                      toast.error(`น้ำหนัก: ${result.error}`);
+                      return;
+                    }
+                    if (result.isFormula && !result.error) {
+                      toast.info(`น้ำหนัก: ${result.expression} = ${result.value}`);
+                    }
+                    if (!isWaste) {
+                      document.getElementById('sort-sorted-price')?.focus();
+                    } else {
+                      handleAddItem();
                     }
                   }
                 }}

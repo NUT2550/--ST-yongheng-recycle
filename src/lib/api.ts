@@ -18,7 +18,7 @@ import {
   PayCreditRequest,
   CreditPayment,
 } from './types';
-import { TOKEN_STORAGE_KEY } from './auth';
+import { TOKEN_STORAGE_KEY } from './auth-constants';
 
 const API_BASE = '/api';
 
