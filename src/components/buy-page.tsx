@@ -31,6 +31,7 @@ import {
 import { ShoppingCart, Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseWeightExpression } from '@/lib/safe-math';
+import { ExcelImportDialog } from '@/components/excel-import-dialog';
 
 export function BuyPage() {
   const {
@@ -288,13 +289,27 @@ export function BuyPage() {
             </div>
           </div>
 
-          <Button
-            onClick={handleAddItem}
-            className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            เพิ่มรายการ
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              onClick={handleAddItem}
+              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              เพิ่มรายการ
+            </Button>
+            <ExcelImportDialog
+              products={products}
+              groupedProducts={groupedProducts}
+              onImport={(items, importBillDate) => {
+                items.forEach((item) => addBuyCartItem(item));
+                if (importBillDate) {
+                  setDateTime(new Date(importBillDate).toISOString().slice(0, 16));
+                }
+                toast.success(`เพิ่ม ${items.length} รายการจาก Excel แล้ว`);
+              }}
+              billType="buy"
+            />
+          </div>
         </CardContent>
       </Card>
 
