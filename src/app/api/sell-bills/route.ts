@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
+import { isRealFormula } from '@/lib/safe-math';
 
 // Helper: Deduct stock using FIFO and return weighted average cost
 async function deductStockFIFO(
@@ -66,7 +67,12 @@ export async function POST(request: NextRequest) {
       customerId?: string;
       isCredit: boolean;
       note?: string;
-      items: Array<{ productId: string; weight: number; pricePerKg: number }>;
+      items: Array<{
+        productId: string;
+        weight: number;
+        weightExpression?: string;
+        pricePerKg: number;
+      }>;
     };
 
     // --- Validation ---
@@ -113,6 +119,7 @@ export async function POST(request: NextRequest) {
       const sellItems: Array<{
         productId: string;
         weight: number;
+        weightExpression: string | null;
         pricePerKg: number;
         totalAmount: number;
         costPerKg: number;
@@ -129,6 +136,9 @@ export async function POST(request: NextRequest) {
         sellItems.push({
           productId: item.productId,
           weight: item.weight,
+          weightExpression: isRealFormula(item.weightExpression)
+            ? item.weightExpression!.trim()
+            : null,
           pricePerKg: item.pricePerKg,
           totalAmount: itemTotalAmount,
           costPerKg: fifoResult.costPerKg,

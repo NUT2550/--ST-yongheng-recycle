@@ -27,6 +27,7 @@ export interface BuyCartItem {
   productId: string;
   productName: string;
   weight: number;
+  weightExpression?: string; // สูตรที่ผู้ใช้พิมพ์ เช่น "860-3" (ถ้ากรอกตัวเลขตรงๆ ให้ undefined)
   pricePerKg: number;
   totalAmount: number;
 }
@@ -35,6 +36,7 @@ export interface SellCartItem {
   productId: string;
   productName: string;
   weight: number;
+  weightExpression?: string;
   pricePerKg: number;
   totalAmount: number;
   availableWeight: number; // from stock
@@ -44,6 +46,7 @@ export interface SortCartItem {
   productId: string;
   productName: string;
   weight: number;
+  weightExpression?: string;
   isWaste: boolean;
   sortedPricePerKg: number; // ราคารับซื้อสินค้าที่คัดได้ (พนักงานใส่)
   bonusAmount: number; // โบนัส = (sortedPricePerKg - sourcePricePerKg) * weight * 10%
@@ -65,6 +68,7 @@ export interface BuyBillItem {
   productId: string;
   product: { id: string; name: string };
   weight: number;
+  weightExpression?: string | null;
   pricePerKg: number;
   totalAmount: number;
 }
@@ -87,6 +91,7 @@ export interface SellBillItem {
   productId: string;
   product: { id: string; name: string };
   weight: number;
+  weightExpression?: string | null;
   pricePerKg: number;
   totalAmount: number;
   costPerKg: number;
@@ -99,8 +104,10 @@ export interface SortingBill {
   sourceProductId: string;
   sourceProduct: { id: string; name: string };
   sourceWeight: number;
+  sourceWeightExpression?: string | null;
   sourcePricePerKg: number;
   weighedTotal: number;
+  weighedTotalExpression?: string | null;
   lossWeight: number;
   lossCost: number;
   note: string | null;
@@ -113,6 +120,7 @@ export interface SortingBillItem {
   productId: string;
   product: { id: string; name: string };
   weight: number;
+  weightExpression?: string | null;
   isWaste: boolean;
   costPerKg: number;
   totalCost: number;
@@ -259,6 +267,7 @@ export interface CreateBuyBillRequest {
   items: Array<{
     productId: string;
     weight: number;
+    weightExpression?: string;
     pricePerKg: number;
   }>;
 }
@@ -271,6 +280,7 @@ export interface CreateSellBillRequest {
   items: Array<{
     productId: string;
     weight: number;
+    weightExpression?: string;
     pricePerKg: number;
   }>;
 }
@@ -279,12 +289,15 @@ export interface CreateSortingBillRequest {
   date: string;
   sourceProductId: string;
   sourceWeight: number;
+  sourceWeightExpression?: string;
   sourcePricePerKg: number;
   weighedTotal: number;
+  weighedTotalExpression?: string;
   note?: string;
   items: Array<{
     productId: string;
     weight: number;
+    weightExpression?: string;
     isWaste: boolean;
     sortedPricePerKg: number;
     bonusAmount: number;

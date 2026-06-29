@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/table';
 import { ShoppingCart, Plus, Trash2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { parseWeightExpression } from '@/lib/safe-math';
+import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 import { ExcelImportDialog } from '@/components/excel-import-dialog';
 
 export function BuyPage() {
@@ -142,6 +142,8 @@ export function BuyPage() {
       productId: selectedProductId,
       productName: selectedProduct?.name || '',
       weight: w,
+      // เก็บ expression เฉพาะเมื่อเป็นจริง (isFormula=true) — plain number ไม่เก็บ
+      weightExpression: weightResult.isFormula ? weightResult.expression : undefined,
       pricePerKg: p,
       totalAmount: w * p,
     };
@@ -150,8 +152,8 @@ export function BuyPage() {
     setSelectedProductId('');
     setWeight('');
     setPricePerKg('');
-    const formulaHint = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
-    toast.success(`เพิ่ม "${item.productName}" ลงตะกร้าแล้ว — ${w} กก.${formulaHint}`);
+    const formulaHintStr = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
+    toast.success(`เพิ่ม "${item.productName}" ลงตะกร้าแล้ว — ${w} กก.${formulaHintStr}`);
   };
 
   // Submit bill
@@ -170,6 +172,7 @@ export function BuyPage() {
         items: buyCartItems.map((item) => ({
           productId: item.productId,
           weight: item.weight,
+          weightExpression: item.weightExpression,
           pricePerKg: item.pricePerKg,
         })),
       });
@@ -257,6 +260,7 @@ export function BuyPage() {
                       toast.error(`น้ำหนัก: ${result.error}`);
                       return;
                     }
+                    // ไม่เปลี่ยน input — เก็บ expression ไว้ แค่ focus ช่องถัดไป
                     if (result.isFormula && !result.error) {
                       toast.info(`น้ำหนัก: ${result.expression} = ${result.value}`);
                     }
@@ -264,6 +268,16 @@ export function BuyPage() {
                   }
                 }}
               />
+              {/* Live preview: แสดงผลลัพธ์ทันทีขณะพิมพ์ โดยไม่เปลี่ยน input */}
+              {weight.trim() && (() => {
+                const preview = previewWeightValue(weight);
+                if (preview === null) return null;
+                return (
+                  <p className="text-xs text-emerald-700 font-medium">
+                    = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+                  </p>
+                );
+              })()}
             </div>
 
             {/* Price per kg */}
@@ -345,7 +359,12 @@ export function BuyPage() {
                       </TableCell>
                       <TableCell className="font-medium">{item.productName}</TableCell>
                       <TableCell className="text-right">
-                        {formatWeight(item.weight)}
+                        <div className="font-medium">{formatWeight(item.weight)}</div>
+                        {item.weightExpression && (
+                          <div className="text-[11px] text-gray-400">
+                            {formulaHint(item.weightExpression)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         {formatBaht(item.pricePerKg)}

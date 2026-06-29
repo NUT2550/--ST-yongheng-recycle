@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/table';
 import { RefreshCw, Plus, Trash2, Loader2, AlertTriangle, Gift } from 'lucide-react';
 import { toast } from 'sonner';
-import { parseWeightExpression } from '@/lib/safe-math';
+import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 
 export function SortPage() {
   const {
@@ -239,6 +239,7 @@ export function SortPage() {
       productId: selectedProductId,
       productName: selectedProd?.name || '',
       weight: w,
+      weightExpression: weightResult.isFormula ? weightResult.expression : undefined,
       isWaste,
       sortedPricePerKg: sortedPrice,
       bonusAmount: Math.max(bonusAmount, 0),
@@ -249,7 +250,8 @@ export function SortPage() {
     setItemWeight('');
     setItemSortedPrice('');
     setIsWaste(false);
-    toast.success(`เพิ่ม "${item.productName}" ลงรายการแล้ว${!isWaste && bonusAmount > 0 ? ` (โบนัส ${formatBaht(bonusAmount)} บาท)` : ''}`);
+    const formulaHintStr = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
+    toast.success(`เพิ่ม "${item.productName}" ลงรายการแล้ว${!isWaste && bonusAmount > 0 ? ` (โบนัส ${formatBaht(bonusAmount)} บาท)` : ''}${formulaHintStr}`);
   };
 
   // Submit bill
@@ -282,16 +284,25 @@ export function SortPage() {
 
     setSubmitting(true);
     try {
+      // คำนวณ expression ของ source weight และ weighedTotal (เก็บเฉพาะกรณีเป็นจริง)
+      const sourceWeightResult = parseWeightExpression(sourceWeightInput);
+      const sourceWeightExpression = sourceWeightResult.isFormula ? sourceWeightResult.expression : undefined;
+      const weighedTotalResult = parseWeightExpression(weighedTotalInput);
+      const weighedTotalExpression = weighedTotalResult.isFormula ? weighedTotalResult.expression : undefined;
+
       const result = await createSortingBill({
         date: new Date(dateTime).toISOString(),
         sourceProductId: sortSourceProductId,
         sourceWeight: sortSourceWeight,
+        sourceWeightExpression,
         sourcePricePerKg: sortSourcePricePerKg,
         weighedTotal: sortWeighedTotal,
+        weighedTotalExpression,
         note: note || undefined,
         items: sortCartItems.map((item) => ({
           productId: item.productId,
           weight: item.weight,
+          weightExpression: item.weightExpression,
           isWaste: item.isWaste,
           sortedPricePerKg: item.sortedPricePerKg,
           bonusAmount: item.bonusAmount,
@@ -405,6 +416,16 @@ export function SortPage() {
                   }
                 }}
               />
+              {/* Live preview */}
+              {sourceWeightInput.trim() && (() => {
+                const preview = previewWeightValue(sourceWeightInput);
+                if (preview === null) return null;
+                return (
+                  <p className="text-xs text-emerald-700 font-medium">
+                    = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+                  </p>
+                );
+              })()}
             </div>
 
             {/* Source Price Per Kg - พนักงานใส่เอง */}
@@ -456,6 +477,16 @@ export function SortPage() {
                   }
                 }}
               />
+              {/* Live preview */}
+              {weighedTotalInput.trim() && (() => {
+                const preview = previewWeightValue(weighedTotalInput);
+                if (preview === null) return null;
+                return (
+                  <p className="text-xs text-emerald-700 font-medium">
+                    = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+                  </p>
+                );
+              })()}
             </div>
           </div>
 
@@ -549,6 +580,16 @@ export function SortPage() {
                   }
                 }}
               />
+              {/* Live preview */}
+              {itemWeight.trim() && (() => {
+                const preview = previewWeightValue(itemWeight);
+                if (preview === null) return null;
+                return (
+                  <p className="text-xs text-emerald-700 font-medium">
+                    = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+                  </p>
+                );
+              })()}
             </div>
 
             {/* Sorted Price - พนักงานใส่เอง */}
@@ -665,7 +706,12 @@ export function SortPage() {
                         </TableCell>
                         <TableCell className="font-medium">{item.productName}</TableCell>
                         <TableCell className="text-right">
-                          {formatWeight(item.weight)}
+                          <div className="font-medium">{formatWeight(item.weight)}</div>
+                          {item.weightExpression && (
+                            <div className="text-[11px] text-gray-400">
+                              {formulaHint(item.weightExpression)}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-center">
                           {item.isWaste ? (

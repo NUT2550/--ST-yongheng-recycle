@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
+import { isRealFormula } from '@/lib/safe-math';
 
 // Helper: Deduct stock using FIFO and return weighted average cost
 async function deductStockFIFO(
@@ -63,20 +64,25 @@ export async function POST(request: NextRequest) {
       date,
       sourceProductId,
       sourceWeight,
+      sourceWeightExpression,
       sourcePricePerKg,
       weighedTotal,
+      weighedTotalExpression,
       note,
       items,
     } = body as {
       date: string;
       sourceProductId: string;
       sourceWeight: number;
+      sourceWeightExpression?: string;
       sourcePricePerKg: number;
       weighedTotal: number;
+      weighedTotalExpression?: string;
       note?: string;
       items: Array<{
         productId: string;
         weight: number;
+        weightExpression?: string;
         isWaste: boolean;
         sortedPricePerKg: number;
         bonusAmount: number;
@@ -127,10 +133,13 @@ export async function POST(request: NextRequest) {
       const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
       const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
 
-      // Build sorting items with new bonus fields
+      // Build sorting items with new bonus fields + weightExpression
       const sortingItems = items.map((item) => ({
         productId: item.productId,
         weight: item.weight,
+        weightExpression: isRealFormula(item.weightExpression)
+          ? item.weightExpression!.trim()
+          : null,
         isWaste: item.isWaste,
         costPerKg: item.isWaste ? 0 : sourceCostPerKg,
         totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
@@ -148,8 +157,14 @@ export async function POST(request: NextRequest) {
           date: new Date(date),
           sourceProductId,
           sourceWeight,
+          sourceWeightExpression: isRealFormula(sourceWeightExpression)
+            ? sourceWeightExpression!.trim()
+            : null,
           sourcePricePerKg: sourcePricePerKg || 0,
           weighedTotal: weighedTotal || 0,
+          weighedTotalExpression: isRealFormula(weighedTotalExpression)
+            ? weighedTotalExpression!.trim()
+            : null,
           lossWeight,
           lossCost,
           note: note || null,

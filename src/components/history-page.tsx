@@ -8,6 +8,7 @@ import {
 } from '@/lib/api';
 import { BuyBill, SellBill, SortingBill } from '@/lib/types';
 import { formatBaht, formatWeight, formatDate } from '@/lib/helpers';
+import { formulaHint } from '@/lib/safe-math';
 import {
   Card,
   CardContent,
@@ -316,8 +317,13 @@ function BuyBillCard({
                     {item.product.name}
                   </span>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-gray-500">
-                      {formatWeight(item.weight)}
+                    <span className="text-gray-500 text-right">
+                      <span className="block">{formatWeight(item.weight)}</span>
+                      {item.weightExpression && (
+                        <span className="block text-[10px] text-gray-400">
+                          {formulaHint(item.weightExpression)}
+                        </span>
+                      )}
                     </span>
                     <span className="text-gray-500">
                       @{formatBaht(item.pricePerKg)}
@@ -411,8 +417,13 @@ function SellBillCard({
                     {item.product.name}
                   </span>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-gray-500">
-                      {formatWeight(item.weight)}
+                    <span className="text-gray-500 text-right">
+                      <span className="block">{formatWeight(item.weight)}</span>
+                      {item.weightExpression && (
+                        <span className="block text-[10px] text-gray-400">
+                          {formulaHint(item.weightExpression)}
+                        </span>
+                      )}
                     </span>
                     <span className="text-gray-500">
                       @{formatBaht(item.pricePerKg)}
@@ -470,8 +481,13 @@ function SortBillCard({
                     </span>
                   </div>
                   <p className="text-xs text-gray-500">
-                    จาก: {bill.sourceProduct.name} · {formatWeight(bill.sourceWeight)} →{' '}
-                    {bill.items.length} รายการ
+                    จาก: {bill.sourceProduct.name} · {formatWeight(bill.sourceWeight)}
+                    {bill.sourceWeightExpression && (
+                      <span className="text-[10px] text-gray-400 ml-1">
+                        ({formulaHint(bill.sourceWeightExpression)})
+                      </span>
+                    )}{' '}
+                    → {bill.items.length} รายการ
                   </p>
                   {bill.lossWeight > 0 && (
                     <p className="text-xs text-red-500 mt-0.5">
@@ -513,8 +529,13 @@ function SortBillCard({
                     )}
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-gray-500">
-                      {formatWeight(item.weight)}
+                    <span className="text-gray-500 text-right">
+                      <span className="block">{formatWeight(item.weight)}</span>
+                      {item.weightExpression && (
+                        <span className="block text-[10px] text-gray-400">
+                          {formulaHint(item.weightExpression)}
+                        </span>
+                      )}
                     </span>
                     <span className="text-gray-500">
                       @{formatBaht(item.costPerKg)}
@@ -529,7 +550,14 @@ function SortBillCard({
             <Separator className="my-2" />
             <div className="flex justify-between text-xs text-gray-500">
               <span>น้ำหนักชั่งรวม</span>
-              <span>{formatWeight(bill.weighedTotal)}</span>
+              <span>
+                {formatWeight(bill.weighedTotal)}
+                {bill.weighedTotalExpression && (
+                  <span className="text-[10px] text-gray-400 ml-1">
+                    ({formulaHint(bill.weighedTotalExpression)})
+                  </span>
+                )}
+              </span>
             </div>
             {bill.lossWeight > 0 && (
               <div className="flex justify-between text-xs text-red-500">

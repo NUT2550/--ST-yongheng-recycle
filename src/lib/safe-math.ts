@@ -258,8 +258,55 @@ export function formatWeightWithFormula(weight: number, expression?: string): st
     const simpleNum = parseFloat(expression);
     const isSimple = !isNaN(simpleNum) && /^-?\d+(\.\d+)?$/.test(expression.trim());
     if (!isSimple) {
-      return `${formatted} (${expression.trim()})`;
+      return `${formatted} กก. (${expression.trim()})`;
     }
   }
-  return formatted;
+  return `${formatted} กก.`;
+}
+
+/**
+ * Returns the displayable formula suffix "จาก 860-3" if the expression is a
+ * real formula (not a plain number), otherwise returns an empty string.
+ *
+ * Use this in UI for the gray sub-line below the weight value.
+ */
+export function formulaHint(expression?: string | null): string {
+  if (!expression || !expression.trim()) return '';
+  const trimmed = expression.trim();
+  const simpleNum = parseFloat(trimmed);
+  const isSimple = !isNaN(simpleNum) && /^-?\d+(\.\d+)?$/.test(trimmed);
+  if (isSimple) return '';
+  return `จาก ${trimmed}`;
+}
+
+/**
+ * Lightweight live-preview helper used by input components.
+ * Returns null when the input is empty/invalid, otherwise returns the
+ * computed numeric value so the UI can show "= 857 กก." while typing.
+ *
+ * The original input string is preserved by the caller — this function
+ * only computes the preview value; it never mutates the input.
+ */
+export function previewWeightValue(input: string): number | null {
+  if (!input || !input.trim()) return null;
+  const result = parseWeightExpression(input);
+  if (result.error) return null;
+  if (result.value <= 0) return null;
+  return result.value;
+}
+
+/**
+ * Returns true if the given expression is a real formula (contains operators
+ * or parentheses), false if it's a plain number or empty.
+ *
+ * Used by API routes to decide whether to store weightExpression:
+ * - Plain number "857" → return false → store null
+ * - Formula "860-3"   → return true  → store the expression
+ */
+export function isRealFormula(expression?: string | null): boolean {
+  if (!expression || !expression.trim()) return false;
+  const trimmed = expression.trim();
+  const simpleNum = parseFloat(trimmed);
+  const isSimple = !isNaN(simpleNum) && /^-?\d+(\.\d+)?$/.test(trimmed);
+  return !isSimple;
 }

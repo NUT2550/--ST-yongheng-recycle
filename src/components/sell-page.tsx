@@ -46,7 +46,7 @@ import {
 } from '@/components/ui/dialog';
 import { Coins, Plus, Trash2, Loader2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
-import { parseWeightExpression } from '@/lib/safe-math';
+import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 
 export function SellPage() {
   const {
@@ -193,6 +193,7 @@ export function SellPage() {
       productId: selectedProductId,
       productName: selectedProduct?.name || '',
       weight: w,
+      weightExpression: weightResult.isFormula ? weightResult.expression : undefined,
       pricePerKg: p,
       totalAmount: w * p,
       availableWeight: availableWeight - currentCartWeight - w,
@@ -202,7 +203,8 @@ export function SellPage() {
     setSelectedProductId('');
     setWeight('');
     setPricePerKg('');
-    toast.success(`เพิ่ม "${item.productName}" ลงตะกร้าแล้ว`);
+    const formulaHintStr = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
+    toast.success(`เพิ่ม "${item.productName}" ลงตะกร้าแล้ว${formulaHintStr}`);
   };
 
   // Create customer
@@ -255,6 +257,7 @@ export function SellPage() {
         items: sellCartItems.map((item) => ({
           productId: item.productId,
           weight: item.weight,
+          weightExpression: item.weightExpression,
           pricePerKg: item.pricePerKg,
         })),
       });
@@ -357,7 +360,17 @@ export function SellPage() {
                   }
                 }}
               />
-              {selectedProduct && weight && (
+              {/* Live preview: แสดงผลลัพธ์ทันทีขณะพิมพ์ */}
+              {weight.trim() && (() => {
+                const preview = previewWeightValue(weight);
+                if (preview === null) return null;
+                return (
+                  <p className="text-xs text-emerald-700 font-medium">
+                    = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+                  </p>
+                );
+              })()}
+              {selectedProduct && weight.trim() && (
                 <p className="text-xs text-gray-500">
                   มีสต๊อก: {formatWeight(selectedProduct.stock?.totalWeight ?? 0)}
                 </p>
@@ -434,7 +447,12 @@ export function SellPage() {
                         </TableCell>
                         <TableCell className="font-medium">{item.productName}</TableCell>
                         <TableCell className="text-right">
-                          {formatWeight(item.weight)}
+                          <div className="font-medium">{formatWeight(item.weight)}</div>
+                          {item.weightExpression && (
+                            <div className="text-[11px] text-gray-400">
+                              {formulaHint(item.weightExpression)}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           {formatBaht(item.pricePerKg)}

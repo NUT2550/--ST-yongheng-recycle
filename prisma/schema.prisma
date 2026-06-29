@@ -62,14 +62,15 @@ model BuyBill {
 }
 
 model BuyBillItem {
-  id          String  @id @default(cuid())
-  buyBillId   String
-  buyBill     BuyBill @relation(fields: [buyBillId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product @relation(fields: [productId], references: [id])
-  weight      Float
-  pricePerKg  Float
-  totalAmount Float
+  id               String  @id @default(cuid())
+  buyBillId        String
+  buyBill          BuyBill @relation(fields: [buyBillId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product @relation(fields: [productId], references: [id])
+  weight           Float
+  weightExpression String? // สูตรที่ผู้ใช้พิมพ์ เช่น "860-3" (null = กรอกตัวเลขตรงๆ)
+  pricePerKg       Float
+  totalAmount      Float
 }
 
 model SellBill {
@@ -92,38 +93,41 @@ model SellBill {
 }
 
 model SellBillItem {
-  id          String   @id @default(cuid())
-  sellBillId  String
-  sellBill    SellBill @relation(fields: [sellBillId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  weight      Float
-  pricePerKg  Float
-  totalAmount Float
-  costPerKg   Float    @default(0)
-  totalCost   Float    @default(0)
+  id               String   @id @default(cuid())
+  sellBillId       String
+  sellBill         SellBill @relation(fields: [sellBillId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id])
+  weight           Float
+  weightExpression String?  // สูตรที่ผู้ใช้พิมพ์ เช่น "860-3"
+  pricePerKg       Float
+  totalAmount      Float
+  costPerKg        Float    @default(0)
+  totalCost        Float    @default(0)
 }
 
 model SortingBill {
-  id               String            @id @default(cuid())
-  billNumber       String?           @unique
-  date             DateTime          @default(now())
-  sourceProductId  String
-  sourceProduct    Product           @relation("SortingSource", fields: [sourceProductId], references: [id])
-  sourceWeight     Float
-  sourcePricePerKg Float             @default(0)
-  weighedTotal     Float             @default(0)
-  lossWeight       Float             @default(0)
-  lossCost         Float             @default(0)
-  note             String?
-  items            SortingBillItem[]
-  bonuses          SortingBonus[]
-  isCancelled      Boolean           @default(false)
-  cancelledAt      DateTime?
-  cancelledBy      String?
-  cancelReason     String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  id                     String            @id @default(cuid())
+  billNumber             String?           @unique
+  date                   DateTime          @default(now())
+  sourceProductId        String
+  sourceProduct          Product           @relation("SortingSource", fields: [sourceProductId], references: [id])
+  sourceWeight           Float
+  sourceWeightExpression String?           // สูตรน้ำหนักต้นทาง เช่น "68.4-0.2"
+  sourcePricePerKg       Float             @default(0) // ราคารับซื้อสินค้าต้นทาง (พนักงานใส่, ใช้คิดโบนัส)
+  weighedTotal           Float             @default(0)
+  weighedTotalExpression String?           // สูตรน้ำหนักชั่งรวม
+  lossWeight             Float             @default(0)
+  lossCost               Float             @default(0)
+  note                   String?
+  items                  SortingBillItem[]
+  bonuses                SortingBonus[]
+  isCancelled            Boolean           @default(false)
+  cancelledAt            DateTime?
+  cancelledBy            String?
+  cancelReason           String?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
 }
 
 model SortingBillItem {
@@ -133,6 +137,7 @@ model SortingBillItem {
   productId        String
   product          Product      @relation(fields: [productId], references: [id])
   weight           Float
+  weightExpression String?      // สูตรน้ำหนักที่คัดแยกได้ เช่น "22-0.2"
   isWaste          Boolean      @default(false)
   costPerKg        Float        @default(0) // ต้นทุน FIFO (บัญชี)
   totalCost        Float        @default(0)

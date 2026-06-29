@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
+import { isRealFormula } from '@/lib/safe-math';
 
 // POST /api/buy-bills - Create a buy bill
 export async function POST(request: NextRequest) {
@@ -18,7 +19,12 @@ export async function POST(request: NextRequest) {
       date: string;
       isCredit: boolean;
       note?: string;
-      items: Array<{ productId: string; weight: number; pricePerKg: number }>;
+      items: Array<{
+        productId: string;
+        weight: number;
+        weightExpression?: string;
+        pricePerKg: number;
+      }>;
     };
 
     if (!items || items.length === 0) {
@@ -42,6 +48,10 @@ export async function POST(request: NextRequest) {
       return {
         productId: item.productId,
         weight: item.weight,
+        // เก็บ expression เฉพาะกรณีที่เป็นจริง (isRealFormula) — plain number เก็บ null
+        weightExpression: isRealFormula(item.weightExpression)
+          ? item.weightExpression!.trim()
+          : null,
         pricePerKg: item.pricePerKg,
         totalAmount: Math.round(itemTotal * 100) / 100,
       };
