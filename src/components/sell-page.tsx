@@ -413,6 +413,8 @@ export function SellPage() {
               products={availableProducts}
               groupedProducts={groupedProductsForCombobox}
               billType="sell"
+              buttonText="นำเข้าจาก Excel"
+              dialogTitle="นำเข้ารายการขายจาก Excel"
               onImport={(items, importBillDate) => {
                 let added = 0;
                 let blocked = 0;
