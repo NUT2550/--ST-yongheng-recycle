@@ -415,3 +415,83 @@ Stage Summary:
 - Secret ที่เคยรั่ว (Supabase password) ควร rotate ทันทีเมื่อมีโอกาส
 - JWT_SECRET ใน Vercel env vars ยังใช้ค่าเดิม — ควร rotate ด้วย
 
+
+---
+
+## Task ID: 20
+## Agent: Main
+## Task: Fix History Cancel Visibility and Refresh Behavior
+
+### Problem
+Owner clicked "ยกเลิกบิล" on a History bill, but the bill did not disappear from the History list. Soft-cancel is correct (audit/accounting), but the UI must clearly show cancelled status and hide cancelled bills by default.
+
+### Root Cause Analysis
+- The DELETE endpoints (buy/sell/sorting bills) correctly perform soft-cancel: set `isCancelled=true`, `cancelledAt`, `cancelledBy`, `cancelReason`, restore stock, cancel credit entries, write audit log.
+- BUT the GET list endpoints returned ALL bills with NO `isCancelled` filter — so cancelled bills continued to appear in the history list as if still active.
+- The frontend TypeScript types (`BuyBill`, `SellBill`, `SortingBill`) lacked `isCancelled`/`cancelledAt`/`cancelReason` fields, so the UI had no way to distinguish cancelled bills.
+- No toggle existed to show/hide cancelled bills.
+
+### Production Verification (before fix)
+Logged into production (01/2550) and queried all bill endpoints:
+- BuyBill: 7 total, 0 cancelled
+- SellBill: 7 total, 0 cancelled
+- SortingBill: 131 total, **3 cancelled** (isCancelled=true):
+  - cmqtn453u0001l4043ed8pmlo (2026-06-25, reason: null)
+  - cmqp2u5ep0017l404k9d6vngu (2026-06-22, reason: null)
+  - rdb_0127 (2026-06-15, reason: null)
+- Confirmed: the owner's cancel DID succeed (isCancelled=true in DB), but the bills still appeared in history because GET had no filter.
+
+### Changes Made
+
+**Backend (API filter support):**
+1. `src/app/api/buy-bills/route.ts` GET: filter `isCancelled: false` by default; `?includeCancelled=true` returns all. `count()` uses same `where`.
+2. `src/app/api/sell-bills/route.ts` GET: same filter logic.
+3. `src/app/api/sorting-bills/route.ts` GET: same filter logic.
+4. `src/app/api/dashboard/route.ts`: `recentBuyBills` and `recentSellBills` now also filter `isCancelled: false`.
+
+**Frontend types + API helpers:**
+5. `src/lib/types.ts`: added `isCancelled`, `cancelledAt`, `cancelReason` to `BuyBill`, `SellBill`, `SortingBill`.
+6. `src/lib/api.ts`: `fetchBuyBills`/`fetchSellBills`/`fetchSortingBills` accept `includeCancelled` param.
+
+**History page UI:**
+7. `src/components/history-page.tsx`:
+   - Added `showCancelled` state (default false) + Switch toggle "แสดงบิลที่ยกเลิกแล้ว"
+   - Loaders pass `includeCancelled` based on toggle
+   - Toggle change resets page to 1 + reloads
+   - `CancelledBadge` component (red badge with Ban icon) shown in collapsed header
+   - `CancelledNotice` component shows cancel reason + cancelledAt in expanded view
+   - Cancelled bills: red border, muted bg, gray strikethrough amount
+   - `BillActions` accepts `isCancelled` prop; disables แก้ไข + ยกเลิกบิล buttons when cancelled
+   - Cancel flow unchanged: dialog → reason → confirm → success toast → dialog closes → onRefresh() refetches (now filtered, so bill disappears)
+
+### Local Testing (Agent Browser)
+- Set up local SQLite: added isCancelled/cancelledAt/cancelledBy/cancelReason columns, regenerated prisma client (temp sqlite provider), pushed schema.
+- Created 2 test buy bills, cancelled 1 via API, cancelled 1 via UI.
+- Verified:
+  1. ✅ Default view hides cancelled bills (only active bill shown)
+  2. ✅ Toggle ON shows cancelled bills with "ยกเลิกแล้ว" badge
+  3. ✅ Cancelled bill expanded: shows reason + cancelledAt timestamp
+  4. ✅ แก้ไข + ยกเลิกบิล buttons disabled for cancelled bills
+  5. ✅ Cancel via UI: dialog → reason → confirm → bill disappears from default view immediately
+  6. ✅ Totals exclude cancelled bills (count=0 when all cancelled, count=2 when toggle ON)
+  7. ✅ No console/runtime errors in dev log
+
+### Lint + Type Check
+- `bun run lint`: PASS (clean)
+- `npx tsc --noEmit`: all isCancelled/billNumber/auditLog errors resolved after prisma generate; remaining errors are pre-existing unrelated (examples/, skills/, xlsx/iconv-lite modules)
+
+### Commit
+- Local commit: 39c481d "fix: hide cancelled bills by default in history"
+- schema.prisma restored to postgresql provider after local testing
+- db/custom.db reverted to committed state (local test data not committed)
+
+### Push Status
+- ⚠️ PUSH BLOCKED: no GitHub token / SSH key / Vercel CLI available in this environment.
+- The previously-exposed token (ghp_3sXD...) was recommended for revocation (security).
+- Commit 39c481d is ready on local main branch; owner needs to push or provide a token.
+
+### Stage Summary
+- Root cause confirmed: GET list endpoints had no isCancelled filter (cancel worked, but bills stayed visible).
+- Fix complete: backend filters by default, frontend hides + toggles + badges + disables buttons.
+- 3 cancelled sorting bills exist in production (confirmed via API query) — after deploy, they will be hidden by default and shown with badge when toggle is ON.
+- Deploy pending on push credentials.
