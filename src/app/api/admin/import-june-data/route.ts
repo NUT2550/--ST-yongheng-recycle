@@ -32,7 +32,13 @@ const MANUAL_MAP: Record<string, string> = {
   'หนาติดสี': 'หนาติดสี',
 };
 
-const norm = (s: string) => s.replace(/\s+/g, '').replace(/[(),[\].,]/g, '').toLowerCase();
+const norm = (s: string) => s
+  .replace(/\s+/g, '')
+  .replace(/[(),[\].,]/g, '')
+  // Normalize Thai vowel marks: replace ี (sara ii, U+0E35) with ิ (sara i, U+0E34)
+  // This handles the อลูมิเneียม vs อลูมีเneียม spelling difference
+  .replace(/\u0E35/g, '\u0E34')
+  .toLowerCase();
 
 function matchProduct(excelName: string, products: Array<{ id: string; name: string }>): string | null {
   // Check manual map first
@@ -40,14 +46,23 @@ function matchProduct(excelName: string, products: Array<{ id: string; name: str
     const mapped = MANUAL_MAP[excelName];
     const found = products.find(p => p.name === mapped);
     if (found) return found.id;
+    // Try normalized match for manual map value
+    const mappedNorm = norm(mapped);
+    for (const p of products) {
+      if (norm(p.name) === mappedNorm) return p.id;
+    }
   }
   const excelNorm = norm(excelName);
+  // Exact normalized match
   for (const p of products) {
     if (norm(p.name) === excelNorm) return p.id;
   }
-  for (const p of products) {
-    const pNorm = norm(p.name);
-    if (pNorm.includes(excelNorm) || excelNorm.includes(pNorm)) return p.id;
+  // Contains match (either direction) — but only if both are at least 4 chars to avoid false positives
+  if (excelNorm.length >= 4) {
+    for (const p of products) {
+      const pNorm = norm(p.name);
+      if (pNorm.length >= 4 && (pNorm.includes(excelNorm) || excelNorm.includes(pNorm))) return p.id;
+    }
   }
   return null;
 }
