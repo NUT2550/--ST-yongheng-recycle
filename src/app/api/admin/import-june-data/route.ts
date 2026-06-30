@@ -116,6 +116,31 @@ export async function POST(request: NextRequest) {
     // Get all products for matching
     const allProducts = await db.product.findMany({ select: { id: true, name: true } });
 
+    // Pre-fetch all stock lots in one query for stock validation
+    const allStockLots = await db.stockLot.findMany({
+      where: { remainingWeight: { gt: 0 } },
+      select: { productId: true, remainingWeight: true, costPerKg: true, id: true, dateAdded: true },
+      orderBy: { dateAdded: 'asc' },
+    });
+
+    // Build in-memory stock map: productId → total available
+    const stockMap = new Map<string, number>();
+    for (const lot of allStockLots) {
+      stockMap.set(lot.productId, (stockMap.get(lot.productId) || 0) + lot.remainingWeight);
+    }
+
+    // Helper: check stock availability in-memory
+    function checkStock(productId: string, weight: number): boolean {
+      const available = stockMap.get(productId) || 0;
+      return available >= weight;
+    }
+
+    // Helper: deduct stock in-memory (for dry-run simulation)
+    function deductStock(productId: string, weight: number): void {
+      const current = stockMap.get(productId) || 0;
+      stockMap.set(productId, Math.max(0, current - weight));
+    }
+
     // === BUY SUMMARY DATA ===
     // Hardcoded from Excel parse — 7 sheets, 148 rows (123 matched, 25 unmatched→mapped via MANUAL_MAP)
     const BUY_DATA: Array<{
@@ -502,11 +527,10 @@ export async function POST(request: NextRequest) {
           report.unmatchedProducts.push(`SELL_SUMMARY ${sellSheet.sheet}: ${item.name}`);
           continue;
         }
-        // Check stock
-        const lots = await db.stockLot.findMany({ where: { productId, remainingWeight: { gt: 0 } }, orderBy: { dateAdded: 'asc' } });
-        const available = lots.reduce((s, l) => s + l.remainingWeight, 0);
+        // Check stock (in-memory)
+        const available = stockMap.get(productId) || 0;
         if (available < item.weight) {
-          report.stockErrors.push(`SELL_SUMMARY ${sellSheet.sheet}: ${item.name} needs ${item.weight}kg, available ${available}kg — SKIPPED`);
+          report.stockErrors.push(`SELL_SUMMARY ${sellSheet.sheet}: ${item.name} needs ${item.weight}kg, available ${available.toFixed(2)}kg — SKIPPED`);
           continue;
         }
         billItems.push({
@@ -520,10 +544,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Simulate stock deduction in-memory (for both dry-run and production)
+      for (const item of billItems) {
+        deductStock(item.productId, item.weight);
+      }
+
       if (!DRY_RUN) {
-        // FIFO deduction
+        // Real FIFO deduction via DB transaction
         let totalAmount = 0, totalCost = 0;
-        const sellItems: Array<any> = [];
+        const sellItems: Array<{ productId: string; weight: number; pricePerKg: number; totalAmount: number; costPerKg: number; totalCost: number }> = [];
         for (const item of billItems) {
           let remaining = item.weight;
           let itemCost = 0;
@@ -574,10 +603,9 @@ export async function POST(request: NextRequest) {
           report.unmatchedProducts.push(`SELL_DETAIL ${detail.customer} ${detail.date}: ${item.name}`);
           continue;
         }
-        const lots = await db.stockLot.findMany({ where: { productId, remainingWeight: { gt: 0 } }, orderBy: { dateAdded: 'asc' } });
-        const available = lots.reduce((s, l) => s + l.remainingWeight, 0);
+        const available = stockMap.get(productId) || 0;
         if (available < item.weight) {
-          report.stockErrors.push(`SELL_DETAIL ${detail.customer} ${detail.date}: ${item.name} needs ${item.weight}kg, available ${available}kg — SKIPPED`);
+          report.stockErrors.push(`SELL_DETAIL ${detail.customer} ${detail.date}: ${item.name} needs ${item.weight}kg, available ${available.toFixed(2)}kg — SKIPPED`);
           continue;
         }
         billItems.push({ productId, weight: item.weight, pricePerKg: item.pricePerKg, totalAmount: item.weight * item.pricePerKg });
@@ -588,9 +616,15 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
+      // Simulate stock deduction in-memory
+      for (const item of billItems) {
+        deductStock(item.productId, item.weight);
+      }
+
       if (!DRY_RUN) {
+        // Real FIFO deduction
         let totalAmount = 0, totalCost = 0;
-        const sellItems: Array<any> = [];
+        const sellItems: Array<{ productId: string; weight: number; pricePerKg: number; totalAmount: number; costPerKg: number; totalCost: number }> = [];
         for (const item of billItems) {
           let remaining = item.weight;
           let itemCost = 0;
