@@ -129,9 +129,13 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const skip = (page - 1) * limit;
+    // By default hide cancelled bills. Pass ?includeCancelled=true to include them.
+    const includeCancelled = searchParams.get('includeCancelled') === 'true';
+    const where = includeCancelled ? {} : { isCancelled: false };
 
     const [bills, total] = await Promise.all([
       db.buyBill.findMany({
+        where,
         include: {
           items: {
             include: { product: { select: { id: true, name: true } } },
@@ -141,7 +145,7 @@ export async function GET(request: NextRequest) {
         skip,
         take: limit,
       }),
-      db.buyBill.count(),
+      db.buyBill.count({ where }),
     ]);
 
     return NextResponse.json({ bills, total });

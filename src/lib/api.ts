@@ -84,33 +84,39 @@ export async function fetchDashboard(): Promise<DashboardData> {
 
 export async function fetchBuyBills(
   page?: number,
-  limit?: number
+  limit?: number,
+  includeCancelled?: boolean
 ): Promise<{ bills: BuyBill[]; total: number }> {
   const params = new URLSearchParams();
   if (page) params.set('page', String(page));
   if (limit) params.set('limit', String(limit));
+  if (includeCancelled) params.set('includeCancelled', 'true');
   const query = params.toString() ? `?${params.toString()}` : '';
   return fetchJSON<{ bills: BuyBill[]; total: number }>(`/buy-bills${query}`);
 }
 
 export async function fetchSellBills(
   page?: number,
-  limit?: number
+  limit?: number,
+  includeCancelled?: boolean
 ): Promise<{ bills: SellBill[]; total: number }> {
   const params = new URLSearchParams();
   if (page) params.set('page', String(page));
   if (limit) params.set('limit', String(limit));
+  if (includeCancelled) params.set('includeCancelled', 'true');
   const query = params.toString() ? `?${params.toString()}` : '';
   return fetchJSON<{ bills: SellBill[]; total: number }>(`/sell-bills${query}`);
 }
 
 export async function fetchSortingBills(
   page?: number,
-  limit?: number
+  limit?: number,
+  includeCancelled?: boolean
 ): Promise<{ bills: SortingBill[]; total: number }> {
   const params = new URLSearchParams();
   if (page) params.set('page', String(page));
   if (limit) params.set('limit', String(limit));
+  if (includeCancelled) params.set('includeCancelled', 'true');
   const query = params.toString() ? `?${params.toString()}` : '';
   return fetchJSON<{ bills: SortingBill[]; total: number }>(
     `/sorting-bills${query}`

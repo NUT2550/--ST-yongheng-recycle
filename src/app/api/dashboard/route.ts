@@ -48,8 +48,9 @@ export async function GET(request: NextRequest) {
         },
         select: { totalAmount: true, items: { select: { weight: true } } },
       }),
-      // Recent buy bills
+      // Recent buy bills (exclude cancelled)
       db.buyBill.findMany({
+        where: { isCancelled: false },
         include: {
           items: {
             include: {
@@ -60,8 +61,9 @@ export async function GET(request: NextRequest) {
         orderBy: { date: 'desc' },
         take: 5,
       }),
-      // Recent sell bills
+      // Recent sell bills (exclude cancelled)
       db.sellBill.findMany({
+        where: { isCancelled: false },
         include: {
           items: {
             include: {

@@ -18,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Collapsible,
@@ -46,6 +47,7 @@ import {
   Pencil,
   Loader2,
   AlertTriangle,
+  Ban,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -55,6 +57,7 @@ const PAGE_SIZE = 10;
 export function HistoryPage() {
   const [activeTab, setActiveTab] = useState<HistoryTab>('buy');
   const [page, setPage] = useState(1);
+  const [showCancelled, setShowCancelled] = useState(false);
 
   // Buy
   const [buyBills, setBuyBills] = useState<BuyBill[]>([]);
@@ -83,7 +86,7 @@ export function HistoryPage() {
   const loadBuyBills = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchBuyBills(page, PAGE_SIZE);
+      const res = await fetchBuyBills(page, PAGE_SIZE, showCancelled);
       setBuyBills(res.bills);
       setBuyTotal(res.total);
     } catch {
@@ -91,12 +94,12 @@ export function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, showCancelled]);
 
   const loadSellBills = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchSellBills(page, PAGE_SIZE);
+      const res = await fetchSellBills(page, PAGE_SIZE, showCancelled);
       setSellBills(res.bills);
       setSellTotal(res.total);
     } catch {
@@ -104,12 +107,12 @@ export function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, showCancelled]);
 
   const loadSortBills = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchSortingBills(page, PAGE_SIZE);
+      const res = await fetchSortingBills(page, PAGE_SIZE, showCancelled);
       setSortBills(res.bills);
       setSortTotal(res.total);
     } catch {
@@ -117,18 +120,24 @@ export function HistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [page]);
+  }, [page, showCancelled]);
 
-  // Load data on tab/page change
+  // Load data on tab/page/showCancelled change
   useEffect(() => {
     if (activeTab === 'buy') loadBuyBills();
     else if (activeTab === 'sell') loadSellBills();
     else loadSortBills();
-  }, [activeTab, page, loadBuyBills, loadSellBills, loadSortBills]);
+  }, [activeTab, page, showCancelled, loadBuyBills, loadSellBills, loadSortBills]);
 
   // Reset page on tab change
   const handleTabChange = (tab: string) => {
     setActiveTab(tab as HistoryTab);
+    setPage(1);
+    setExpandedIds(new Set());
+  };
+
+  const handleToggleCancelled = (checked: boolean) => {
+    setShowCancelled(checked);
     setPage(1);
     setExpandedIds(new Set());
   };
@@ -142,9 +151,23 @@ export function HistoryPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">ประวัติรายการ</h2>
-        <p className="text-gray-500 mt-1">ดูประวัติรับซื้อ ขาย และคัดแยก</p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">ประวัติรายการ</h2>
+          <p className="text-gray-500 mt-1">ดูประวัติรับซื้อ ขาย และคัดแยก</p>
+        </div>
+        {/* Toggle: show cancelled bills */}
+        <label className="flex items-center gap-2 cursor-pointer select-none px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 transition-colors self-start">
+          <Switch
+            checked={showCancelled}
+            onCheckedChange={handleToggleCancelled}
+            aria-label="แสดงบิลที่ยกเลิกแล้ว"
+          />
+          <span className="text-sm text-gray-700 flex items-center gap-1">
+            <Ban className="h-3.5 w-3.5 text-red-500" />
+            แสดงบิลที่ยกเลิกแล้ว
+          </span>
+        </label>
       </div>
 
       {/* Filter Tabs */}
@@ -276,6 +299,36 @@ function BillList({
   );
 }
 
+/* ---- Cancelled badge for collapsed header ---- */
+function CancelledBadge() {
+  return (
+    <Badge className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px] px-1.5 py-0 shrink-0">
+      <Ban className="h-2.5 w-2.5 mr-0.5" />
+      ยกเลิกแล้ว
+    </Badge>
+  );
+}
+
+/* ---- Cancelled notice block (shown in expanded view) ---- */
+function CancelledNotice({ reason, cancelledAt }: { reason: string | null; cancelledAt: string | null }) {
+  return (
+    <div className="mt-2 p-2.5 rounded-md bg-red-50 border border-red-200">
+      <div className="flex items-center gap-1.5 text-red-700 font-medium text-xs">
+        <Ban className="h-3.5 w-3.5" />
+        ยกเลิกแล้ว
+        {cancelledAt && (
+          <span className="text-red-500 font-normal">
+            · {formatDate(cancelledAt)}
+          </span>
+        )}
+      </div>
+      {reason && (
+        <p className="text-red-600 mt-1 text-xs">เหตุผล: {reason}</p>
+      )}
+    </div>
+  );
+}
+
 /* ---- Buy Bill Card ---- */
 function BuyBillCard({
   bill,
@@ -288,17 +341,18 @@ function BuyBillCard({
   toggleExpand: (id: string) => void;
   onRefresh: () => void;
 }) {
+  const cancelled = bill.isCancelled === true;
   return (
-    <Card>
+    <Card className={cancelled ? 'border-red-200 bg-red-50/30' : ''}>
       <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(bill.id)}>
         <CollapsibleTrigger asChild>
           <button className="w-full text-left">
             <CardContent className="p-3 sm:p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <ShoppingCart className="h-4 w-4 text-green-600 shrink-0" />
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
                       {formatDate(bill.date)}
                     </span>
                     {bill.isCredit && (
@@ -309,13 +363,14 @@ function BuyBillCard({
                         เครดิต
                       </Badge>
                     )}
+                    {cancelled && <CancelledBadge />}
                   </div>
                   <p className="text-xs text-gray-500">
                     {bill.items.length} รายการ
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-sm font-bold text-green-700">
+                  <span className={`text-sm font-bold ${cancelled ? 'text-gray-400 line-through' : 'text-green-700'}`}>
                     {formatBaht(bill.totalAmount)} บาท
                   </span>
                   <ChevronDown
@@ -362,7 +417,10 @@ function BuyBillCard({
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
             )}
-            <BillActions billId={bill.id} billType="buy" onRefresh={onRefresh} />
+            {cancelled && (
+              <CancelledNotice reason={bill.cancelReason} cancelledAt={bill.cancelledAt} />
+            )}
+            <BillActions billId={bill.id} billType="buy" onRefresh={onRefresh} isCancelled={cancelled} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -383,9 +441,10 @@ function SellBillCard({
   onRefresh: () => void;
 }) {
   const profit = bill.totalAmount - bill.totalCost;
+  const cancelled = bill.isCancelled === true;
 
   return (
-    <Card>
+    <Card className={cancelled ? 'border-red-200 bg-red-50/30' : ''}>
       <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(bill.id)}>
         <CollapsibleTrigger asChild>
           <button className="w-full text-left">
@@ -394,7 +453,7 @@ function SellBillCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Coins className="h-4 w-4 text-blue-600 shrink-0" />
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
                       {bill.customer ? bill.customer.name : formatDate(bill.date)}
                     </span>
                     {bill.isCredit && (
@@ -405,18 +464,19 @@ function SellBillCard({
                         เครดิต
                       </Badge>
                     )}
+                    {cancelled && <CancelledBadge />}
                   </div>
                   <p className="text-xs text-gray-500">
                     {formatDate(bill.date)} · {bill.items.length} รายการ
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-blue-700">
+                  <p className={`text-sm font-bold ${cancelled ? 'text-gray-400 line-through' : 'text-blue-700'}`}>
                     {formatBaht(bill.totalAmount)} บาท
                   </p>
                   <p
                     className={`text-xs font-medium ${
-                      profit >= 0 ? 'text-green-600' : 'text-red-600'
+                      cancelled ? 'text-gray-400 line-through' : profit >= 0 ? 'text-green-600' : 'text-red-600'
                     }`}
                   >
                     กำไร {formatBaht(profit)} บาท
@@ -476,7 +536,10 @@ function SellBillCard({
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
             )}
-            <BillActions billId={bill.id} billType="sell" onRefresh={onRefresh} />
+            {cancelled && (
+              <CancelledNotice reason={bill.cancelReason} cancelledAt={bill.cancelledAt} />
+            )}
+            <BillActions billId={bill.id} billType="sell" onRefresh={onRefresh} isCancelled={cancelled} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -496,19 +559,21 @@ function SortBillCard({
   toggleExpand: (id: string) => void;
   onRefresh: () => void;
 }) {
+  const cancelled = bill.isCancelled === true;
   return (
-    <Card>
+    <Card className={cancelled ? 'border-red-200 bg-red-50/30' : ''}>
       <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(bill.id)}>
         <CollapsibleTrigger asChild>
           <button className="w-full text-left">
             <CardContent className="p-3 sm:p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <RefreshCw className="h-4 w-4 text-purple-600 shrink-0" />
-                    <span className="text-sm font-medium text-gray-900">
+                    <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
                       {formatDate(bill.date)}
                     </span>
+                    {cancelled && <CancelledBadge />}
                   </div>
                   <p className="text-xs text-gray-500">
                     จาก: {bill.sourceProduct.name} · {formatWeight(bill.sourceWeight)}
@@ -598,7 +663,10 @@ function SortBillCard({
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
             )}
-            <BillActions billId={bill.id} billType="sort" onRefresh={onRefresh} />
+            {cancelled && (
+              <CancelledNotice reason={bill.cancelReason} cancelledAt={bill.cancelledAt} />
+            )}
+            <BillActions billId={bill.id} billType="sort" onRefresh={onRefresh} isCancelled={cancelled} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -607,7 +675,7 @@ function SortBillCard({
 }
 
 /* ---- Bill Actions Component (Cancel + Edit) ---- */
-function BillActions({ billId, billType, onRefresh }: { billId: string; billType: 'buy' | 'sell' | 'sort'; onRefresh: () => void }) {
+function BillActions({ billId, billType, onRefresh, isCancelled }: { billId: string; billType: 'buy' | 'sell' | 'sort'; onRefresh: () => void; isCancelled: boolean }) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -683,6 +751,7 @@ function BillActions({ billId, billType, onRefresh }: { billId: string; billType
         size="sm"
         className="text-xs"
         onClick={() => setEditOpen(true)}
+        disabled={isCancelled}
       >
         <Pencil className="h-3 w-3 mr-1" />
         แก้ไข
@@ -692,6 +761,7 @@ function BillActions({ billId, billType, onRefresh }: { billId: string; billType
         size="sm"
         className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
         onClick={() => setCancelOpen(true)}
+        disabled={isCancelled}
       >
         <Trash2 className="h-3 w-3 mr-1" />
         ยกเลิกบิล

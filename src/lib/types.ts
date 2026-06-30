@@ -60,6 +60,9 @@ export interface BuyBill {
   note: string | null;
   totalAmount: number;
   items: BuyBillItem[];
+  isCancelled: boolean;
+  cancelledAt: string | null;
+  cancelReason: string | null;
   createdAt: string;
 }
 
@@ -83,6 +86,9 @@ export interface SellBill {
   totalAmount: number;
   totalCost: number;
   items: SellBillItem[];
+  isCancelled: boolean;
+  cancelledAt: string | null;
+  cancelReason: string | null;
   createdAt: string;
 }
 
@@ -112,6 +118,9 @@ export interface SortingBill {
   lossCost: number;
   note: string | null;
   items: SortingBillItem[];
+  isCancelled: boolean;
+  cancelledAt: string | null;
+  cancelReason: string | null;
   createdAt: string;
 }
 
