@@ -90,21 +90,7 @@ export function SortPage() {
     }
   }, [selectedProductId, products]);
 
-  // Steel products (source) - only STEEL category
-  const steelProducts = useMemo(
-    () => products.filter((p) => p.category.type === 'STEEL'),
-    [products]
-  );
-
-  const steelProductsForCombobox = useMemo((): ProductComboboxGroup[] => {
-    return [{
-      categoryId: 'steel',
-      categoryName: 'เหล็ก',
-      products: steelProducts,
-    }];
-  }, [steelProducts]);
-
-  // Group all products by category for sorted items dropdown
+  // Group all products by category for sorted items dropdown + source dropdown
   const groupedProducts = useMemo(() => {
     const groups: Record<string, { category: Product['category']; products: Product[] }> = {};
     for (const product of products) {
