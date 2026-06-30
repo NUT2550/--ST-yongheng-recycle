@@ -2,12 +2,10 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 
-// POST /api/products/sync — Admin-only endpoint to sync product master
-// This is a TEMPORARY endpoint for one-time product master sync.
-// Should be removed after sync is complete.
+// POST /api/products/sync — Admin-only, temporary endpoint for product master sync
+// Optimized for Vercel serverless timeout (parallel queries)
 
 export async function POST(request: NextRequest) {
-  // Admin-only
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
   const payload = await verifyToken(token);
@@ -18,19 +16,20 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const DRY_RUN = body.dryRun !== false; // default: dry-run
+    const DRY_RUN = body.dryRun !== false;
 
-    // === BEFORE COUNTS ===
-    const before = {
-      products: await db.product.count(),
-      categories: await db.productCategory.count(),
-      stockLots: await db.stockLot.count(),
-      buyItems: await db.buyBillItem.count(),
-      sellItems: await db.sellBillItem.count(),
-      sortItems: await db.sortingBillItem.count(),
-    };
+    // === BEFORE COUNTS (parallel) ===
+    const [beforeProducts, beforeCategories, beforeStockLots, beforeBuyItems, beforeSellItems, beforeSortItems] = await Promise.all([
+      db.product.count(),
+      db.productCategory.count(),
+      db.stockLot.count(),
+      db.buyBillItem.count(),
+      db.sellBillItem.count(),
+      db.sortingBillItem.count(),
+    ]);
+    const before = { products: beforeProducts, categories: beforeCategories, stockLots: beforeStockLots, buyItems: beforeBuyItems, sellItems: beforeSellItems, sortItems: beforeSortItems };
 
-    // === CATEGORIES (9) ===
+    // === CATEGORIES (parallel findUnique) ===
     const CATEGORIES = [
       { name: 'เหล็ก', type: 'STEEL', sortOrder: 1 },
       { name: 'ทองแดง', type: 'METAL', sortOrder: 2 },
@@ -43,25 +42,35 @@ export async function POST(request: NextRequest) {
       { name: 'พลาสติก', type: 'METAL', sortOrder: 9 },
     ];
 
+    const existingCats = await Promise.all(
+      CATEGORIES.map(c => db.productCategory.findUnique({ where: { name: c.name } }))
+    );
+
+    const categoryMap: Record<string, string> = {};
     let categoriesCreated = 0;
     let categoriesExisted = 0;
-    const categoryMap: Record<string, string> = {};
+    const catsToCreate: typeof CATEGORIES = [];
 
-    for (const cat of CATEGORIES) {
-      const existing = await db.productCategory.findUnique({ where: { name: cat.name } });
-      if (existing) {
-        categoryMap[cat.name] = existing.id;
+    for (let i = 0; i < CATEGORIES.length; i++) {
+      if (existingCats[i]) {
+        categoryMap[CATEGORIES[i].name] = existingCats[i]!.id;
         categoriesExisted++;
       } else {
-        if (!DRY_RUN) {
-          const created = await db.productCategory.create({ data: { ...cat } });
-          categoryMap[cat.name] = created.id;
-        }
-        categoriesCreated++;
+        catsToCreate.push(CATEGORIES[i]);
       }
     }
 
-    // === RENAME MAP (40 products — rename by productId) ===
+    if (!DRY_RUN && catsToCreate.length > 0) {
+      const created = await db.$transaction(
+        catsToCreate.map(c => db.productCategory.create({ data: { ...c } }))
+      );
+      for (let i = 0; i < created.length; i++) {
+        categoryMap[catsToCreate[i].name] = created[i].id;
+      }
+    }
+    categoriesCreated = catsToCreate.length;
+
+    // === RENAME MAP (40 products) — batch findUnique ===
     const RENAME_MAP = [
       { productId: 'prod_mqgp995qaqfnykbbo5ziwi1t', newName: 'เหล็กหล่อชิ้นเล็ก', category: 'เหล็ก' },
       { productId: 'prod_mqgp99bt7vaj0jz2u837j3lm', newName: 'เหล็กหล่อ (ชิ้นใหญ่)', category: 'เหล็ก' },
@@ -81,9 +90,9 @@ export async function POST(request: NextRequest) {
       { productId: 'prod_mqgp9csvq0takfp04k5d2dv6', newName: 'อลูมิเนียมสายไฟ', category: 'อลูมิเนียม' },
       { productId: 'prod_mqgp9cyrr65cu9xaams1daoh', newName: 'อลูมิเนียมฉาก', category: 'อลูมิเนียม' },
       { productId: 'prod_mqgp9d5g7uiu7tttxza864tp', newName: 'อลูมิเนียมบาง', category: 'อลูมิเนียม' },
-      { productId: 'prod_mqgp9dbqtfx0j3mnsbl9mwix', newName: 'อลูมิเนียมอัลลอยด์', category: 'อลูมิเนียม' },
-      { productId: 'prod_mqgp9dhn9ryniksnud8q714g', newName: 'อลูมิเนียมล้อแม็ค', category: 'อลูมิเนียม' },
-      { productId: 'prod_mqgp9do7ui6p53xv2tbjq7tb', newName: 'อลูมิเนียมหล่อ', category: 'อลูมิเneียม' },
+      { productId: 'prod_mqgp9dbqtfx0j3mnsbl9mwix', newName: 'อลูมิเนียมอัลลอยด์', category: 'อลูมิเneียม' },
+      { productId: 'prod_mqgp9dhn9ryniksnud8q714g', newName: 'อลูมิเneียมล้อแม็ค', category: 'อลูมิเneียม' },
+      { productId: 'prod_mqgp9do7ui6p53xv2tbjq7tb', newName: 'อลูมิเneียมหล่อ', category: 'อลูมิเneียม' },
       { productId: 'prod_mqgp9duo294uh2l320pbg1ru', newName: 'อลูมิเneียมกระป๋อง', category: 'อลูมิเneียม' },
       { productId: 'prod_mqgp9e0y2ehae94h2mw403ns', newName: 'อลูมิเneียมฝาแกะ', category: 'อลูมิเneียม' },
       { productId: 'prod_mqgp9e6yxtg3mo8mf998qnf6', newName: 'อลูมิเneียมกะทะ', category: 'อลูมิเneียม' },
@@ -105,35 +114,40 @@ export async function POST(request: NextRequest) {
       { productId: 'prod_mqgp9hwdo411xly6wmmeyg86', newName: 'คอมดำ', category: 'อื่นๆ' },
     ];
 
+    // Batch fetch all products to rename
+    const renameProducts = await Promise.all(
+      RENAME_MAP.map(r => db.product.findUnique({ where: { id: r.productId } }))
+    );
+
+    // Batch fetch all conflict checks (by newName)
+    const conflictChecks = await Promise.all(
+      RENAME_MAP.map(r => db.product.findUnique({ where: { name: r.newName } }))
+    );
+
     let productsRenamed = 0;
     let productsRenameSkipped = 0;
+    const renamesToApply: Array<{ productId: string; newName: string; categoryId: string }> = [];
 
-    for (const r of RENAME_MAP) {
-      const product = await db.product.findUnique({ where: { id: r.productId } });
-      if (!product) {
-        productsRenameSkipped++;
-        continue;
-      }
-      if (product.name === r.newName) {
-        productsRenameSkipped++;
-        continue;
-      }
-      const conflict = await db.product.findUnique({ where: { name: r.newName } });
-      if (conflict && conflict.id !== r.productId) {
-        productsRenameSkipped++;
-        continue;
-      }
+    for (let i = 0; i < RENAME_MAP.length; i++) {
+      const r = RENAME_MAP[i];
+      const product = renameProducts[i];
+      if (!product) { productsRenameSkipped++; continue; }
+      if (product.name === r.newName) { productsRenameSkipped++; continue; }
+      const conflict = conflictChecks[i];
+      if (conflict && conflict.id !== r.productId) { productsRenameSkipped++; continue; }
       const categoryId = categoryMap[r.category];
-      if (!DRY_RUN) {
-        await db.product.update({
-          where: { id: r.productId },
-          data: { name: r.newName, categoryId },
-        });
-      }
-      productsRenamed++;
+      if (!categoryId) { productsRenameSkipped++; continue; }
+      renamesToApply.push({ productId: r.productId, newName: r.newName, categoryId });
     }
 
-    // === CREATE NEW PRODUCTS (57) ===
+    if (!DRY_RUN && renamesToApply.length > 0) {
+      await db.$transaction(
+        renamesToApply.map(r => db.product.update({ where: { id: r.productId }, data: { name: r.newName, categoryId: r.categoryId } }))
+      );
+    }
+    productsRenamed = renamesToApply.length;
+
+    // === CREATE NEW PRODUCTS (57) — batch findUnique ===
     const NEW_PRODUCTS = [
       { name: 'เหล็กหนาพิเศษยาว', category: 'เหล็ก', defaultBuyPrice: 0 },
       { name: 'เหล็กเส้น 5 หุน', category: 'เหล็ก', defaultBuyPrice: 0 },
@@ -194,68 +208,76 @@ export async function POST(request: NextRequest) {
       { name: 'พลาสติกรวม', category: 'พลาสติก', defaultBuyPrice: 0 },
     ];
 
+    // Batch check which products already exist
+    const existingNewProducts = await Promise.all(
+      NEW_PRODUCTS.map(p => db.product.findUnique({ where: { name: p.name } }))
+    );
+
     let productsCreated = 0;
     let productsCreateSkipped = 0;
+    const toCreate: typeof NEW_PRODUCTS = [];
     let sortOrder = (await db.product.aggregate({ _max: { sortOrder: true } }))._max.sortOrder ?? -1;
     sortOrder++;
 
-    for (const p of NEW_PRODUCTS) {
-      const existing = await db.product.findUnique({ where: { name: p.name } });
-      if (existing) {
-        productsCreateSkipped++;
-        continue;
-      }
-      const categoryId = categoryMap[p.category];
-      if (!categoryId) {
-        productsCreateSkipped++;
-        continue;
-      }
-      if (!DRY_RUN) {
-        await db.product.create({
-          data: { name: p.name, defaultBuyPrice: p.defaultBuyPrice, categoryId, sortOrder: sortOrder++ },
-        });
-      }
-      productsCreated++;
+    for (let i = 0; i < NEW_PRODUCTS.length; i++) {
+      if (existingNewProducts[i]) { productsCreateSkipped++; continue; }
+      const categoryId = categoryMap[NEW_PRODUCTS[i].category];
+      if (!categoryId) { productsCreateSkipped++; continue; }
+      toCreate.push(NEW_PRODUCTS[i]);
     }
 
-    // === NOT-KEPT PRODUCTS (report only — no delete) ===
-    const NOT_KEPT = [
+    if (!DRY_RUN && toCreate.length > 0) {
+      await db.$transaction(
+        toCreate.map((p, idx) => db.product.create({
+          data: {
+            name: p.name,
+            defaultBuyPrice: p.defaultBuyPrice,
+            categoryId: categoryMap[p.category]!,
+            sortOrder: sortOrder + idx,
+          },
+        }))
+      );
+    }
+    productsCreated = toCreate.length;
+
+    // === NOT-KEPT PRODUCTS (report only) ===
+    const NOT_KEPT_IDS = [
       { productId: 'prod_mqgp9b3h7g448yu1xgzuu4pr', name: 'ทองแดงพิเศษ', reason: 'Owner: do not keep' },
       { productId: 'prod_mqgp9gbfgywdc71yyps4y1ke', name: 'มุ้งลวด', reason: 'Owner: use อลูมิเneียมมุ้งลวด instead' },
     ];
 
-    const notKeptReport: Array<{
-      productId: string; name: string; reason: string; found: boolean;
-      hasStock?: boolean; hasHistory?: boolean;
-      stockLots?: number; buyItems?: number; sellItems?: number; sortItems?: number;
-      action?: string;
-    }> = [];
-    for (const nk of NOT_KEPT) {
-      const product = await db.product.findUnique({ where: { id: nk.productId } });
-      if (!product) { notKeptReport.push({ ...nk, found: false }); continue; }
-      const stockLots = await db.stockLot.count({ where: { productId: nk.productId, remainingWeight: { gt: 0 } } });
-      const buyItems = await db.buyBillItem.count({ where: { productId: nk.productId } });
-      const sellItems = await db.sellBillItem.count({ where: { productId: nk.productId } });
-      const sortItems = await db.sortingBillItem.count({ where: { productId: nk.productId } });
-      notKeptReport.push({
-        ...nk,
-        found: true,
-        hasStock: stockLots > 0,
-        hasHistory: buyItems + sellItems + sortItems > 0,
-        stockLots, buyItems, sellItems, sortItems,
-        action: 'LEFT IN DB — Product model has no isActive field',
-      });
-    }
+    const notKeptProducts = await Promise.all(
+      NOT_KEPT_IDS.map(nk => db.product.findUnique({ where: { id: nk.productId } }))
+    );
+    const [nkStockLots, nkBuyItems, nkSellItems, nkSortItems] = await Promise.all([
+      db.stockLot.count({ where: { productId: { in: NOT_KEPT_IDS.map(n => n.productId) }, remainingWeight: { gt: 0 } } }),
+      db.buyBillItem.count({ where: { productId: { in: NOT_KEPT_IDS.map(n => n.productId) } } }),
+      db.sellBillItem.count({ where: { productId: { in: NOT_KEPT_IDS.map(n => n.productId) } } }),
+      db.sortingBillItem.count({ where: { productId: { in: NOT_KEPT_IDS.map(n => n.productId) } } }),
+    ]);
 
-    // === AFTER COUNTS ===
-    const after = {
-      products: await db.product.count(),
-      categories: await db.productCategory.count(),
-      stockLots: await db.stockLot.count(),
-      buyItems: await db.buyBillItem.count(),
-      sellItems: await db.sellBillItem.count(),
-      sortItems: await db.sortingBillItem.count(),
-    };
+    const notKeptReport = NOT_KEPT_IDS.map((nk, i) => ({
+      ...nk,
+      found: !!notKeptProducts[i],
+      hasStock: nkStockLots > 0,
+      hasHistory: nkBuyItems + nkSellItems + nkSortItems > 0,
+      stockLots: nkStockLots,
+      buyItems: nkBuyItems,
+      sellItems: nkSellItems,
+      sortItems: nkSortItems,
+      action: 'LEFT IN DB — no isActive field',
+    }));
+
+    // === AFTER COUNTS (parallel) ===
+    const [afterProducts, afterCategories, afterStockLots, afterBuyItems, afterSellItems, afterSortItems] = await Promise.all([
+      db.product.count(),
+      db.productCategory.count(),
+      db.stockLot.count(),
+      db.buyBillItem.count(),
+      db.sellBillItem.count(),
+      db.sortingBillItem.count(),
+    ]);
+    const after = { products: afterProducts, categories: afterCategories, stockLots: afterStockLots, buyItems: afterBuyItems, sellItems: afterSellItems, sortItems: afterSortItems };
 
     return NextResponse.json({
       success: true,
