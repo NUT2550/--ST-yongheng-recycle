@@ -47,6 +47,7 @@ import {
 import { Coins, Plus, Trash2, Loader2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
+import { ExcelImportDialog } from '@/components/excel-import-dialog';
 
 export function SellPage() {
   const {
@@ -400,13 +401,60 @@ export function SellPage() {
             </div>
           </div>
 
-          <Button
-            onClick={handleAddItem}
-            className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            <Plus className="h-4 w-4 mr-1" />
-            เพิ่มรายการ
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button
+              onClick={handleAddItem}
+              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              เพิ่มรายการ
+            </Button>
+            <ExcelImportDialog
+              products={availableProducts}
+              groupedProducts={groupedProductsForCombobox}
+              billType="sell"
+              onImport={(items, importBillDate) => {
+                let added = 0;
+                let blocked = 0;
+                const runningWeight = new Map<string, number>();
+                for (const it of items) {
+                  const product = products.find((p) => p.id === it.productId);
+                  const stockWeight = product?.stock?.totalWeight ?? 0;
+                  const inCart = sellCartItems
+                    .filter((c) => c.productId === it.productId)
+                    .reduce((sum, c) => sum + c.weight, 0);
+                  const running = runningWeight.get(it.productId) ?? 0;
+                  const totalSoFar = inCart + running;
+                  if (totalSoFar + it.weight > stockWeight) {
+                    blocked++;
+                    toast.error(
+                      `สต็อกไม่พอสำหรับ "${it.productName}" — มี ${formatWeight(stockWeight)}, ต้องการ ${formatWeight(it.weight)} — ข้ามรายการ`
+                    );
+                    continue;
+                  }
+                  addSellCartItem({
+                    productId: it.productId,
+                    productName: it.productName,
+                    weight: it.weight,
+                    weightExpression: it.weightExpression,
+                    pricePerKg: it.pricePerKg,
+                    totalAmount: it.totalAmount,
+                    availableWeight: Math.max(0, stockWeight - totalSoFar - it.weight),
+                  });
+                  runningWeight.set(it.productId, running + it.weight);
+                  added++;
+                }
+                if (importBillDate) {
+                  setDateTime(new Date(importBillDate).toISOString().slice(0, 16));
+                }
+                if (added > 0) {
+                  toast.success(`เพิ่ม ${added} รายการจาก Excel แล้ว${blocked > 0 ? ` (ข้าม ${blocked} รายการ — สต็อกไม่พอ)` : ''}`);
+                } else if (blocked > 0) {
+                  toast.error(`ไม่สามารถเพิ่มรายการได้ — สต็อกไม่พอทั้ง ${blocked} รายการ`);
+                }
+              }}
+            />
+          </div>
         </CardContent>
       </Card>
 
