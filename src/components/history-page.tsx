@@ -9,6 +9,7 @@ import {
 import { BuyBill, SellBill, SortingBill } from '@/lib/types';
 import { formatBaht, formatWeight, formatDate } from '@/lib/helpers';
 import { formulaHint } from '@/lib/safe-math';
+import { getAuthToken } from '@/lib/api';
 import {
   Card,
   CardContent,
@@ -24,13 +25,29 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import {
   ShoppingCart,
   Coins,
   RefreshCw,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Trash2,
+  Pencil,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 type HistoryTab = 'buy' | 'sell' | 'sort';
 const PAGE_SIZE = 10;
@@ -160,6 +177,7 @@ export function HistoryPage() {
               expandedIds={expandedIds}
               toggleExpand={toggleExpand}
               type="buy"
+              onRefresh={loadBuyBills}
             />
           )}
           {activeTab === 'sell' && (
@@ -169,6 +187,7 @@ export function HistoryPage() {
               expandedIds={expandedIds}
               toggleExpand={toggleExpand}
               type="sell"
+              onRefresh={loadSellBills}
             />
           )}
           {activeTab === 'sort' && (
@@ -178,6 +197,7 @@ export function HistoryPage() {
               expandedIds={expandedIds}
               toggleExpand={toggleExpand}
               type="sort"
+              onRefresh={loadSortBills}
             />
           )}
         </>
@@ -218,12 +238,14 @@ function BillList({
   expandedIds,
   toggleExpand,
   type,
+  onRefresh,
 }: {
   bills: BuyBill[] | SellBill[] | SortingBill[];
   total: number;
   expandedIds: Set<string>;
   toggleExpand: (id: string) => void;
   type: 'buy' | 'sell' | 'sort';
+  onRefresh: () => void;
 }) {
   if (bills.length === 0) {
     return (
@@ -245,9 +267,9 @@ function BillList({
       <div className="space-y-2">
         {bills.map((bill) => {
           const isExpanded = expandedIds.has(bill.id);
-          if (type === 'buy') return <BuyBillCard key={bill.id} bill={bill as BuyBill} isExpanded={isExpanded} toggleExpand={toggleExpand} />;
-          if (type === 'sell') return <SellBillCard key={bill.id} bill={bill as SellBill} isExpanded={isExpanded} toggleExpand={toggleExpand} />;
-          return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} />;
+          if (type === 'buy') return <BuyBillCard key={bill.id} bill={bill as BuyBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+          if (type === 'sell') return <SellBillCard key={bill.id} bill={bill as SellBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+          return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
         })}
       </div>
     </div>
@@ -259,10 +281,12 @@ function BuyBillCard({
   bill,
   isExpanded,
   toggleExpand,
+  onRefresh,
 }: {
   bill: BuyBill;
   isExpanded: boolean;
   toggleExpand: (id: string) => void;
+  onRefresh: () => void;
 }) {
   return (
     <Card>
@@ -338,6 +362,7 @@ function BuyBillCard({
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
             )}
+            <BillActions billId={bill.id} billType="buy" onRefresh={onRefresh} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -350,10 +375,12 @@ function SellBillCard({
   bill,
   isExpanded,
   toggleExpand,
+  onRefresh,
 }: {
   bill: SellBill;
   isExpanded: boolean;
   toggleExpand: (id: string) => void;
+  onRefresh: () => void;
 }) {
   const profit = bill.totalAmount - bill.totalCost;
 
@@ -449,6 +476,7 @@ function SellBillCard({
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
             )}
+            <BillActions billId={bill.id} billType="sell" onRefresh={onRefresh} />
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -461,10 +489,12 @@ function SortBillCard({
   bill,
   isExpanded,
   toggleExpand,
+  onRefresh,
 }: {
   bill: SortingBill;
   isExpanded: boolean;
   toggleExpand: (id: string) => void;
+  onRefresh: () => void;
 }) {
   return (
     <Card>
@@ -568,10 +598,192 @@ function SortBillCard({
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
             )}
+            <BillActions billId={bill.id} billType="sort" onRefresh={onRefresh} />
           </div>
         </CollapsibleContent>
       </Collapsible>
     </Card>
+  );
+}
+
+/* ---- Bill Actions Component (Cancel + Edit) ---- */
+function BillActions({ billId, billType, onRefresh }: { billId: string; billType: 'buy' | 'sell' | 'sort'; onRefresh: () => void }) {
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelLoading, setCancelLoading] = useState(false);
+  const [editNote, setEditNote] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+
+  const apiPath = billType === 'buy' ? 'buy-bills' : billType === 'sell' ? 'sell-bills' : 'sorting-bills';
+
+  const handleCancel = async () => {
+    if (!cancelReason.trim()) {
+      toast.error('กรุณาระบุเหตุผลในการยกเลิก');
+      return;
+    }
+    setCancelLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/${apiPath}/${billId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ reason: cancelReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'ยกเลิกไม่สำเร็จ');
+        return;
+      }
+      toast.success('ยกเลิกบิลสำเร็จ — สต็อกถูกปรับย้อนกลับแล้ว');
+      setCancelOpen(false);
+      setCancelReason('');
+      onRefresh();
+    } catch (err) {
+      toast.error('ยกเลิกไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'));
+    } finally {
+      setCancelLoading(false);
+    }
+  };
+
+  const handleEdit = async () => {
+    setEditLoading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(`/api/${apiPath}/${billId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ note: editNote.trim() || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || 'แก้ไขไม่สำเร็จ');
+        return;
+      }
+      toast.success('แก้ไขหมายเหตุสำเร็จ');
+      setEditOpen(false);
+      onRefresh();
+    } catch (err) {
+      toast.error('แก้ไขไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'));
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex gap-2 mt-3 pt-3 border-t">
+      <Button
+        variant="outline"
+        size="sm"
+        className="text-xs"
+        onClick={() => setEditOpen(true)}
+      >
+        <Pencil className="h-3 w-3 mr-1" />
+        แก้ไข
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+        onClick={() => setCancelOpen(true)}
+      >
+        <Trash2 className="h-3 w-3 mr-1" />
+        ยกเลิกบิล
+      </Button>
+
+      {/* Cancel Dialog */}
+      <Dialog open={cancelOpen} onOpenChange={setCancelOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              ยืนยันยกเลิกบิลนี้?
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-gray-600">
+              ระบบจะปรับสต็อกย้อนกลับและเก็บประวัติไว้
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="cancel-reason">เหตุผลในการยกเลิก</Label>
+              <Textarea
+                id="cancel-reason"
+                placeholder="ระบุเหตุผล เช่น กรอกผิด / บิลซ้ำ / ลูกค้ายกเลิก"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">ยกเลิก</Button>
+            </DialogClose>
+            <Button
+              onClick={handleCancel}
+              disabled={cancelLoading || !cancelReason.trim()}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {cancelLoading ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> กำลังยกเลิก...</>
+              ) : (
+                'ยืนยันยกเลิกบิล'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-amber-600" />
+              แก้ไขบิล
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="edit-note">หมายเหตุ</Label>
+              <Textarea
+                id="edit-note"
+                placeholder="แก้ไขหมายเหตุ..."
+                value={editNote}
+                onChange={(e) => setEditNote(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700">
+              <p className="font-medium mb-1">⚠️ การแก้ไขที่กระทบสต็อก</p>
+              <p>การแก้น้ำหนัก/สินค้าโดยตรงยังไม่เปิดใช้ เพราะต้องกระทบสต็อก ให้ยกเลิกบิลแล้วสร้างใหม่แทน</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button variant="outline">ยกเลิก</Button>
+            </DialogClose>
+            <Button
+              onClick={handleEdit}
+              disabled={editLoading}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {editLoading ? (
+                <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> กำลังบันทึก...</>
+              ) : (
+                'บันทึก'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }
 

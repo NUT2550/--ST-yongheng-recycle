@@ -149,7 +149,8 @@ export function StockPage() {
                       {productsInStock}/{category.products.length} รายการมีสต๊อก
                     </span>
                     <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">
-                      {formatWeight(catWeight)} · {formatBaht(catCost)} บาท
+                      <span className="text-base sm:text-lg font-bold text-gray-900">{formatWeight(catWeight)}</span>
+                      <span className="ml-2 text-sm text-gray-500">{formatBaht(catCost)} บาท</span>
                     </span>
                   </div>
                 </AccordionTrigger>
