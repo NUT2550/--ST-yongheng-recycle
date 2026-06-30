@@ -89,13 +89,19 @@ export async function POST(request: NextRequest) {
       categoriesCreated = created.length;
     }
 
-    // === STEP 2: Rename อลูมีเneียม → อลูมิเneียม (fix spelling + category) ===
-    // Find the old "อลูมีเneียม" category if it exists
-    const oldAlumCat = await db.productCategory.findUnique({ where: { name: 'อลูมีเneียม' } });
+    // === STEP 2: Merge old อลูมีเneียม category into อลูมิเneียม ===
+    // Find the old "อลูมีเneียม" category (different romanization from อลูมิเneียม)
+    // by querying ALL categories and finding the one that contains "อลูม" but is NOT "อลูมิเneียม"
+    const allCategories = await db.productCategory.findMany();
+    const correctAlumCatId = categoryMap['อลูมิเneียม'];
+    const oldAlumCat = allCategories.find(c =>
+      c.name !== 'อลูมิเneียม' &&
+      c.name.includes('อลูม') &&
+      c.id !== correctAlumCatId
+    );
     let productsMovedToCorrectCat = 0;
 
-    if (oldAlumCat) {
-      const correctAlumCatId = categoryMap['อลูมิเneียม'];
+    if (oldAlumCat && correctAlumCatId) {
       // Move all products from old category to correct category
       const result = await db.product.updateMany({
         where: { categoryId: oldAlumCat.id },
