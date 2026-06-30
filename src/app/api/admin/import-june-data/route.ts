@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json().catch(() => ({}));
   const DRY_RUN = body.dryRun !== false;
+  const PHASE = body.phase || 'all'; // 'buy', 'sellSummary', 'sellDetail', 'cleanup', 'all'
 
   try {
     // === BEFORE COUNTS ===
@@ -450,6 +451,7 @@ export async function POST(request: NextRequest) {
     };
 
     // === PHASE 1: Import BUY summary data ===
+    if (PHASE === 'all' || PHASE === 'buy') {
     for (const buySheet of BUY_DATA) {
       const importNote = `IMPORT_SUMMARY_REAL|source:${buySheet.sheet}`;
       // Check duplicate
@@ -510,8 +512,10 @@ export async function POST(request: NextRequest) {
       report.buyImported++;
       report.buyItemsImported += billItems.length;
     }
+    } // end phase 1
 
     // === PHASE 2: Import SELL summary data ===
+    if (PHASE === 'all' || PHASE === 'sellSummary') {
     for (const sellSheet of SELL_SUMMARY_DATA) {
       const importNote = `IMPORT_SUMMARY_REAL|source:${sellSheet.sheet}`;
       const existing = await db.sellBill.findFirst({ where: { note: importNote } });
@@ -586,8 +590,10 @@ export async function POST(request: NextRequest) {
       report.sellSummaryImported++;
       report.sellSummaryItemsImported += billItems.length;
     }
+    } // end phase 2
 
     // === PHASE 3: Import SELL detail data ===
+    if (PHASE === 'all' || PHASE === 'sellDetail') {
     for (const detail of SELL_DETAIL_DATA) {
       const importNote = `IMPORT_DETAIL_REAL|source:ขาย 23,24-6-2569|customer:${detail.customer}|date:${detail.date}`;
       const existing = await db.sellBill.findFirst({ where: { note: importNote } });
@@ -659,8 +665,10 @@ export async function POST(request: NextRequest) {
       report.sellDetailImported++;
       report.sellDetailItemsImported += billItems.length;
     }
+    } // end phase 3
 
     // === PHASE 4: Cleanup TEST data ===
+    if (PHASE === 'all' || PHASE === 'cleanup') {
     if (!DRY_RUN || true) { // Always report in dry-run
       // Test BuyBills
       const testBuyBills = await db.buyBill.findMany({ where: { note: { contains: 'TEST' } }, select: { id: true, note: true } });
@@ -697,6 +705,7 @@ export async function POST(request: NextRequest) {
       }
       report.testSortBillsDeleted = testSortBills.length;
     }
+    } // end phase 4
 
     // === AFTER COUNTS ===
     const [afterProducts, afterCategories, afterBuyBills, afterSellBills, afterSortBills, afterStockLots] = await Promise.all([
