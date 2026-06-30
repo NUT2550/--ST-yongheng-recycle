@@ -90,27 +90,26 @@ export async function POST(request: NextRequest) {
     }
 
     // === STEP 2: Merge old อลูมีเneียม category into อลูมิเneียม ===
-    // Find the old "อลูมีเneียม" category (different romanization from อลูมิเneียม)
-    // by querying ALL categories and finding the one that contains "อลูม" but is NOT "อลูมิเneียม"
-    const allCategories = await db.productCategory.findMany();
-    const correctAlumCatId = categoryMap['อลูมิเneียม'];
-    const oldAlumCat = allCategories.find(c =>
-      c.name !== 'อลูมิเneียม' &&
-      c.name.includes('อลูม') &&
-      c.id !== correctAlumCatId
-    );
+    // The old category has ID cat_mqgp974ybxhw1l5u3dwlpc6a (อลูมีเneียม with ี)
+    // The correct category has ID cmr09v2nj0000l10518owb4lf (อลูมิเneียม with ิ)
+    // Use direct ID lookup to avoid Thai encoding issues
+    const OLD_ALUM_CAT_ID = 'cat_mqgp974ybxhw1l5u3dwlpc6a';
+    const CORRECT_ALUM_CAT_ID = categoryMap['อลูมิเneียม'] || 'cmr09v2nj0000l10518owb4lf';
     let productsMovedToCorrectCat = 0;
 
-    if (oldAlumCat && correctAlumCatId) {
+    // Try to find the old category by ID
+    const oldAlumCat = await db.productCategory.findUnique({ where: { id: OLD_ALUM_CAT_ID } }).catch(() => null);
+
+    if (oldAlumCat && oldAlumCat.id !== CORRECT_ALUM_CAT_ID) {
       // Move all products from old category to correct category
       const result = await db.product.updateMany({
         where: { categoryId: oldAlumCat.id },
-        data: { categoryId: correctAlumCatId },
+        data: { categoryId: CORRECT_ALUM_CAT_ID },
       });
       productsMovedToCorrectCat = result.count;
 
       // Delete the old empty category
-      await db.productCategory.delete({ where: { id: oldAlumCat.id } });
+      await db.productCategory.delete({ where: { id: oldAlumCat.id } }).catch(() => {});
     }
 
     // === STEP 3: Rename products by productId ===
