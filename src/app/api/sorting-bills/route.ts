@@ -48,6 +48,29 @@ async function deductStockFIFO(
   };
 }
 
+// Helper: Restore stock as a new lot (compensating action on failure)
+async function restoreStock(
+  productId: string,
+  weight: number,
+  costPerKg: number,
+  client: typeof db,
+  source: string
+): Promise<void> {
+  try {
+    await client.stockLot.create({
+      data: {
+        productId,
+        remainingWeight: weight,
+        costPerKg,
+        dateAdded: new Date(),
+        source,
+      },
+    });
+  } catch (err) {
+    console.error('restoreStock failed (non-fatal):', err);
+  }
+}
+
 // POST /api/sorting-bills - Create a sorting bill
 export async function POST(request: NextRequest) {
   // --- Auth ---
@@ -125,33 +148,34 @@ export async function POST(request: NextRequest) {
     // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
     const billNumber = await generateBillNumber(db, 'SORT');
 
-    // --- Transaction: FIFO deduction + bill + stock lots + audit ---
-    const bill = await db.$transaction(async (tx) => {
-      // Deduct source product stock using FIFO
-      const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, tx);
-      const sourceCostPerKg = fifoResult.costPerKg;
+    // --- Sequential operations (pgbouncer-safe; no interactive $transaction) ---
+    // Step 1: Deduct source stock via FIFO
+    const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, db);
+    const sourceCostPerKg = fifoResult.costPerKg;
 
-      // Calculate loss = sourceWeight - sum(item weights)
-      const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-      const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
-      const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
+    // Calculate loss = sourceWeight - sum(item weights)
+    const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+    const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
+    const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
 
-      // Build sorting items with new bonus fields + weightExpression
-      const sortingItems = items.map((item) => ({
-        productId: item.productId,
-        weight: item.weight,
-        weightExpression: isRealFormula(item.weightExpression)
-          ? item.weightExpression!.trim()
-          : null,
-        isWaste: item.isWaste,
-        costPerKg: item.isWaste ? 0 : sourceCostPerKg,
-        totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
-        sortedPricePerKg: item.isWaste ? 0 : item.sortedPricePerKg,
-        bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
-      }));
+    // Build sorting items with new bonus fields + weightExpression
+    const sortingItems = items.map((item) => ({
+      productId: item.productId,
+      weight: item.weight,
+      weightExpression: isRealFormula(item.weightExpression)
+        ? item.weightExpression!.trim()
+        : null,
+      isWaste: item.isWaste,
+      costPerKg: item.isWaste ? 0 : sourceCostPerKg,
+      totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
+      sortedPricePerKg: item.isWaste ? 0 : item.sortedPricePerKg,
+      bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
+    }));
 
-      // Create the sorting bill (billNumber generated above)
-      const created = await tx.sortingBill.create({
+    // Step 2: Create the sorting bill
+    let created: any;
+    try {
+      created = await db.sortingBill.create({
         data: {
           billNumber,
           date: new Date(date),
@@ -177,11 +201,17 @@ export async function POST(request: NextRequest) {
           items: { include: { product: { select: { id: true, name: true } } } },
         },
       });
+    } catch (createErr) {
+      // Compensating: restore the deducted source stock if bill creation fails
+      await restoreStock(sourceProductId, sourceWeight, sourceCostPerKg, db, 'SORT_ROLLBACK');
+      throw createErr;
+    }
 
-      // Create StockLots for non-waste sorted items
+    // Step 3: Create StockLots for non-waste sorted items
+    try {
       for (const item of items) {
         if (!item.isWaste && item.weight > 0) {
-          await tx.stockLot.create({
+          await db.stockLot.create({
             data: {
               productId: item.productId,
               remainingWeight: item.weight,
@@ -193,29 +223,33 @@ export async function POST(request: NextRequest) {
           });
         }
       }
+    } catch (lotErr) {
+      // Compensating: delete the bill + items, restore source stock
+      await db.sortingBill.delete({ where: { id: created.id } }).catch(() => {});
+      await restoreStock(sourceProductId, sourceWeight, sourceCostPerKg, db, 'SORT_ROLLBACK');
+      throw lotErr;
+    }
 
-      await writeAuditLog(tx, {
-        action: 'CREATE',
-        entityType: 'SORTING_BILL',
-        entityId: created.id,
-        userId: payload.userId,
-        userName: payload.name,
-        details: JSON.stringify({
-          billNumber,
-          sourceProductId,
-          sourceWeight,
-          sourceCostPerKg,
-          lossWeight,
-          lossCost,
-          itemCount: created.items.length,
-          nonWasteItemCount: items.filter((i) => !i.isWaste).length,
-        }),
-      });
-
-      return created;
+    // Step 4: Audit log (best-effort, non-fatal)
+    await writeAuditLog(db, {
+      action: 'CREATE',
+      entityType: 'SORTING_BILL',
+      entityId: created.id,
+      userId: payload.userId,
+      userName: payload.name,
+      details: JSON.stringify({
+        billNumber,
+        sourceProductId,
+        sourceWeight,
+        sourceCostPerKg,
+        lossWeight,
+        lossCost,
+        itemCount: created.items.length,
+        nonWasteItemCount: items.filter((i) => !i.isWaste).length,
+      }),
     });
 
-    return NextResponse.json({ bill }, { status: 201 });
+    return NextResponse.json({ bill: created }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to create sorting bill';
     console.error('Error creating sorting bill:', error);
