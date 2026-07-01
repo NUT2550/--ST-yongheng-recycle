@@ -54,6 +54,14 @@ import { toast } from 'sonner';
 type HistoryTab = 'buy' | 'sell' | 'sort';
 const PAGE_SIZE = 10;
 
+// Format a price, showing "-" when 0 means unknown/missing cost (not a real zero).
+// Use this for FIFO/source costs where 0 typically indicates missing data.
+// For buy prices where 0 is a real transaction value, use formatBaht directly.
+function priceOrDash(value: number): string {
+  if (value === 0) return '-';
+  return formatBaht(value);
+}
+
 export function HistoryPage() {
   const [activeTab, setActiveTab] = useState<HistoryTab>('buy');
   const [page, setPage] = useState(1);
@@ -386,33 +394,53 @@ function BuyBillCard({
         <CollapsibleContent>
           <div className="px-3 sm:px-4 pb-3 sm:pb-4">
             <Separator className="mb-3" />
-            <div className="space-y-1.5">
+            {/* Header row (desktop) */}
+            <div className="hidden sm:grid grid-cols-[1fr_60px_90px_100px] gap-x-2 pb-1.5 mb-1 border-b text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+              <div>สินค้า</div>
+              <div className="text-right">น้ำหนัก</div>
+              <div className="text-right">ราคาซื้อ/กก.</div>
+              <div className="text-right">จำนวนเงิน</div>
+            </div>
+            <div className="space-y-0.5">
               {bill.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between text-xs sm:text-sm"
-                >
-                  <span className="text-gray-700 truncate mr-2">
-                    {item.product.name}
-                  </span>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-gray-500 text-right">
-                      <span className="block">{formatWeight(item.weight)}</span>
+                <div key={item.id}>
+                  {/* Desktop grid row */}
+                  <div className="hidden sm:grid grid-cols-[1fr_60px_90px_100px] gap-x-2 text-xs sm:text-sm items-start py-0.5">
+                    <span className="text-gray-700 truncate">
+                      {item.product.name}
                       {item.weightExpression && (
                         <span className="block text-[10px] text-gray-400">
                           {formulaHint(item.weightExpression)}
                         </span>
                       )}
                     </span>
-                    <span className="text-gray-500">
-                      @{formatBaht(item.pricePerKg)}
-                    </span>
-                    <span className="font-medium text-gray-900 min-w-[80px] text-right">
-                      {formatBaht(item.totalAmount)} บาท
-                    </span>
+                    <span className="text-gray-600 text-right">{formatWeight(item.weight)}</span>
+                    <span className="text-gray-600 text-right">{formatBaht(item.pricePerKg)}</span>
+                    <span className="font-medium text-gray-900 text-right">{formatBaht(item.totalAmount)} บาท</span>
+                  </div>
+                  {/* Mobile stacked layout */}
+                  <div className="sm:hidden py-1 border-b border-gray-100 last:border-0">
+                    <div className="flex justify-between items-baseline gap-2">
+                      <span className="text-gray-800 text-sm font-medium truncate">{item.product.name}</span>
+                      <span className="font-medium text-gray-900 text-sm shrink-0">{formatBaht(item.totalAmount)} บาท</span>
+                    </div>
+                    <div className="flex justify-between text-[11px] text-gray-500 mt-0.5">
+                      <span>
+                        {formatWeight(item.weight)}
+                        {item.weightExpression && (
+                          <span className="text-[10px] text-gray-400 ml-1">({formulaHint(item.weightExpression)})</span>
+                        )}
+                      </span>
+                      <span>ราคาซื้อ {formatBaht(item.pricePerKg)}/กก.</span>
+                    </div>
                   </div>
                 </div>
               ))}
+            </div>
+            {/* Bill-level summary */}
+            <div className="flex justify-between text-xs text-gray-500 mt-2 pt-1.5 border-t border-gray-100">
+              <span>น้ำหนักรวม · ยอดซื้อรวม</span>
+              <span>{formatWeight(bill.items.reduce((s, i) => s + i.weight, 0))} · {formatBaht(bill.totalAmount)} บาท</span>
             </div>
             {bill.note && (
               <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
@@ -494,41 +522,72 @@ function SellBillCard({
         <CollapsibleContent>
           <div className="px-3 sm:px-4 pb-3 sm:pb-4">
             <Separator className="mb-3" />
-            <div className="space-y-1.5">
-              {bill.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between text-xs sm:text-sm"
-                >
-                  <span className="text-gray-700 truncate mr-2">
-                    {item.product.name}
-                  </span>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-gray-500 text-right">
-                      <span className="block">{formatWeight(item.weight)}</span>
-                      {item.weightExpression && (
-                        <span className="block text-[10px] text-gray-400">
-                          {formulaHint(item.weightExpression)}
+            {/* Header row (desktop) */}
+            <div className="hidden sm:grid grid-cols-[1fr_54px_80px_80px_92px] gap-x-2 pb-1.5 mb-1 border-b text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+              <div>สินค้า</div>
+              <div className="text-right">น้ำหนัก</div>
+              <div className="text-right">ราคาขาย/กก.</div>
+              <div className="text-right">ต้นทุน/กก.</div>
+              <div className="text-right">จำนวนเงิน</div>
+            </div>
+            <div className="space-y-0.5">
+              {bill.items.map((item) => {
+                const itemProfit = item.totalAmount - item.totalCost;
+                return (
+                  <div key={item.id}>
+                    {/* Desktop grid row */}
+                    <div className="hidden sm:grid grid-cols-[1fr_54px_80px_80px_92px] gap-x-2 text-xs sm:text-sm items-start py-0.5">
+                      <span className="text-gray-700 truncate">
+                        {item.product.name}
+                        {item.weightExpression && (
+                          <span className="block text-[10px] text-gray-400">
+                            {formulaHint(item.weightExpression)}
+                          </span>
+                        )}
+                      </span>
+                      <span className="text-gray-600 text-right">{formatWeight(item.weight)}</span>
+                      <span className="text-gray-600 text-right">{formatBaht(item.pricePerKg)}</span>
+                      <span className="text-gray-500 text-right">{priceOrDash(item.costPerKg)}</span>
+                      <span className="font-medium text-gray-900 text-right">{formatBaht(item.totalAmount)} บาท</span>
+                    </div>
+                    {/* Mobile stacked layout */}
+                    <div className="sm:hidden py-1 border-b border-gray-100 last:border-0">
+                      <div className="flex justify-between items-baseline gap-2">
+                        <span className="text-gray-800 text-sm font-medium truncate">{item.product.name}</span>
+                        <span className="font-medium text-gray-900 text-sm shrink-0">{formatBaht(item.totalAmount)} บาท</span>
+                      </div>
+                      <div className="flex justify-between text-[11px] text-gray-500 mt-0.5">
+                        <span>
+                          {formatWeight(item.weight)}
+                          {item.weightExpression && (
+                            <span className="text-[10px] text-gray-400 ml-1">({formulaHint(item.weightExpression)})</span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <span className="text-gray-500">
-                      @{formatBaht(item.pricePerKg)}
-                    </span>
-                    <span className="font-medium text-gray-900 min-w-[80px] text-right">
-                      {formatBaht(item.totalAmount)} บาท
-                    </span>
+                        <span>ขาย {formatBaht(item.pricePerKg)}/กก.</span>
+                      </div>
+                      <div className="flex justify-between text-[11px] mt-0.5">
+                        <span className="text-gray-400">ต้นทุน/กก.</span>
+                        <span className={itemProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                          {priceOrDash(item.costPerKg)}{item.costPerKg > 0 ? ` · กำไร ${formatBaht(itemProfit)}` : ''}
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <Separator className="my-2" />
+            {/* Bill-level summary */}
             <div className="flex justify-between text-xs text-gray-500">
-              <span>ต้นทุนรวม</span>
+              <span>ยอดขายรวม</span>
+              <span>{formatBaht(bill.totalAmount)} บาท</span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>ต้นทุนรวม (ราคาต้นทาง)</span>
               <span>{formatBaht(bill.totalCost)} บาท</span>
             </div>
             <div className="flex justify-between text-xs">
-              <span className="font-medium text-gray-700">กำไร</span>
+              <span className="font-medium text-gray-700">กำไร/ขาดทุน</span>
               <span className={`font-bold ${profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                 {formatBaht(profit)} บาท
               </span>
@@ -604,45 +663,74 @@ function SortBillCard({
         <CollapsibleContent>
           <div className="px-3 sm:px-4 pb-3 sm:pb-4">
             <Separator className="mb-3" />
-            <div className="space-y-1.5">
-              {bill.items.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between text-xs sm:text-sm"
-                >
-                  <div className="flex items-center gap-2 min-w-0 mr-2">
-                    <span className="text-gray-700 truncate">
-                      {item.product.name}
-                    </span>
-                    {item.isWaste && (
-                      <Badge
-                        variant="secondary"
-                        className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px] px-1.5 py-0 shrink-0"
-                      >
-                        เศษ
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-gray-500 text-right">
-                      <span className="block">{formatWeight(item.weight)}</span>
-                      {item.weightExpression && (
-                        <span className="block text-[10px] text-gray-400">
-                          {formulaHint(item.weightExpression)}
+            {/* Header row (desktop) */}
+            <div className="hidden sm:grid grid-cols-[1fr_54px_76px_76px_92px] gap-x-2 pb-1.5 mb-1 border-b text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+              <div>สินค้า</div>
+              <div className="text-right">น้ำหนัก</div>
+              <div className="text-right">ราคา/กก.</div>
+              <div className="text-right">ต้นทุน/กก.</div>
+              <div className="text-right">มูลค่า</div>
+            </div>
+            <div className="space-y-0.5">
+              {bill.items.map((item) => {
+                const priceDash = item.isWaste || item.sortedPricePerKg === 0;
+                return (
+                  <div key={item.id}>
+                    {/* Desktop grid row */}
+                    <div className="hidden sm:grid grid-cols-[1fr_54px_76px_76px_92px] gap-x-2 text-xs sm:text-sm items-start py-0.5">
+                      <span className="text-gray-700 truncate flex items-center gap-1.5">
+                        {item.product.name}
+                        {item.isWaste && (
+                          <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px] px-1.5 py-0 shrink-0">
+                            เศษ
+                          </Badge>
+                        )}
+                        {item.weightExpression && (
+                          <span className="text-[10px] text-gray-400">{formulaHint(item.weightExpression)}</span>
+                        )}
+                      </span>
+                      <span className="text-gray-600 text-right">{formatWeight(item.weight)}</span>
+                      <span className="text-gray-600 text-right">{priceDash ? '-' : formatBaht(item.sortedPricePerKg)}</span>
+                      <span className="text-gray-500 text-right">{item.costPerKg > 0 ? formatBaht(item.costPerKg) : '-'}</span>
+                      <span className="font-medium text-gray-900 text-right">{item.totalCost > 0 ? `${formatBaht(item.totalCost)} บาท` : '-'}</span>
+                    </div>
+                    {/* Mobile stacked layout */}
+                    <div className="sm:hidden py-1 border-b border-gray-100 last:border-0">
+                      <div className="flex justify-between items-baseline gap-2">
+                        <span className="text-gray-800 text-sm font-medium truncate flex items-center gap-1.5">
+                          {item.product.name}
+                          {item.isWaste && (
+                            <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px] px-1.5 py-0 shrink-0">
+                              เศษ
+                            </Badge>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <span className="text-gray-500">
-                      @{formatBaht(item.costPerKg)}
-                    </span>
-                    <span className="font-medium text-gray-900 min-w-[80px] text-right">
-                      {formatBaht(item.totalCost)} บาท
-                    </span>
+                        <span className="font-medium text-gray-900 text-sm shrink-0">{item.totalCost > 0 ? `${formatBaht(item.totalCost)} บาท` : '-'}</span>
+                      </div>
+                      <div className="flex justify-between text-[11px] text-gray-500 mt-0.5">
+                        <span>
+                          {formatWeight(item.weight)}
+                          {item.weightExpression && (
+                            <span className="text-[10px] text-gray-400 ml-1">({formulaHint(item.weightExpression)})</span>
+                          )}
+                        </span>
+                        <span>ราคา {priceDash ? '-' : formatBaht(item.sortedPricePerKg)}/กก.</span>
+                      </div>
+                      <div className="flex justify-between text-[11px] text-gray-400 mt-0.5">
+                        <span>ต้นทุน/กก.</span>
+                        <span>{item.costPerKg > 0 ? formatBaht(item.costPerKg) : '-'}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <Separator className="my-2" />
+            {/* Bill-level summary */}
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>ราคารับซื้อต้นทาง/กก.</span>
+              <span>{bill.sourcePricePerKg > 0 ? formatBaht(bill.sourcePricePerKg) : '-'}</span>
+            </div>
             <div className="flex justify-between text-xs text-gray-500">
               <span>น้ำหนักชั่งรวม</span>
               <span>
