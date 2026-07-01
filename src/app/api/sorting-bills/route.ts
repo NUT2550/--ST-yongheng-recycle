@@ -224,6 +224,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
+    // Unique constraint on billNumber — should not happen after the
+    // max-sequence fix, but surface a clear message if it ever does.
+    if (message.includes('Unique constraint failed') && message.includes('billNumber')) {
+      return NextResponse.json(
+        { error: 'หมายเลขบิลซ้ำ — กรุณาลองบันทึกอีกครั้ง', details: message },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Failed to create sorting bill', details: message },
       { status: 500 }

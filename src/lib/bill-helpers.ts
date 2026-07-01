@@ -5,6 +5,9 @@ import { db } from '@/lib/db'
 
 /**
  * Generate a business bill number like "BUY-2569-00001".
+ *
+ * Uses max-existing-sequence + 1 (robust to cancelled bills and sequence gaps)
+ * instead of count + 1 (which collides when cancelled/gap bills exist).
  */
 export async function generateBillNumber(
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
@@ -17,24 +20,52 @@ export async function generateBillNumber(
     : 'TRN'
   const now = new Date()
   const buddhistYear = now.getFullYear() + 543
-  const adYear = now.getFullYear()
-  const yearStart = new Date(adYear, 0, 1)
-  const yearEnd = new Date(adYear + 1, 0, 1)
+  const yearPrefix = `${prefix}-${buddhistYear}-`
 
-  let count: number
+  // Find the max existing sequence number for this prefix+year to avoid collisions
+  // with cancelled or gap bills. Falls back to 0 if none exist.
+  let maxSeq = 0
   if (billType === 'BUY') {
-    count = await tx.buyBill.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
+    const rows = await tx.buyBill.findMany({
+      where: { billNumber: { startsWith: yearPrefix } },
+      select: { billNumber: true },
+    })
+    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
   } else if (billType === 'SELL') {
-    count = await tx.sellBill.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
+    const rows = await tx.sellBill.findMany({
+      where: { billNumber: { startsWith: yearPrefix } },
+      select: { billNumber: true },
+    })
+    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
   } else if (billType === 'SORT') {
-    count = await tx.sortingBill.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
+    const rows = await tx.sortingBill.findMany({
+      where: { billNumber: { startsWith: yearPrefix } },
+      select: { billNumber: true },
+    })
+    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
   } else {
-    count = await tx.stockTransfer.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
+    const rows = await tx.stockTransfer.findMany({
+      where: { billNumber: { startsWith: yearPrefix } },
+      select: { billNumber: true },
+    })
+    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
   }
 
-  const sequence = count + 1
+  const sequence = maxSeq + 1
   const paddedSeq = String(sequence).padStart(5, '0')
   return `${prefix}-${buddhistYear}-${paddedSeq}`
+}
+
+// Helper: extract the numeric suffix from bill numbers like "SORT-2569-00132" → 132
+function computeMaxSeq(billNumbers: (string | null)[], yearPrefix: string): number {
+  let max = 0
+  for (const bn of billNumbers) {
+    if (!bn || !bn.startsWith(yearPrefix)) continue
+    const suffix = bn.slice(yearPrefix.length)
+    const n = parseInt(suffix, 10)
+    if (!isNaN(n) && n > max) max = n
+  }
+  return max
 }
 
 /**

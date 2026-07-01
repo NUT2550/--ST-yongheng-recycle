@@ -65,7 +65,10 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(error.error || `HTTP ${res.status}`);
+    // Include details if the backend provides them (e.g. prisma validation errors)
+    const msg = error.error || `HTTP ${res.status}`
+    const detail = error.details ? ` (${error.details})` : ''
+    throw new Error(msg + detail);
   }
   return res.json();
 }
