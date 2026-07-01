@@ -112,6 +112,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
+    const billNumber = await generateBillNumber(db, 'SELL');
+
     // --- Transaction: FIFO deduction + bill + credit + audit ---
     const bill = await db.$transaction(async (tx) => {
       let totalAmount = 0;
@@ -149,7 +152,6 @@ export async function POST(request: NextRequest) {
       totalAmount = Math.round(totalAmount * 100) / 100;
       totalCost = Math.round(totalCost * 100) / 100;
 
-      const billNumber = await generateBillNumber(tx, 'SELL');
       const created = await tx.sellBill.create({
         data: {
           billNumber,

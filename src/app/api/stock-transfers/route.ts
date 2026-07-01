@@ -126,6 +126,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
+    const billNumber = await generateBillNumber(db, 'TRANSFER');
+
     // --- Transaction: FIFO deduction + transfer + output lots + audit ---
     const bill = await db.$transaction(async (tx) => {
       // Deduct source stock via FIFO
@@ -146,8 +149,6 @@ export async function POST(request: NextRequest) {
         costPerKg: item.isWaste ? 0 : sourceCostPerKg,
         totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
       }));
-
-      const billNumber = await generateBillNumber(tx, 'TRANSFER');
 
       const created = await tx.stockTransfer.create({
         data: {

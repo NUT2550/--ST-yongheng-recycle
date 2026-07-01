@@ -122,6 +122,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
+    const billNumber = await generateBillNumber(db, 'SORT');
+
     // --- Transaction: FIFO deduction + bill + stock lots + audit ---
     const bill = await db.$transaction(async (tx) => {
       // Deduct source product stock using FIFO
@@ -147,10 +150,7 @@ export async function POST(request: NextRequest) {
         bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
       }));
 
-      // Generate bill number
-      const billNumber = await generateBillNumber(tx, 'SORT');
-
-      // Create the sorting bill
+      // Create the sorting bill (billNumber generated above)
       const created = await tx.sortingBill.create({
         data: {
           billNumber,

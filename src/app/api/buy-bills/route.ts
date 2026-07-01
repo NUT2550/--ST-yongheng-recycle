@@ -58,8 +58,10 @@ export async function POST(request: NextRequest) {
     });
     totalAmount = Math.round(totalAmount * 100) / 100;
 
+    // Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout)
+    const billNumber = await generateBillNumber(db, 'BUY');
+
     const bill = await db.$transaction(async (tx) => {
-      const billNumber = await generateBillNumber(tx, 'BUY');
       const created = await tx.buyBill.create({
         data: {
           billNumber,
