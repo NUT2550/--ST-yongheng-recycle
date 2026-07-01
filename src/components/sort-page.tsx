@@ -38,10 +38,12 @@ export function SortPage() {
     sortSourceWeight,
     sortSourcePricePerKg,
     sortWeighedTotal,
+    sortRoomNumber,
     setSortSourceProduct,
     setSortSourceWeight,
     setSortSourcePricePerKg,
     setSortWeighedTotal,
+    setSortRoomNumber,
     addSortCartItem,
     removeSortCartItem,
     updateSortCartItem,
@@ -167,12 +169,26 @@ export function SortPage() {
     [sortCartItems, sourceCostPerKg]
   );
 
-  // Total bonus amount
+  // Total bonus amount (legacy per-item sum = grossProfit * 10%, no loss deduction)
   const totalBonusAmount = useMemo(
     () =>
       sortCartItems.reduce((sum, item) => sum + item.bonusAmount, 0),
     [sortCartItems]
   );
+
+  // Total gross profit from outputs (before loss deduction)
+  const totalGrossProfit = useMemo(
+    () =>
+      sortCartItems.reduce((sum, item) => {
+        if (item.isWaste) return sum;
+        return sum + Math.round((item.sortedPricePerKg - sortSourcePricePerKg) * item.weight * 100) / 100;
+      }, 0),
+    [sortCartItems, sortSourcePricePerKg]
+  );
+
+  // Net profit after loss deduction, and final bonus with loss deduction
+  const netProfitForBonus = Math.max(totalGrossProfit - lossCost, 0);
+  const totalBonusWithLossDeduction = Math.round(netProfitForBonus * 0.1 * 100) / 100;
 
   // Preview bonus for current item being added
   const previewBonus = useMemo(() => {
@@ -284,6 +300,7 @@ export function SortPage() {
         sourcePricePerKg: sortSourcePricePerKg,
         weighedTotal: sortWeighedTotal,
         weighedTotalExpression,
+        roomNumber: sortRoomNumber || undefined,
         note: note || undefined,
         items: sortCartItems.map((item) => ({
           productId: item.productId,
@@ -305,9 +322,9 @@ export function SortPage() {
       setDateTime(getCurrentDateForInput());
       setNote('');
 
-      const bonusMsg = totalBonusAmount > 0 ? ` | โบนัสรวม ${formatBaht(totalBonusAmount)} บาท` : '';
+      const bonusMsg = totalBonusWithLossDeduction > 0 ? ` | โบนัส ${formatBaht(totalBonusWithLossDeduction)} บาท` : '';
       toast.success(
-        `บันทึกใบคัดแยกสำเร็จ! ศูนย์เสีย ${formatWeight(bill?.lossWeight ?? lossWeight)} (${formatBaht(bill?.lossCost ?? lossCost)} บาท)${bonusMsg}`
+        `บันทึกใบคัดแยกสำเร็จ! สูญเสีย ${formatWeight(bill?.lossWeight ?? lossWeight)} (${formatBaht(bill?.lossCost ?? lossCost)} บาท)${bonusMsg}`
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
@@ -794,6 +811,18 @@ export function SortPage() {
               />
             </div>
 
+            {/* Room Number */}
+            <div className="space-y-2">
+              <Label htmlFor="sort-room">เลขห้อง</Label>
+              <Input
+                id="sort-room"
+                type="text"
+                placeholder="เช่น 22, 23"
+                value={sortRoomNumber}
+                onChange={(e) => setSortRoomNumber(e.target.value)}
+              />
+            </div>
+
             {/* Note */}
             <div className="space-y-2">
               <Label htmlFor="sort-note">หมายเหตุ (ไม่จำเป็น)</Label>
@@ -838,16 +867,33 @@ export function SortPage() {
 
                 {totalBonusAmount > 0 && (
                   <div className="mt-2 pt-2 border-t border-pink-200">
-                    <div className="flex items-center gap-2 p-3 rounded-lg bg-pink-50 border border-pink-200">
-                      <Gift className="h-4 w-4 text-pink-600 shrink-0" />
-                      <div className="flex-1 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-pink-700 font-medium">โบนัสพนักงานรวม (กำไรขั้นต้น × 10%):</span>
-                          <span className="text-pink-900 font-bold">{formatBaht(totalBonusAmount)} บาท</span>
+                    <div className="p-3 rounded-lg bg-pink-50 border border-pink-200 space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <Gift className="h-4 w-4 text-pink-600 shrink-0" />
+                        <span className="text-pink-700 font-medium text-sm">สรุปโบนัสพนักงาน</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-pink-600">กำไรขั้นต้น:</span>
+                        <span className="font-medium text-pink-900">{formatBaht(totalGrossProfit)} บาท</span>
+                      </div>
+                      {lossCost > 0 ? (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-red-600">หักสูญเสีย ({formatWeight(lossWeight)} กก. × {formatBaht(sortSourcePricePerKg)}):</span>
+                          <span className="font-medium text-red-600">-{formatBaht(lossCost)} บาท</span>
                         </div>
-                        <p className="text-xs text-pink-500 mt-1">
-                          ต้นทุน = {formatBaht(sortSourcePricePerKg)} บาท/กก. × น้ำหนัก → กำไร = (ราคาขาย - ต้นทุน) × น้ำหนัก
-                        </p>
+                      ) : (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-400">ไม่มีสูญเสีย</span>
+                          <span className="text-gray-400">-</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm pt-1 border-t border-pink-200">
+                        <span className="text-pink-700 font-medium">ฐานคิดโบนัส:</span>
+                        <span className="font-medium text-pink-900">{formatBaht(netProfitForBonus)} บาท</span>
+                      </div>
+                      <div className="flex justify-between text-sm pt-1 border-t border-pink-200">
+                        <span className="text-pink-700 font-bold">โบนัส 10%:</span>
+                        <span className="text-pink-900 font-bold">{formatBaht(totalBonusWithLossDeduction)} บาท</span>
                       </div>
                     </div>
                   </div>

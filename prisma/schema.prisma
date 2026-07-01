@@ -121,6 +121,7 @@ model SortingBill {
   weighedTotalExpression String?           // สูตรน้ำหนักชั่งรวม
   lossWeight             Float             @default(0)
   lossCost               Float             @default(0)
+  roomNumber             String?           // เลขห้อง (dedicated field; do not use note for room)
   note                   String?
   items                  SortingBillItem[]
   bonuses                SortingBonus[]

@@ -25,11 +25,13 @@ interface AppState {
   sortSourceWeight: number;
   sortSourcePricePerKg: number;
   sortWeighedTotal: number;
+  sortRoomNumber: string;
   sortCartItems: SortCartItem[];
   setSortSourceProduct: (productId: string) => void;
   setSortSourceWeight: (weight: number) => void;
   setSortSourcePricePerKg: (price: number) => void;
   setSortWeighedTotal: (weight: number) => void;
+  setSortRoomNumber: (room: string) => void;
   addSortCartItem: (item: SortCartItem) => void;
   removeSortCartItem: (index: number) => void;
   updateSortCartItem: (index: number, item: Partial<SortCartItem>) => void;
@@ -91,12 +93,14 @@ export const useAppStore = create<AppState>((set) => ({
   sortSourceWeight: 0,
   sortSourcePricePerKg: 0,
   sortWeighedTotal: 0,
+  sortRoomNumber: '',
   sortCartItems: [],
   setSortSourceProduct: (productId) =>
     set({ sortSourceProductId: productId }),
   setSortSourceWeight: (weight) => set({ sortSourceWeight: weight }),
   setSortSourcePricePerKg: (price) => set({ sortSourcePricePerKg: price }),
   setSortWeighedTotal: (weight) => set({ sortWeighedTotal: weight }),
+  setSortRoomNumber: (room) => set({ sortRoomNumber: room }),
   addSortCartItem: (item) =>
     set((state) => ({ sortCartItems: [...state.sortCartItems, item] })),
   removeSortCartItem: (index) =>
@@ -116,6 +120,7 @@ export const useAppStore = create<AppState>((set) => ({
       sortSourceWeight: 0,
       sortSourcePricePerKg: 0,
       sortWeighedTotal: 0,
+      sortRoomNumber: '',
     }),
 
   // Transfer (แกะของ/ย้ายสต็อก) cart

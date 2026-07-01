@@ -654,6 +654,9 @@ function SortBillCard({
   onRefresh: () => void;
 }) {
   const cancelled = bill.isCancelled === true;
+  // Room number: prefer dedicated field; fall back to legacy "ห้อง XX" in note
+  const legacyRoom = bill.roomNumber ? null : (bill.note?.match(/ห้อง\s*(\d+)/)?.[1] ?? null);
+  const roomDisplay = bill.roomNumber || legacyRoom;
   return (
     <Card className={cancelled ? 'border-red-200 bg-red-50/30' : ''}>
       <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(bill.id)}>
@@ -667,6 +670,11 @@ function SortBillCard({
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
                       {formatDate(bill.date)}
                     </span>
+                    {roomDisplay && (
+                      <Badge variant="secondary" className="bg-purple-100 text-purple-700 hover:bg-purple-100 text-[10px] px-1.5 py-0 shrink-0">
+                        เลขห้อง {roomDisplay}
+                      </Badge>
+                    )}
                     {cancelled && <CancelledBadge />}
                   </div>
                   <p className="text-xs text-gray-500">

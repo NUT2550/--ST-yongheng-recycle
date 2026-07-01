@@ -91,6 +91,7 @@ export async function POST(request: NextRequest) {
       sourcePricePerKg,
       weighedTotal,
       weighedTotalExpression,
+      roomNumber,
       note,
       items,
     } = body as {
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
       sourcePricePerKg: number;
       weighedTotal: number;
       weighedTotalExpression?: string;
+      roomNumber?: string;
       note?: string;
       items: Array<{
         productId: string;
@@ -191,6 +193,7 @@ export async function POST(request: NextRequest) {
             : null,
           lossWeight,
           lossCost,
+          roomNumber: roomNumber?.trim() || null,
           note: note || null,
           items: {
             create: sortingItems,

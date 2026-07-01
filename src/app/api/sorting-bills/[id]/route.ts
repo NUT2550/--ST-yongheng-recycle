@@ -51,9 +51,10 @@ export async function PATCH(
   try {
     const { id } = await params;
     const body = await request.json();
-    const { date, note, items } = body as {
+    const { date, note, roomNumber, items } = body as {
       date?: string;
       note?: string | null;
+      roomNumber?: string | null;
       items?: Array<{ id: string; sortedPricePerKg: number }>;
     };
 
@@ -87,6 +88,7 @@ export async function PATCH(
         data: {
           date: date ? new Date(date) : undefined,
           note: note === null ? null : note || undefined,
+          roomNumber: roomNumber === undefined ? undefined : (roomNumber === null ? null : roomNumber.trim() || null),
         },
         include: {
           sourceProduct: { select: { id: true, name: true } },

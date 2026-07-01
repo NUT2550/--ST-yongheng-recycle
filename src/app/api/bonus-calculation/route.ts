@@ -58,13 +58,23 @@ export async function GET(request: NextRequest) {
       sortedPricePerKg: number;
       costPerKg: number;
       grossProfit: number;
-      bonusAmount: number;
+      bonusAmount: number; // legacy per-item bonus (grossProfit * 10%, no loss deduction)
     }> = [];
 
     let totalBonusAmount = 0;
     let totalSortedWeight = 0;
+    let totalGrossProfit = 0;
+    let totalLossCost = 0;
 
+    // Calculate bonus per bill with LOSS DEDUCTION:
+    //   grossProfitFromOutputs = sum((sortedPricePerKg - sourcePricePerKg) * weight)
+    //   lossCost = lossWeight * sourcePricePerKg   (same basis as grossProfit)
+    //   netProfitForBonus = grossProfitFromOutputs - lossCost
+    //   billBonus = max(netProfitForBonus, 0) * 10%
     for (const bill of sortingBills) {
+      let billGrossProfit = 0;
+      let billItemBonus = 0; // legacy sum (for display)
+
       for (const item of bill.items) {
         if (item.isWaste) continue;
         if (item.bonusAmount <= 0 && item.sortedPricePerKg <= 0) continue;
@@ -89,9 +99,19 @@ export async function GET(request: NextRequest) {
           bonusAmount: item.bonusAmount,
         });
 
-        totalBonusAmount += item.bonusAmount;
+        billGrossProfit += grossProfit;
+        billItemBonus += item.bonusAmount;
         totalSortedWeight += item.weight;
       }
+
+      // Bill-level loss cost (using sourcePricePerKg — same basis as grossProfit)
+      const billLossCost = Math.round(bill.lossWeight * bill.sourcePricePerKg * 100) / 100;
+      const netProfitForBonus = billGrossProfit - billLossCost;
+      const billBonus = Math.max(Math.round(netProfitForBonus * 0.1 * 100) / 100, 0);
+
+      totalGrossProfit += billGrossProfit;
+      totalLossCost += billLossCost;
+      totalBonusAmount += billBonus;
     }
 
     // Aggregate by source → sorted product
@@ -184,11 +204,15 @@ export async function GET(request: NextRequest) {
     // Round totals
     totalBonusAmount = Math.round(totalBonusAmount * 100) / 100;
     totalSortedWeight = Math.round(totalSortedWeight * 100) / 100;
+    totalGrossProfit = Math.round(totalGrossProfit * 100) / 100;
+    totalLossCost = Math.round(totalLossCost * 100) / 100;
 
     return NextResponse.json({
       year: buddhistYear,
       totalBonusAmount,
       totalSortedWeight,
+      totalGrossProfit,
+      totalLossCost,
       sortingBillCount: sortingBills.length,
       aggregatedItems: aggregatedItems.map((a) => ({
         ...a,

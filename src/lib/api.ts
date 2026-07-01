@@ -269,6 +269,8 @@ export async function fetchBonusCalculation(year?: number): Promise<{
   year: number;
   totalBonusAmount: number;
   totalSortedWeight: number;
+  totalGrossProfit: number;
+  totalLossCost: number;
   sortingBillCount: number;
   aggregatedItems: Array<{
     sourceProductId: string;

@@ -124,6 +124,7 @@ export interface SortingBill {
   weighedTotalExpression?: string | null;
   lossWeight: number;
   lossCost: number;
+  roomNumber: string | null;
   note: string | null;
   items: SortingBillItem[];
   isCancelled: boolean;
@@ -343,6 +344,7 @@ export interface CreateSortingBillRequest {
   sourcePricePerKg: number;
   weighedTotal: number;
   weighedTotalExpression?: string;
+  roomNumber?: string;
   note?: string;
   items: Array<{
     productId: string;
