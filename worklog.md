@@ -561,3 +561,58 @@ Expanded History bill item rows showed "@0.00" which was confusing. Owner couldn
 - Unknown/missing costs display "-" instead of fake 0.00
 - All 3 bill types have consistent header rows + bill-level summaries
 - Cancelled bill display + toggle + disabled buttons all still work
+
+---
+
+## Task ID: 23
+## Agent: Main
+## Task: Implement แกะของ/ย้ายสต็อก (Stock Transfer) page
+
+### Implementation
+New `StockTransfer` + `StockTransferItem` models (separate from SortingBill — no bonus fields, no sourcePricePerKg, fully isolates worker bonus logic).
+
+**Files created/changed:**
+- `prisma/schema.prisma`: StockTransfer + StockTransferItem models + Product relations
+- `src/lib/bill-helpers.ts`: generateBillNumber += 'TRANSFER' (prefix TRN), writeAuditLog += 'STOCK_TRANSFER'
+- `src/app/api/stock-transfers/route.ts` (new): POST (FIFO deduct, hard 400 if outputs>source, create output lots source='TRANSFER', audit) + GET (includeCancelled filter)
+- `src/app/api/stock-transfers/[id]/route.ts` (new): GET + PATCH (note/date) + DELETE (strict cancel: blocks if output lots consumed downstream, deletes unconsumed lots, restores source)
+- `src/lib/types.ts`: StockTransfer, StockTransferItem, TransferCartItem, CreateStockTransferRequest, PageTab += 'transfer'
+- `src/lib/api.ts`: fetchStockTransfers + createStockTransfer
+- `src/lib/store.ts`: transfer cart state (no price/bonus)
+- `src/components/transfer-page.tsx` (new): all-products dropdowns, weight formulas, live loss calc, stock display, waste checkbox
+- `src/app/page.tsx`: nav tab 'แกะของ' (PackageOpen, cyan) after คัดแยก
+- `src/components/history-page.tsx`: 4th tab + TransferBillCard (headers สินค้า/น้ำหนัก/ต้นทุน/กก./มูลค่า, source cost summary, cancel badge, disabled buttons)
+- `package.json`: build += 'prisma generate', postinstall += 'prisma generate' (fixes Vercel client regen)
+
+### Production DB Migration
+- `prisma db push` via pooler timed out (pgbouncer DDL limitation)
+- Executed DDL directly via `pg` package: CREATE TABLE StockTransfer + StockTransferItem + unique index + 3 FK constraints — all OK
+- Added `prisma generate` to build/postinstall so Vercel regenerates client with StockTransfer model
+
+### Commits
+- `85870ff` feat: add แกะของ/ย้ายสต็อก (stock transfer) page
+- `ff000b6` fix: add prisma generate to build + postinstall for Vercel
+
+### Production Smoke Test (01/2550)
+1. **Create transfer** (TRN-2569-00001): เหล็กหนาพิเศษ 10kg → ทองแดงปอกเงา 2kg + เหล็กหนาสั้น 7kg + loss 1kg
+   - sourceCostPerKg=9.98 (FIFO), lossCost=9.98 ✓
+2. **Stock movement verified:**
+   - Source เหล็กหนาพิเศษ: 54710 → 54700 (-10) ✓
+   - Output ทองแดงปอกเงา: 258.28 → 260.28 (+2) ✓
+   - Output เหล็กหนาสั้น: 124013.2 → 124020.2 (+7) ✓
+3. **History:** transfer tab shows TRN-2569-00001, 2 items, 1kg loss, not cancelled ✓
+4. **Cancel** (strict — outputs unconsumed):
+   - DELETE returned {"success":true} ✓
+   - Source restored: 54700 → 54710 ✓
+   - Output lots deleted: ทองแดง 260.28→258.28, เหล็ก 124020.2→124013.2 ✓
+   - Default history: 0 transfers (hidden) ✓
+   - includeCancelled: 1 transfer, isCancelled=true, reason recorded ✓
+5. **UI verified:** transfer page renders (source/output combobox, weight, waste checkbox); history transfer tab + cancelled badge with toggle ON ✓
+6. No console errors ✓
+
+### Stage Summary
+- แกะของ/ย้ายสต็อก page fully implemented and production-verified
+- Stock movement (FIFO consume + output create) works end-to-end
+- Strict cancel blocks if outputs consumed downstream; safe cancel restores stock perfectly
+- No impact on SortingBill/bonus logic (separate models)
+- Cancelled transfers hidden by default, shown with badge when toggle ON
