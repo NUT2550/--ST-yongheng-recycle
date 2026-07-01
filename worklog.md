@@ -495,3 +495,69 @@ Logged into production (01/2550) and queried all bill endpoints:
 - Fix complete: backend filters by default, frontend hides + toggles + badges + disables buttons.
 - 3 cancelled sorting bills exist in production (confirmed via API query) — after deploy, they will be hidden by default and shown with badge when toggle is ON.
 - Deploy pending on push credentials.
+
+---
+
+## Task ID: 22
+## Agent: Main
+## Task: Add clear line item headers + source cost display in History page
+
+### Problem
+Expanded History bill item rows showed "@0.00" which was confusing. Owner couldn't tell what each value meant. No headers, no source/origin cost visibility.
+
+### Root Cause
+- Item rows used inline `@{pricePerKg}` format with no column headers
+- No "ราคาต้นทาง" (source cost) display even though the data existed:
+  - SellBillItem.costPerKg (FIFO source cost) — already in API response
+  - SortingBillItem.costPerKg (FIFO source cost) — already in API response
+  - SortingBill.sourcePricePerKg (source buy price) — already in API response
+  - BuyBillItem.pricePerKg IS the source cost (= buy price)
+- No API changes needed — all cost data was already returned
+
+### Changes Made (src/components/history-page.tsx only, +167/-79)
+
+1. **Added `priceOrDash(value)` helper**: shows "-" when value is 0 (unknown/missing cost), formatBaht otherwise. Used for FIFO/source costs where 0 means missing data.
+
+2. **Buy bill items** — header row + grid columns:
+   - สินค้า | น้ำหนัก | ราคาซื้อ/กก. | จำนวนเงิน
+   - Removed `@` prefix; price shown in its own right-aligned column
+   - Bill-level summary: น้ำหนักรวม · ยอดซื้อรวม
+
+3. **Sell bill items** — header row + 5 grid columns:
+   - สินค้า | น้ำหนัก | ราคาขาย/กก. | ต้นทุน/กก. | จำนวนเงิน
+   - ต้นทุน/กก. = FIFO source cost (costPerKg); shows "-" when 0 (missing)
+   - Bill-level summary: ยอดขายรวม / ต้นทุนรวม (ราคาต้นทาง) / กำไร-ขาดทุน
+
+4. **Sorting bill items** — header row + 5 grid columns:
+   - สินค้า | น้ำหนัก | ราคา/กก. | ต้นทุน/กก. | มูลค่า
+   - ราคา/กก. = sortedPricePerKg; shows "-" for waste items or 0
+   - ต้นทุน/กก. = costPerKg (FIFO source); shows "-" for waste/0
+   - มูลค่า = totalCost; shows "-" for waste/0
+   - เศษ badge kept for waste items
+   - Bill-level summary: ราคารับซื้อต้นทาง/กก. (sourcePricePerKg) / น้ำหนักชั่งรวม / สูญเสีย
+
+5. **Responsive layout**: desktop uses CSS grid (hidden sm:grid) with right-aligned numbers; mobile uses labeled stacked layout (sm:hidden) with clear inline labels.
+
+6. Cancelled bills display the same headers; cancel toggle + disabled buttons unchanged.
+
+### Verification
+- Local: lint clean, tsc clean (no errors in changed files)
+- Local Agent Browser: all 3 bill types show headers, no "@", "-" for waste/missing costs
+- Production Agent Browser (01/2550):
+  - Buy bill expanded: สินค้า/น้ำหนัก/ราคาซื้อ/กก./จำนวนเงิน headers ✓, no "@" ✓
+  - Sell bill expanded: ราคาขาย/กก. + ต้นทุน/กก. + จำนวนเงิน ✓, FIFO source costs shown (9.42, 8.96, "-" for missing), ยอดขายรวม/ต้นทุนรวม/กำไร-ขาดทุน summary ✓
+  - Sort bill expanded: ราคา/กก. + ต้นทุน/กก. + มูลค่า ✓, "-" for 0 costs, ราคารับซื้อต้นทาง/กก. = 9.40 ✓
+  - Cancelled toggle ON: 3 cancelled badges, headers present, edit/cancel buttons disabled ✓
+  - No console errors ✓
+
+### Commit + Deploy
+- Commit: 6474dff "fix: clarify history item row labels" (cherry-picked onto origin/main due to diverged local history)
+- Push: 821e951..6474dff main -> main (SUCCESS)
+- Vercel auto-deployed; production verified live
+
+### Stage Summary
+- "@0.00" confusion eliminated — replaced with clear column headers
+- ราคาต้นทาง (source cost) now visible for sell (FIFO costPerKg) and sorting (costPerKg + sourcePricePerKg) bills
+- Unknown/missing costs display "-" instead of fake 0.00
+- All 3 bill types have consistent header rows + bill-level summaries
+- Cancelled bill display + toggle + disabled buttons all still work
