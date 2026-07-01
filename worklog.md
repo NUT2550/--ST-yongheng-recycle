@@ -616,3 +616,71 @@ New `StockTransfer` + `StockTransferItem` models (separate from SortingBill — 
 - Strict cancel blocks if outputs consumed downstream; safe cancel restores stock perfectly
 - No impact on SortingBill/bonus logic (separate models)
 - Cancelled transfers hidden by default, shown with badge when toggle ON
+
+---
+
+## Task ID: 24
+## Agent: Main
+## Task: Insert 2 real sorting bills + debug sorting save failure
+
+### Root Cause of Sorting UI Save Failure
+TWO bugs found and fixed:
+
+**Bug 1: billNumber collision (count-based sequence)**
+- `generateBillNumber` used `count(bills in year) + 1` to compute the sequence
+- Count included cancelled bills, so the generated number collided with an existing
+  (cancelled) bill's billNumber → unique constraint violation
+- e.g. count=131 → SORT-2569-00132, but 00132 already existed (cancelled bill)
+- **Fix:** Changed to max-existing-sequence + 1 (robust to cancelled/gap bills)
+
+**Bug 2: pgbouncer interactive transaction timeout**
+- Supabase pooler (pgbouncer transaction mode) drops connections between statements
+  in interactive `$transaction`, causing "Transaction not found"
+- **Fix:** Refactored sorting POST to use sequential `db` queries with compensating
+  cleanup (restore stock / delete bill) on failure — no interactive transaction
+
+### Commits
+- `d56d172` fix: ensure sorting bill save works and shows errors (billNumber max-seq + fetchJSON details)
+- `8a00d7b` fix: move generateBillNumber outside transaction (pgbouncer)
+- `fa39a23` fix: replace interactive transaction with sequential ops (pgbouncer-safe)
+
+### Product IDs Matched
+| Name | Resolved To | ID |
+|------|------------|-----|
+| เหล็กหนาสั้น | exact | prod_mqgp98443nt9tbljuk6uaxpy |
+| เหล็กบาง | exact | prod_mqgp98n84w35u63lvp47gmhh |
+| ทองแดงใหญ่ | exact | prod_mqgp9arb37xlm6b54b0xa44v |
+| คอมดำ | exact | prod_mqgp9hwdo411xly6wmmeyg86 |
+| มอเตอร์ | exact | prod_mqgp9hpqehz5267b46pxo5ic |
+| สายไฟไม่ปอก | exact | cmr09vcvj0024l1052pb03lfk |
+| ตะกั่วแข็ง | exact | prod_mqgp9h6flpekakyzewnjsp1y |
+| ทองเหลือง | ทองเหลืองเนื้อแดง (within-category) | prod_mqgp9bmg24ygg55yytz9jphl |
+| 304 | แสตนเลส 304 (task fallback rule) | prod_mqgp9caefhv0hs74sfuubrmr |
+| อลูมิเนียมแข็ง | อลูมีเนียมแข็ง (spelling variant in DB) | prod_mqgp9do7ui6p53xv2tbjq7tb |
+| อลูมิเนียมบาง | exact | prod_mqgp9d5g7uiu7tttxza864tp |
+
+### Bills Inserted
+- **Bill #1 (ห้อง 23):** SORT-2569-00140, id cmr22bjx00001jm04qinug64f
+  - Source: เหล็กหนาสั้น 76.3kg (expr "9.4+7.5+52.6+7-0.2"), sourcePricePerKg 9.4
+  - 4 items: ทองแดงใหญ่ 9.4kg@396, คอมดำ 7.5kg@17, มอเตอร์ 52.6kg@19, สายไฟไม่ปอก 6.8kg@50 (expr "7-0.2")
+  - Loss: 0kg, 0 baht ✓
+
+- **Bill #2 (ห้อง 22):** SORT-2569-00141, id cmr22cbsr0001jv041meacfuj
+  - Source: เหล็กบาง 67.3kg (expr "67.9-0.6"), sourcePricePerKg 9, weighedTotal 66.8 (expr "67.6-0.8")
+  - 6 items: ตะกั่วแข็ง 0.5kg@63, เหล็กบาง 1.7kg@9, ทองเหลืองเนื้อแดง 1kg@253, แสตนเลส 304 20kg@33 (expr "20.2-0.2"), อลูมีเนียมแข็ง 21.2kg@60 (expr "21.4-0.2"), อลูมิเนียมบาง 13.8kg@60
+  - Loss: 9.1kg (source 67.3 - outputs 58.2), 80.54 baht ✓
+
+### Counts Before/After
+- SortingBill: 131 → 133 (+2) ✓
+- All 11 involved products: stock moved exactly as expected (all OK, no negative stock) ✓
+
+### UI Save Smoke Test
+- Created SORT-2569-00142 from production UI (เหล็กหนาสั้น 5kg → เหล็กหนายาว 4kg) ✓
+- Cancelled it safely ✓
+- 2 real bills (00140, 00141) remain intact ✓
+
+### Stage Summary
+- 2 real sorting bills inserted and verified in production
+- Root cause of UI save failure fixed (billNumber collision + pgbouncer tx timeout)
+- Sorting UI save now works end-to-end
+- Error messages now surface backend details to the user
