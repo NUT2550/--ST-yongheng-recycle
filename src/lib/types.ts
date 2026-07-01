@@ -52,6 +52,14 @@ export interface SortCartItem {
   bonusAmount: number; // โบนัส = (sortedPricePerKg - sourcePricePerKg) * weight * 10%
 }
 
+export interface TransferCartItem {
+  productId: string;
+  productName: string;
+  weight: number;
+  weightExpression?: string;
+  isWaste: boolean;
+}
+
 // Bill types (from API response)
 export interface BuyBill {
   id: string;
@@ -137,6 +145,39 @@ export interface SortingBillItem {
   bonusAmount: number;
 }
 
+// แกะของ/ย้ายสต็อก — consume 1 source, produce N outputs. No bonus fields.
+export interface StockTransfer {
+  id: string;
+  date: string;
+  sourceProductId: string;
+  sourceProduct: { id: string; name: string };
+  sourceWeight: number;
+  sourceWeightExpression?: string | null;
+  sourceCostPerKg: number;
+  sourceTotalCost: number;
+  weighedTotal: number;
+  weighedTotalExpression?: string | null;
+  lossWeight: number;
+  lossCost: number;
+  note: string | null;
+  items: StockTransferItem[];
+  isCancelled: boolean;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+}
+
+export interface StockTransferItem {
+  id: string;
+  productId: string;
+  product: { id: string; name: string };
+  weight: number;
+  weightExpression?: string | null;
+  isWaste: boolean;
+  costPerKg: number;
+  totalCost: number;
+}
+
 export interface Customer {
   id: string;
   name: string;
@@ -203,7 +244,7 @@ export interface DashboardData {
   }>;
 }
 
-export type PageTab = 'dashboard' | 'buy' | 'sell' | 'sort' | 'stock' | 'credit' | 'bonus' | 'history' | 'users' | 'products';
+export type PageTab = 'dashboard' | 'buy' | 'sell' | 'sort' | 'transfer' | 'stock' | 'credit' | 'bonus' | 'history' | 'users' | 'products';
 
 // Employee types
 export interface Employee {
@@ -310,6 +351,22 @@ export interface CreateSortingBillRequest {
     isWaste: boolean;
     sortedPricePerKg: number;
     bonusAmount: number;
+  }>;
+}
+
+export interface CreateStockTransferRequest {
+  date: string;
+  sourceProductId: string;
+  sourceWeight: number;
+  sourceWeightExpression?: string;
+  weighedTotal?: number;
+  weighedTotalExpression?: string;
+  note?: string;
+  items: Array<{
+    productId: string;
+    weight: number;
+    weightExpression?: string;
+    isWaste: boolean;
   }>;
 }
 

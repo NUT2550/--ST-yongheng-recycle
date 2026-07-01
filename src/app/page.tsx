@@ -13,6 +13,7 @@ import {
   ShoppingCart,
   Coins,
   RefreshCw,
+  PackageOpen,
   Package,
   CreditCard,
   ClipboardList,
@@ -27,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { BuyPage } from '@/components/buy-page';
 import { SellPage } from '@/components/sell-page';
 import { SortPage } from '@/components/sort-page';
+import { TransferPage } from '@/components/transfer-page';
 import { DashboardPage } from '@/components/dashboard-page';
 import { StockPage } from '@/components/stock-page';
 import { CreditPage } from '@/components/credit-page';
@@ -49,6 +51,7 @@ const navItems: Array<{
   { tab: 'buy', label: 'รับซื้อ', icon: ShoppingCart, color: 'text-green-600' },
   { tab: 'sell', label: 'ขาย', icon: Coins, color: 'text-blue-600' },
   { tab: 'sort', label: 'คัดแยก', icon: RefreshCw, color: 'text-purple-600' },
+  { tab: 'transfer', label: 'แกะของ', icon: PackageOpen, color: 'text-cyan-600' },
   { tab: 'stock', label: 'สต๊อก', icon: Package, color: 'text-orange-600' },
   { tab: 'credit', label: 'เครดิต', icon: CreditCard, color: 'text-rose-600' },
   { tab: 'bonus', label: 'โบนัส', icon: Gift, color: 'text-pink-600' },
@@ -66,6 +69,8 @@ function PageContent({ activeTab }: { activeTab: PageTab }) {
       return <SellPage />;
     case 'sort':
       return <SortPage />;
+    case 'transfer':
+      return <TransferPage />;
     case 'stock':
       return <StockPage />;
     case 'credit':

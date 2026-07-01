@@ -5,6 +5,7 @@ import {
   BuyBill,
   SellBill,
   SortingBill,
+  StockTransfer,
   Customer,
   CreditEntry,
   Employee,
@@ -12,6 +13,7 @@ import {
   CreateBuyBillRequest,
   CreateSellBillRequest,
   CreateSortingBillRequest,
+  CreateStockTransferRequest,
   CreateCustomerRequest,
   CreateEmployeeRequest,
   CreateSortingBonusRequest,
@@ -123,6 +125,21 @@ export async function fetchSortingBills(
   );
 }
 
+export async function fetchStockTransfers(
+  page?: number,
+  limit?: number,
+  includeCancelled?: boolean
+): Promise<{ bills: StockTransfer[]; total: number }> {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  if (includeCancelled) params.set('includeCancelled', 'true');
+  const query = params.toString() ? `?${params.toString()}` : '';
+  return fetchJSON<{ bills: StockTransfer[]; total: number }>(
+    `/stock-transfers${query}`
+  );
+}
+
 export async function fetchCustomers(): Promise<Customer[]> {
   return fetchJSON<Customer[]>('/customers');
 }
@@ -163,6 +180,15 @@ export async function createSortingBill(
   data: CreateSortingBillRequest
 ): Promise<SortingBill> {
   return fetchJSON<SortingBill>('/sorting-bills', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function createStockTransfer(
+  data: CreateStockTransferRequest
+): Promise<StockTransfer> {
+  return fetchJSON<StockTransfer>('/stock-transfers', {
     method: 'POST',
     body: JSON.stringify(data),
   });

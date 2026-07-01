@@ -28,6 +28,8 @@ model Product {
   sellItems       SellBillItem[]
   sortingSource   SortingBill[]   @relation("SortingSource")
   sortingItems    SortingBillItem[]
+  transferSource   StockTransfer[]    @relation("TransferSource")
+  transferItems    StockTransferItem[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -143,6 +145,49 @@ model SortingBillItem {
   totalCost        Float        @default(0)
   sortedPricePerKg Float        @default(0) // ราคารับซื้อสินค้าที่คัดได้ (พนักงานใส่)
   bonusAmount      Float        @default(0) // โบนัส = (sortedPricePerKg - sourcePricePerKg) * weight * 10%
+}
+
+// แกะของ/ย้ายสต็อก — consume 1 source product, produce N output products.
+// Structurally similar to SortingBill but has NO bonus fields/relations and NO
+// sourcePricePerKg. Keeps bonus-calculation logic fully isolated.
+model StockTransfer {
+  id                     String               @id @default(cuid())
+  billNumber             String?              @unique
+  date                   DateTime             @default(now())
+  // Source (consumed via FIFO)
+  sourceProductId        String
+  sourceProduct          Product              @relation("TransferSource", fields: [sourceProductId], references: [id])
+  sourceWeight           Float
+  sourceWeightExpression String?              // สูตรน้ำหนักต้นทาง เช่น "100-0.5"
+  sourceCostPerKg        Float                @default(0) // FIFO weighted-avg cost of consumed lots (stored for audit)
+  sourceTotalCost        Float                @default(0) // sourceWeight * sourceCostPerKg
+  // Outputs summary
+  weighedTotal           Float                @default(0) // optional manual weighed total (cross-check)
+  weighedTotalExpression String?
+  lossWeight             Float                @default(0) // sourceWeight - sum(output weights)
+  lossCost               Float                @default(0) // lossWeight * sourceCostPerKg
+  note                   String?
+  items                  StockTransferItem[]
+  isCancelled            Boolean              @default(false)
+  cancelledAt            DateTime?
+  cancelledBy            String?
+  cancelReason           String?
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+}
+
+model StockTransferItem {
+  id               String         @id @default(cuid())
+  stockTransferId  String
+  stockTransfer    StockTransfer  @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product        @relation(fields: [productId], references: [id])
+  weight           Float
+  weightExpression String?        // สูตรน้ำหนัก output เช่น "20-0.1"
+  isWaste          Boolean        @default(false) // ขยะ/สูญเสีย row — no stock lot created
+  costPerKg        Float          @default(0) // allocated source cost (FIFO avg)
+  totalCost        Float          @default(0)
+  // NOTE: no sortedPricePerKg, no bonusAmount — dismantle has no worker bonus
 }
 
 model Customer {

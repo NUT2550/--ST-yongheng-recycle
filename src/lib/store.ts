@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { BuyCartItem, SellCartItem, SortCartItem, PageTab } from './types';
+import { BuyCartItem, SellCartItem, SortCartItem, TransferCartItem, PageTab } from './types';
 
 interface AppState {
   // Navigation
@@ -34,6 +34,19 @@ interface AppState {
   removeSortCartItem: (index: number) => void;
   updateSortCartItem: (index: number, item: Partial<SortCartItem>) => void;
   clearSortCart: () => void;
+
+  // Transfer (แกะของ/ย้ายสต็อก) cart
+  transferSourceProductId: string;
+  transferSourceWeight: number;
+  transferWeighedTotal: number;
+  transferCartItems: TransferCartItem[];
+  setTransferSourceProduct: (productId: string) => void;
+  setTransferSourceWeight: (weight: number) => void;
+  setTransferWeighedTotal: (weight: number) => void;
+  addTransferCartItem: (item: TransferCartItem) => void;
+  removeTransferCartItem: (index: number) => void;
+  updateTransferCartItem: (index: number, item: Partial<TransferCartItem>) => void;
+  clearTransferCart: () => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -103,5 +116,34 @@ export const useAppStore = create<AppState>((set) => ({
       sortSourceWeight: 0,
       sortSourcePricePerKg: 0,
       sortWeighedTotal: 0,
+    }),
+
+  // Transfer (แกะของ/ย้ายสต็อก) cart
+  transferSourceProductId: '',
+  transferSourceWeight: 0,
+  transferWeighedTotal: 0,
+  transferCartItems: [],
+  setTransferSourceProduct: (productId) =>
+    set({ transferSourceProductId: productId }),
+  setTransferSourceWeight: (weight) => set({ transferSourceWeight: weight }),
+  setTransferWeighedTotal: (weight) => set({ transferWeighedTotal: weight }),
+  addTransferCartItem: (item) =>
+    set((state) => ({ transferCartItems: [...state.transferCartItems, item] })),
+  removeTransferCartItem: (index) =>
+    set((state) => ({
+      transferCartItems: state.transferCartItems.filter((_, i) => i !== index),
+    })),
+  updateTransferCartItem: (index, item) =>
+    set((state) => ({
+      transferCartItems: state.transferCartItems.map((existing, i) =>
+        i === index ? { ...existing, ...item } : existing
+      ),
+    })),
+  clearTransferCart: () =>
+    set({
+      transferCartItems: [],
+      transferSourceProductId: '',
+      transferSourceWeight: 0,
+      transferWeighedTotal: 0,
     }),
 }));

@@ -5,8 +5,9 @@ import {
   fetchBuyBills,
   fetchSellBills,
   fetchSortingBills,
+  fetchStockTransfers,
 } from '@/lib/api';
-import { BuyBill, SellBill, SortingBill } from '@/lib/types';
+import { BuyBill, SellBill, SortingBill, StockTransfer } from '@/lib/types';
 import { formatBaht, formatWeight, formatDate } from '@/lib/helpers';
 import { formulaHint } from '@/lib/safe-math';
 import { getAuthToken } from '@/lib/api';
@@ -40,6 +41,7 @@ import {
   ShoppingCart,
   Coins,
   RefreshCw,
+  PackageOpen,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -51,7 +53,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
-type HistoryTab = 'buy' | 'sell' | 'sort';
+type HistoryTab = 'buy' | 'sell' | 'sort' | 'transfer';
 const PAGE_SIZE = 10;
 
 // Format a price, showing "-" when 0 means unknown/missing cost (not a real zero).
@@ -76,6 +78,9 @@ export function HistoryPage() {
   // Sort
   const [sortBills, setSortBills] = useState<SortingBill[]>([]);
   const [sortTotal, setSortTotal] = useState(0);
+  // Transfer
+  const [transferBills, setTransferBills] = useState<StockTransfer[]>([]);
+  const [transferTotal, setTransferTotal] = useState(0);
 
   const [loading, setLoading] = useState(true);
 
@@ -130,12 +135,26 @@ export function HistoryPage() {
     }
   }, [page, showCancelled]);
 
+  const loadTransferBills = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetchStockTransfers(page, PAGE_SIZE, showCancelled);
+      setTransferBills(res.bills);
+      setTransferTotal(res.total);
+    } catch {
+      // handle
+    } finally {
+      setLoading(false);
+    }
+  }, [page, showCancelled]);
+
   // Load data on tab/page/showCancelled change
   useEffect(() => {
     if (activeTab === 'buy') loadBuyBills();
     else if (activeTab === 'sell') loadSellBills();
-    else loadSortBills();
-  }, [activeTab, page, showCancelled, loadBuyBills, loadSellBills, loadSortBills]);
+    else if (activeTab === 'sort') loadSortBills();
+    else loadTransferBills();
+  }, [activeTab, page, showCancelled, loadBuyBills, loadSellBills, loadSortBills, loadTransferBills]);
 
   // Reset page on tab change
   const handleTabChange = (tab: string) => {
@@ -153,7 +172,8 @@ export function HistoryPage() {
   const totalPages = (() => {
     if (activeTab === 'buy') return Math.ceil(buyTotal / PAGE_SIZE);
     if (activeTab === 'sell') return Math.ceil(sellTotal / PAGE_SIZE);
-    return Math.ceil(sortTotal / PAGE_SIZE);
+    if (activeTab === 'sort') return Math.ceil(sortTotal / PAGE_SIZE);
+    return Math.ceil(transferTotal / PAGE_SIZE);
   })();
 
   return (
@@ -180,7 +200,7 @@ export function HistoryPage() {
 
       {/* Filter Tabs */}
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="w-full grid grid-cols-3">
+        <TabsList className="w-full grid grid-cols-4">
           <TabsTrigger value="buy" className="text-xs sm:text-sm gap-1">
             <ShoppingCart className="h-3.5 w-3.5" />
             รับซื้อ
@@ -192,6 +212,10 @@ export function HistoryPage() {
           <TabsTrigger value="sort" className="text-xs sm:text-sm gap-1">
             <RefreshCw className="h-3.5 w-3.5" />
             คัดแยก
+          </TabsTrigger>
+          <TabsTrigger value="transfer" className="text-xs sm:text-sm gap-1">
+            <PackageOpen className="h-3.5 w-3.5" />
+            แกะของ
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -231,6 +255,16 @@ export function HistoryPage() {
               onRefresh={loadSortBills}
             />
           )}
+          {activeTab === 'transfer' && (
+            <BillList
+              bills={transferBills}
+              total={transferTotal}
+              expandedIds={expandedIds}
+              toggleExpand={toggleExpand}
+              type="transfer"
+              onRefresh={loadTransferBills}
+            />
+          )}
         </>
       )}
 
@@ -262,7 +296,7 @@ export function HistoryPage() {
   );
 }
 
-/* ---- Bill List (handles all 3 types) ---- */
+/* ---- Bill List (handles all 4 types) ---- */
 function BillList({
   bills,
   total,
@@ -271,11 +305,11 @@ function BillList({
   type,
   onRefresh,
 }: {
-  bills: BuyBill[] | SellBill[] | SortingBill[];
+  bills: BuyBill[] | SellBill[] | SortingBill[] | StockTransfer[];
   total: number;
   expandedIds: Set<string>;
   toggleExpand: (id: string) => void;
-  type: 'buy' | 'sell' | 'sort';
+  type: 'buy' | 'sell' | 'sort' | 'transfer';
   onRefresh: () => void;
 }) {
   if (bills.length === 0) {
@@ -283,7 +317,7 @@ function BillList({
       <Card>
         <CardContent className="p-6">
           <p className="text-gray-400 text-center py-8 text-sm">
-            ยังไม่มีข้อมูล{type === 'buy' ? 'รับซื้อ' : type === 'sell' ? 'ขาย' : 'คัดแยก'}
+            ยังไม่มีข้อมูล{type === 'buy' ? 'รับซื้อ' : type === 'sell' ? 'ขาย' : type === 'sort' ? 'คัดแยก' : 'แกะของ'}
           </p>
         </CardContent>
       </Card>
@@ -300,7 +334,8 @@ function BillList({
           const isExpanded = expandedIds.has(bill.id);
           if (type === 'buy') return <BuyBillCard key={bill.id} bill={bill as BuyBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
           if (type === 'sell') return <SellBillCard key={bill.id} bill={bill as SellBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
-          return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+          if (type === 'sort') return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+          return <TransferBillCard key={bill.id} bill={bill as StockTransfer} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
         })}
       </div>
     </div>
@@ -762,8 +797,164 @@ function SortBillCard({
   );
 }
 
+/* ---- Transfer (แกะของ/ย้ายสต็อก) Bill Card ---- */
+function TransferBillCard({
+  bill,
+  isExpanded,
+  toggleExpand,
+  onRefresh,
+}: {
+  bill: StockTransfer;
+  isExpanded: boolean;
+  toggleExpand: (id: string) => void;
+  onRefresh: () => void;
+}) {
+  const cancelled = bill.isCancelled === true;
+  return (
+    <Card className={cancelled ? 'border-red-200 bg-red-50/30' : ''}>
+      <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(bill.id)}>
+        <CollapsibleTrigger asChild>
+          <button className="w-full text-left">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <PackageOpen className="h-4 w-4 text-cyan-600 shrink-0" />
+                    <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
+                      {formatDate(bill.date)}
+                    </span>
+                    {cancelled && <CancelledBadge />}
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    จาก: {bill.sourceProduct.name} · {formatWeight(bill.sourceWeight)}
+                    {bill.sourceWeightExpression && (
+                      <span className="text-[10px] text-gray-400 ml-1">
+                        ({formulaHint(bill.sourceWeightExpression)})
+                      </span>
+                    )}{' '}
+                    → {bill.items.length} รายการ
+                  </p>
+                  {bill.lossWeight > 0 && (
+                    <p className="text-xs text-red-500 mt-0.5">
+                      สูญเสีย: {formatWeight(bill.lossWeight)} ({formatBaht(bill.lossCost)} บาท)
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <ChevronDown
+                    className={`h-4 w-4 text-gray-400 transition-transform ${
+                      isExpanded ? 'rotate-180' : ''
+                    }`}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-3 sm:px-4 pb-3 sm:pb-4">
+            <Separator className="mb-3" />
+            {/* Header row (desktop) */}
+            <div className="hidden sm:grid grid-cols-[1fr_54px_76px_76px_92px] gap-x-2 pb-1.5 mb-1 border-b text-[10px] font-medium text-gray-400 uppercase tracking-wide">
+              <div>สินค้า</div>
+              <div className="text-right">น้ำหนัก</div>
+              <div className="text-right">ต้นทุน/กก.</div>
+              <div className="text-right">มูลค่า</div>
+              <div className="text-right">&nbsp;</div>
+            </div>
+            <div className="space-y-0.5">
+              {bill.items.map((item) => {
+                const priceDash = item.isWaste || item.costPerKg === 0;
+                return (
+                  <div key={item.id}>
+                    {/* Desktop grid row */}
+                    <div className="hidden sm:grid grid-cols-[1fr_54px_76px_76px_92px] gap-x-2 text-xs sm:text-sm items-start py-0.5">
+                      <span className="text-gray-700 truncate flex items-center gap-1.5">
+                        {item.product.name}
+                        {item.isWaste && (
+                          <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px] px-1.5 py-0 shrink-0">
+                            เศษ
+                          </Badge>
+                        )}
+                        {item.weightExpression && (
+                          <span className="text-[10px] text-gray-400">{formulaHint(item.weightExpression)}</span>
+                        )}
+                      </span>
+                      <span className="text-gray-600 text-right">{formatWeight(item.weight)}</span>
+                      <span className="text-gray-500 text-right">{item.costPerKg > 0 ? formatBaht(item.costPerKg) : '-'}</span>
+                      <span className="text-gray-500 text-right">{item.totalCost > 0 ? formatBaht(item.totalCost) : '-'}</span>
+                      <span className="text-right text-gray-400 text-[10px]">บาท</span>
+                    </div>
+                    {/* Mobile stacked layout */}
+                    <div className="sm:hidden py-1 border-b border-gray-100 last:border-0">
+                      <div className="flex justify-between items-baseline gap-2">
+                        <span className="text-gray-800 text-sm font-medium truncate flex items-center gap-1.5">
+                          {item.product.name}
+                          {item.isWaste && (
+                            <Badge variant="secondary" className="bg-red-100 text-red-700 hover:bg-red-100 text-[10px] px-1.5 py-0 shrink-0">
+                              เศษ
+                            </Badge>
+                          )}
+                        </span>
+                        <span className="font-medium text-gray-900 text-sm shrink-0">{item.totalCost > 0 ? `${formatBaht(item.totalCost)} บาท` : '-'}</span>
+                      </div>
+                      <div className="flex justify-between text-[11px] text-gray-500 mt-0.5">
+                        <span>
+                          {formatWeight(item.weight)}
+                          {item.weightExpression && (
+                            <span className="text-[10px] text-gray-400 ml-1">({formulaHint(item.weightExpression)})</span>
+                          )}
+                        </span>
+                        <span>ต้นทุน {item.costPerKg > 0 ? formatBaht(item.costPerKg) : '-'}/กก.</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <Separator className="my-2" />
+            {/* Bill-level summary */}
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>ต้นทุนรับซื้อต้นทาง/กก.</span>
+              <span>{bill.sourceCostPerKg > 0 ? formatBaht(bill.sourceCostPerKg) : '-'}</span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>ต้นทุนต้นทางรวม</span>
+              <span>{bill.sourceTotalCost > 0 ? `${formatBaht(bill.sourceTotalCost)} บาท` : '-'}</span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500">
+              <span>น้ำหนักชั่งรวม</span>
+              <span>
+                {formatWeight(bill.weighedTotal)}
+                {bill.weighedTotalExpression && (
+                  <span className="text-[10px] text-gray-400 ml-1">
+                    ({formulaHint(bill.weighedTotalExpression)})
+                  </span>
+                )}
+              </span>
+            </div>
+            {bill.lossWeight > 0 && (
+              <div className="flex justify-between text-xs text-red-500">
+                <span>สูญเสีย</span>
+                <span>{formatWeight(bill.lossWeight)} · {formatBaht(bill.lossCost)} บาท</span>
+              </div>
+            )}
+            {bill.note && (
+              <p className="text-xs text-gray-400 mt-2">หมายเหตุ: {bill.note}</p>
+            )}
+            {cancelled && (
+              <CancelledNotice reason={bill.cancelReason} cancelledAt={bill.cancelledAt} />
+            )}
+            <BillActions billId={bill.id} billType="transfer" onRefresh={onRefresh} isCancelled={cancelled} />
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </Card>
+  );
+}
+
 /* ---- Bill Actions Component (Cancel + Edit) ---- */
-function BillActions({ billId, billType, onRefresh, isCancelled }: { billId: string; billType: 'buy' | 'sell' | 'sort'; onRefresh: () => void; isCancelled: boolean }) {
+function BillActions({ billId, billType, onRefresh, isCancelled }: { billId: string; billType: 'buy' | 'sell' | 'sort' | 'transfer'; onRefresh: () => void; isCancelled: boolean }) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -771,7 +962,7 @@ function BillActions({ billId, billType, onRefresh, isCancelled }: { billId: str
   const [editNote, setEditNote] = useState('');
   const [editLoading, setEditLoading] = useState(false);
 
-  const apiPath = billType === 'buy' ? 'buy-bills' : billType === 'sell' ? 'sell-bills' : 'sorting-bills';
+  const apiPath = billType === 'buy' ? 'buy-bills' : billType === 'sell' ? 'sell-bills' : billType === 'sort' ? 'sorting-bills' : 'stock-transfers';
 
   const handleCancel = async () => {
     if (!cancelReason.trim()) {

@@ -8,9 +8,13 @@ import { db } from '@/lib/db'
  */
 export async function generateBillNumber(
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0],
-  billType: 'BUY' | 'SELL' | 'SORT'
+  billType: 'BUY' | 'SELL' | 'SORT' | 'TRANSFER'
 ): Promise<string> {
-  const prefix = billType === 'BUY' ? 'BUY' : billType === 'SELL' ? 'SELL' : 'SORT'
+  const prefix =
+    billType === 'BUY' ? 'BUY'
+    : billType === 'SELL' ? 'SELL'
+    : billType === 'SORT' ? 'SORT'
+    : 'TRN'
   const now = new Date()
   const buddhistYear = now.getFullYear() + 543
   const adYear = now.getFullYear()
@@ -22,8 +26,10 @@ export async function generateBillNumber(
     count = await tx.buyBill.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
   } else if (billType === 'SELL') {
     count = await tx.sellBill.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
-  } else {
+  } else if (billType === 'SORT') {
     count = await tx.sortingBill.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
+  } else {
+    count = await tx.stockTransfer.count({ where: { date: { gte: yearStart, lt: yearEnd } } })
   }
 
   const sequence = count + 1
@@ -38,7 +44,7 @@ export async function writeAuditLog(
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0] | typeof db,
   params: {
     action: 'CREATE' | 'UPDATE' | 'DELETE' | 'CANCEL'
-    entityType: 'BUY_BILL' | 'SELL_BILL' | 'SORTING_BILL'
+    entityType: 'BUY_BILL' | 'SELL_BILL' | 'SORTING_BILL' | 'STOCK_TRANSFER'
     entityId: string
     userId?: string
     userName?: string
