@@ -23,6 +23,7 @@ import { ShoppingCart, Plus, Trash2, Loader2, FileSpreadsheet } from 'lucide-rea
 import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 import { ExcelImportDialog } from '@/components/excel-import-dialog';
+import { DetailedExcelImportDialog } from '@/components/detailed-excel-import-dialog';
 
 export function BuyPage() {
   const {
@@ -302,7 +303,7 @@ export function BuyPage() {
               </div>
 
               {/* Excel Import */}
-              <div className="mt-3">
+              <div className="mt-3 flex flex-wrap gap-2">
                 <ExcelImportDialog
                   products={products}
                   groupedProducts={groupedProducts}
@@ -314,6 +315,39 @@ export function BuyPage() {
                     toast.success(`เพิ่ม ${items.length} รายการจาก Excel แล้ว`);
                   }}
                   billType="buy"
+                />
+                <DetailedExcelImportDialog
+                  products={products}
+                  onImport={async (bills) => {
+                    setSubmitting(true);
+                    let success = 0;
+                    let failed = 0;
+                    for (const bill of bills) {
+                      try {
+                        await createBuyBill({
+                          date: bill.date,
+                          isCredit: false,
+                          note: bill.note,
+                          externalBillNumber: bill.externalBillNumber,
+                          items: bill.items.map((item) => ({
+                            productId: item.productId,
+                            weight: item.weight,
+                            weightExpression: item.weightExpression,
+                            pricePerKg: item.pricePerKg,
+                          })),
+                        });
+                        success++;
+                      } catch (err) {
+                        failed++;
+                        const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
+                        toast.error(`นำเข้าบิล ${bill.externalBillNumber} ไม่สำเร็จ: ${message}`);
+                      }
+                    }
+                    setSubmitting(false);
+                    if (success > 0) {
+                      toast.success(`นำเข้าสำเร็จ ${success} บิล${failed > 0 ? ` (ล้มเหลว ${failed} บิล)` : ''}`);
+                    }
+                  }}
                 />
               </div>
 

@@ -15,10 +15,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { date, isCredit, note, items } = body as {
+    const { date, isCredit, note, externalBillNumber, items } = body as {
       date: string;
       isCredit: boolean;
       note?: string;
+      externalBillNumber?: string;
       items: Array<{
         productId: string;
         weight: number;
@@ -29,6 +30,20 @@ export async function POST(request: NextRequest) {
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: 'Items are required' }, { status: 400 });
+    }
+
+    // Check for duplicate externalBillNumber if provided
+    if (externalBillNumber && externalBillNumber.trim()) {
+      const existing = await db.buyBill.findFirst({
+        where: { externalBillNumber: externalBillNumber.trim() },
+        select: { id: true, billNumber: true },
+      });
+      if (existing) {
+        return NextResponse.json(
+          { error: `เลขบิล "${externalBillNumber.trim()}" ถูกนำเข้าแล้ว (bill ${existing.billNumber || existing.id})` },
+          { status: 409 }
+        );
+      }
     }
 
     // Server-side validation
@@ -65,6 +80,7 @@ export async function POST(request: NextRequest) {
       const created = await tx.buyBill.create({
         data: {
           billNumber,
+          externalBillNumber: externalBillNumber?.trim() || null,
           date: new Date(date),
           isCredit,
           note: note || null,

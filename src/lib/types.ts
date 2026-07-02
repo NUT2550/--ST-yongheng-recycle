@@ -67,6 +67,7 @@ export interface BuyBill {
   date: string;
   isCredit: boolean;
   note: string | null;
+  externalBillNumber: string | null;
   totalAmount: number;
   items: BuyBillItem[];
   isCancelled: boolean;
@@ -323,6 +324,7 @@ export interface CreateBuyBillRequest {
   date: string;
   isCredit: boolean;
   note?: string;
+  externalBillNumber?: string;
   items: Array<{
     productId: string;
     weight: number;
