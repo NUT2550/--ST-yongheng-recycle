@@ -838,3 +838,59 @@ Rewrote sell-page.tsx from 3 vertical cards to a 2-column compact layout matchin
 7. Stock restored: 102173.5 → 102178.5 (+5) ✓
 8. Buy page still works (compact layout intact) ✓
 9. Sorting page still works (compact layout intact) ✓
+
+---
+
+## Task ID: 30
+## Agent: Main
+## Task: Detailed Buy Excel Import — split one file into multiple bills by external bill number
+
+### Sample File Analysis
+File: ซื้อ 1-7-2569 แบบละเอียด.xls (OLE2/CFB format, TIS-620 codepage 874)
+- 100 rows, 13 unique bill numbers, 43 item rows, 22 unique product names
+- Structure: seller summary rows → bill header rows (เลขบิล) → item rows → empty separators
+- Sellers: ลูกค้าทั่วไป, คุณศักดิ์ ขุมทอง, คุณกอล์ฟ บ้านแพ้ว, ลุงอี๊ด, etc.
+
+### Schema Changes
+- BuyBill += externalBillNumber String? @unique (เลขบิลจากระบบเดิม)
+- Production Supabase: column + unique index added via ALTER TABLE
+
+### Implementation
+- **API:** POST /api/buy-bills accepts externalBillNumber, checks duplicates (409 conflict)
+- **New component:** detailed-excel-import-dialog.tsx
+  - Parses detailed .xls format (seller summaries + bill headers + item rows)
+  - Groups by เลขบิล → one BuyBill per unique external bill number
+  - Product matching: exact name → safe aliases → single-result contains (NFC normalized)
+  - TIS-620 encoding fix: browser XLSX library garbles Thai text → fixThaiText() re-decodes using TextDecoder('windows-874')
+  - Dry-run preview: bill count, item count, unmatched products, duplicates, amount mismatch warnings
+  - Blocks import if: unmatched products, duplicate external bill numbers
+  - Creates bills via existing createBuyBill API (preserves stock creation)
+  - Note includes seller name + original note + source filename
+- **Buy page:** two import buttons side by side (simple + detailed)
+
+### Key Bug Fixed
+Browser XLSX library doesn't correctly decode TIS-620 (codepage 874) Thai text from .xls files.
+Text comes out as garbled Latin-1 (e.g. "àËÅç¡Ë¹ÒÊÑé¹" instead of "เหล็กหนาสั้น").
+Fix: after parsing, detect garbled text (chars in 0x80-0xFF range) and re-decode using
+TextDecoder('windows-874'). Applied to all string fields from the Excel file.
+
+### Commits
+- a3a1b1b feat: detailed Buy Excel import (initial)
+- 51ac841 fix: add safe aliases for aluminum product name variants
+- e9965e9 fix: NFC Unicode normalization for Thai product name matching
+- 0c2709f fix: decode TIS-620 Thai text from .xls files in browser (THE KEY FIX)
+
+### Production Smoke Test (DRY-RUN ONLY — no full import without owner approval)
+1. Detailed import dialog opens ✓
+2. File upload parses correctly: 13 bills, 43 items, 0 unmatched, 0 duplicates ✓
+3. All 13 bills show "พร้อม" (ready) badge ✓
+4. Product matching: all 22 unique product names matched (20 exact, 2 via safe aliases) ✓
+5. No actual import performed — owner must approve preview before real import
+
+### Owner Approval Needed
+The full real import (13 bills, 43 items) is ready but NOT imported.
+Owner should:
+1. Open Buy page → "นำเข้าแบบละเอียด (แยกบิล)"
+2. Upload the .xls file
+3. Review the preview (13 bills, all products matched)
+4. Click "นำเข้า 13 บิล" to create the bills
