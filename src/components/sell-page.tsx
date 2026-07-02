@@ -27,15 +27,6 @@ import {
 } from '@/components/ui/select';
 import { ProductCombobox, ProductComboboxGroup } from '@/components/ui/product-combobox';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -85,10 +76,8 @@ export function SellPage() {
           fetchProducts(),
           fetchCustomers(),
         ]);
-        // Products API returns { products: Product[] }
         const prodData = prodRes as unknown as { products: Product[] };
         setProducts(prodData.products || (prodRes as unknown as Product[]));
-        // Customers API returns { customers: Customer[] }
         const custData = custRes as unknown as { customers: Customer[] };
         setCustomers(custData.customers || (custRes as unknown as Customer[]));
       } catch {
@@ -121,7 +110,6 @@ export function SellPage() {
     );
   }, [availableProducts]);
 
-  // Grouped products for combobox
   const groupedProductsForCombobox = useMemo((): ProductComboboxGroup[] => {
     return groupedProducts.map((group) => ({
       categoryId: group.category.id,
@@ -130,13 +118,12 @@ export function SellPage() {
     }));
   }, [groupedProducts]);
 
-  // Selected product details
   const selectedProduct = useMemo(
     () => products.find((p) => p.id === selectedProductId),
     [products, selectedProductId]
   );
 
-  // Auto-calculate total
+  // Auto-calculate total for current item
   const totalAmount = useMemo(() => {
     const result = parseWeightExpression(weight);
     const w = result.error ? 0 : result.value;
@@ -153,6 +140,17 @@ export function SellPage() {
     () => calculateCartTotal(sellCartItems),
     [sellCartItems]
   );
+
+  // Estimated source cost (from avgCostPerKg of each product in cart)
+  const estimatedSourceCost = useMemo(
+    () => sellCartItems.reduce((sum, item) => {
+      const product = products.find((p) => p.id === item.productId);
+      const costPerKg = product?.stock?.avgCostPerKg ?? 0;
+      return sum + Math.round(item.weight * costPerKg * 100) / 100;
+    }, 0),
+    [sellCartItems, products]
+  );
+  const estimatedProfit = cartTotalAmount - estimatedSourceCost;
 
   // Add item to cart
   const handleAddItem = () => {
@@ -176,9 +174,7 @@ export function SellPage() {
       return;
     }
 
-    // Validate stock
     const availableWeight = selectedProduct?.stock?.totalWeight ?? 0;
-    // Check total weight in cart for this product + new weight
     const currentCartWeight = sellCartItems
       .filter((item) => item.productId === selectedProductId)
       .reduce((sum, item) => sum + item.weight, 0);
@@ -242,7 +238,6 @@ export function SellPage() {
       toast.error('ตะกร้าว่าง กรุณาเพิ่มรายการก่อน');
       return;
     }
-
     if (isCredit && !selectedCustomerId) {
       toast.error('กรุณาเลือกลูกค้าเพื่อขายเชื่อ');
       return;
@@ -299,12 +294,12 @@ export function SellPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">ขายสินค้า</h2>
-          <p className="text-gray-500 mt-1">บันทึกรายการขายเหล็กและโลหะ</p>
+          <p className="text-gray-500 mt-1 text-sm">บันทึกรายการขายเหล็กและโลหะ</p>
         </div>
         {sellCartItems.length > 0 && (
           <Badge variant="secondary" className="bg-amber-100 text-amber-700">
@@ -314,406 +309,394 @@ export function SellPage() {
         )}
       </div>
 
-      {/* Add Item Form */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">เพิ่มรายการขาย</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Product Select */}
-            <div className="space-y-2 sm:col-span-2 lg:col-span-1">
-              <Label htmlFor="sell-product">สินค้า</Label>
-              <ProductCombobox
-                groups={groupedProductsForCombobox}
-                value={selectedProductId}
-                onValueChange={setSelectedProductId}
-                placeholder="เลือกสินค้า"
-                searchPlaceholder="พิมพ์ค้นหาสินค้า..."
-                id="sell-product"
-                renderLabel={(product) => `${product.name} (${formatWeight(product.stock?.totalWeight ?? 0)}) - ${formatBaht(product.defaultBuyPrice)}/กก.`}
-                onSelect={() => document.getElementById('sell-weight')?.focus()}
-              />
-            </div>
+      {/* Main grid: left form + right sticky summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Left: Input form + cart (2 cols) */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Add Item Form */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">เพิ่มรายการขาย</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 items-end">
+                {/* Product Select */}
+                <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+                  <Label htmlFor="sell-product" className="text-xs">สินค้า</Label>
+                  <ProductCombobox
+                    groups={groupedProductsForCombobox}
+                    value={selectedProductId}
+                    onValueChange={setSelectedProductId}
+                    placeholder="เลือกสินค้า"
+                    searchPlaceholder="พิมพ์ค้นหาสินค้า..."
+                    id="sell-product"
+                    renderLabel={(product) => `${product.name} (${formatWeight(product.stock?.totalWeight ?? 0)}) - ${formatBaht(product.defaultBuyPrice)}/กก.`}
+                    onSelect={() => document.getElementById('sell-weight')?.focus()}
+                  />
+                </div>
 
-            {/* Weight */}
-            <div className="space-y-2">
-              <Label htmlFor="sell-weight">น้ำหนัก (กก.)</Label>
-              <Input
-                id="sell-weight"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00 หรือ 860-3"
-                value={weight}
-                onChange={(e) => setWeight(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const result = parseWeightExpression(weight);
-                    if (result.error) {
-                      toast.error(`น้ำหนัก: ${result.error}`);
-                      return;
-                    }
-                    if (result.isFormula && !result.error) {
-                      toast.info(`น้ำหนัก: ${result.expression} = ${result.value}`);
-                    }
-                    document.getElementById('sell-price')?.focus();
-                  }
-                }}
-              />
-              {/* Live preview: แสดงผลลัพธ์ทันทีขณะพิมพ์ */}
-              {weight.trim() && (() => {
-                const preview = previewWeightValue(weight);
-                if (preview === null) return null;
-                return (
-                  <p className="text-xs text-emerald-700 font-medium">
-                    = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
-                  </p>
-                );
-              })()}
-              {selectedProduct && weight.trim() && (
-                <p className="text-xs text-gray-500">
-                  มีสต๊อก: {formatWeight(selectedProduct.stock?.totalWeight ?? 0)}
-                </p>
-              )}
-            </div>
-
-            {/* Price per kg */}
-            <div className="space-y-2">
-              <Label htmlFor="sell-price">ราคาขาย/กก.</Label>
-              <Input
-                id="sell-price"
-                type="number"
-                min="0"
-                step="0.01"
-                placeholder="0.00"
-                value={pricePerKg}
-                onChange={(e) => setPricePerKg(e.target.value)}
-              />
-            </div>
-
-            {/* Total (read-only) */}
-            <div className="space-y-2">
-              <Label>จำนวนเงิน</Label>
-              <div className="flex h-9 items-center rounded-md border bg-gray-50 px-3 text-sm font-semibold text-amber-800">
-                {formatBaht(totalAmount)} บาท
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-2">
-            <Button
-              onClick={handleAddItem}
-              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
-            >
-              <Plus className="h-4 w-4 mr-1" />
-              เพิ่มรายการ
-            </Button>
-            <ExcelImportDialog
-              products={availableProducts}
-              groupedProducts={groupedProductsForCombobox}
-              billType="sell"
-              buttonText="นำเข้าจาก Excel"
-              dialogTitle="นำเข้ารายการขายจาก Excel"
-              onImport={(items, importBillDate) => {
-                let added = 0;
-                let blocked = 0;
-                const runningWeight = new Map<string, number>();
-                for (const it of items) {
-                  const product = products.find((p) => p.id === it.productId);
-                  const stockWeight = product?.stock?.totalWeight ?? 0;
-                  const inCart = sellCartItems
-                    .filter((c) => c.productId === it.productId)
-                    .reduce((sum, c) => sum + c.weight, 0);
-                  const running = runningWeight.get(it.productId) ?? 0;
-                  const totalSoFar = inCart + running;
-                  if (totalSoFar + it.weight > stockWeight) {
-                    blocked++;
-                    toast.error(
-                      `สต็อกไม่พอสำหรับ "${it.productName}" — มี ${formatWeight(stockWeight)}, ต้องการ ${formatWeight(it.weight)} — ข้ามรายการ`
+                {/* Weight */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="sell-weight" className="text-xs">น้ำหนัก (กก.)</Label>
+                  <Input
+                    id="sell-weight"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00 หรือ 860-3"
+                    value={weight}
+                    onChange={(e) => setWeight(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        document.getElementById('sell-price')?.focus();
+                      }
+                    }}
+                  />
+                  {weight.trim() && (() => {
+                    const preview = previewWeightValue(weight);
+                    if (preview === null) return null;
+                    return (
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+                      </p>
                     );
-                    continue;
-                  }
-                  addSellCartItem({
-                    productId: it.productId,
-                    productName: it.productName,
-                    weight: it.weight,
-                    weightExpression: it.weightExpression,
-                    pricePerKg: it.pricePerKg,
-                    totalAmount: it.totalAmount,
-                    availableWeight: Math.max(0, stockWeight - totalSoFar - it.weight),
-                  });
-                  runningWeight.set(it.productId, running + it.weight);
-                  added++;
-                }
-                if (importBillDate) {
-                  setDateTime(new Date(importBillDate).toISOString().slice(0, 16));
-                }
-                if (added > 0) {
-                  toast.success(`เพิ่ม ${added} รายการจาก Excel แล้ว${blocked > 0 ? ` (ข้าม ${blocked} รายการ — สต็อกไม่พอ)` : ''}`);
-                } else if (blocked > 0) {
-                  toast.error(`ไม่สามารถเพิ่มรายการได้ — สต็อกไม่พอทั้ง ${blocked} รายการ`);
-                }
-              }}
-            />
-          </div>
-        </CardContent>
-      </Card>
+                  })()}
+                  {selectedProduct && (
+                    <p className="text-[11px] text-gray-500">
+                      สต๊อก: {formatWeight(selectedProduct.stock?.totalWeight ?? 0)}
+                    </p>
+                  )}
+                </div>
 
-      {/* Cart Items Table */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">รายการในตะกร้า</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {sellCartItems.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">
-              <Coins className="h-12 w-12 mx-auto mb-2 opacity-30" />
-              <p>ยังไม่มีรายการในตะกร้า</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10 text-center">#</TableHead>
-                    <TableHead>ชื่อสินค้า</TableHead>
-                    <TableHead className="text-right">น้ำหนัก (กก.)</TableHead>
-                    <TableHead className="text-right">ราคา/กก.</TableHead>
-                    <TableHead className="text-right">จำนวนเงิน</TableHead>
-                    <TableHead className="text-right">สต๊อกคงเหลือ</TableHead>
-                    <TableHead className="w-12 text-center">ลบ</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+                {/* Price per kg */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="sell-price" className="text-xs">ราคาขาย/กก.</Label>
+                  <Input
+                    id="sell-price"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={pricePerKg}
+                    onChange={(e) => setPricePerKg(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddItem();
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Total + Add button */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">จำนวนเงิน</Label>
+                  <div className="flex gap-2">
+                    <div className="flex h-9 flex-1 items-center rounded-md border bg-gray-50 px-3 text-xs font-semibold text-amber-800">
+                      {formatBaht(totalAmount)}
+                    </div>
+                    <Button
+                      onClick={handleAddItem}
+                      className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      เพิ่ม
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Excel Import */}
+              <div className="mt-3">
+                <ExcelImportDialog
+                  products={availableProducts}
+                  groupedProducts={groupedProductsForCombobox}
+                  billType="sell"
+                  buttonText="นำเข้าจาก Excel"
+                  dialogTitle="นำเข้ารายการขายจาก Excel"
+                  onImport={(items, importBillDate) => {
+                    let added = 0;
+                    let blocked = 0;
+                    const runningWeight = new Map<string, number>();
+                    for (const it of items) {
+                      const product = products.find((p) => p.id === it.productId);
+                      const stockWeight = product?.stock?.totalWeight ?? 0;
+                      const inCart = sellCartItems
+                        .filter((c) => c.productId === it.productId)
+                        .reduce((sum, c) => sum + c.weight, 0);
+                      const running = runningWeight.get(it.productId) ?? 0;
+                      const totalSoFar = inCart + running;
+                      if (totalSoFar + it.weight > stockWeight) {
+                        blocked++;
+                        toast.error(
+                          `สต็อกไม่พอสำหรับ "${it.productName}" — มี ${formatWeight(stockWeight)}, ต้องการ ${formatWeight(it.weight)} — ข้ามรายการ`
+                        );
+                        continue;
+                      }
+                      addSellCartItem({
+                        productId: it.productId,
+                        productName: it.productName,
+                        weight: it.weight,
+                        weightExpression: it.weightExpression,
+                        pricePerKg: it.pricePerKg,
+                        totalAmount: it.totalAmount,
+                        availableWeight: Math.max(0, stockWeight - totalSoFar - it.weight),
+                      });
+                      runningWeight.set(it.productId, running + it.weight);
+                      added++;
+                    }
+                    if (importBillDate) {
+                      setDateTime(new Date(importBillDate).toISOString().slice(0, 16));
+                    }
+                    if (added > 0) {
+                      toast.success(`เพิ่ม ${added} รายการจาก Excel แล้ว${blocked > 0 ? ` (ข้าม ${blocked} รายการ — สต็อกไม่พอ)` : ''}`);
+                    } else if (blocked > 0) {
+                      toast.error(`ไม่สามารถเพิ่มรายการได้ — สต็อกไม่พอทั้ง ${blocked} รายการ`);
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Cart (compact) */}
+              {sellCartItems.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-gray-600">รายการในตะกร้า ({sellCartItems.length})</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { clearSellCart(); toast.info('ล้างตะกร้าแล้ว'); }}
+                      className="text-xs text-red-600 hover:text-red-700 h-6"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      ล้าง
+                    </Button>
+                  </div>
                   {sellCartItems.map((item, index) => {
                     const product = products.find((p) => p.id === item.productId);
                     const currentStock = product?.stock?.totalWeight ?? 0;
                     const isOverStock = item.weight > currentStock;
                     return (
-                      <TableRow key={index}>
-                        <TableCell className="text-center text-gray-500">
-                          {index + 1}
-                        </TableCell>
-                        <TableCell className="font-medium">{item.productName}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="font-medium">{formatWeight(item.weight)}</div>
-                          {item.weightExpression && (
-                            <div className="text-[11px] text-gray-400">
-                              {formulaHint(item.weightExpression)}
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatBaht(item.pricePerKg)}
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-amber-800">
-                          {formatBaht(item.totalAmount)}
-                        </TableCell>
-                        <TableCell className={`text-right ${isOverStock ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
-                          {formatWeight(currentStock)}
-                          {isOverStock && (
-                            <span className="ml-1 text-xs">(ไม่พอ!)</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            onClick={() => removeSellCartItem(index)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 rounded-md bg-gray-50 border text-sm"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-gray-900 truncate">
+                              {item.productName}
+                            </span>
+                            {isOverStock && (
+                              <Badge variant="secondary" className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0">
+                                สต๊อกไม่พอ!
+                              </Badge>
+                            )}
+                          </div>
+                          <span className="text-[11px] text-gray-500">
+                            {formatWeight(item.weight)} กก. · {formatBaht(item.pricePerKg)}/กก.
+                            {item.weightExpression && (
+                              <span className="ml-1 text-gray-400">({formulaHint(item.weightExpression)})</span>
+                            )}
+                          </span>
+                        </div>
+                        <span className="text-xs font-semibold text-amber-800 mr-2 shrink-0">
+                          {formatBaht(item.totalAmount)} บาท
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeSellCartItem(index)}
+                          className="text-red-600 hover:text-red-700 h-7 w-7 p-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     );
                   })}
-                </TableBody>
-                <TableFooter>
-                  <TableRow className="bg-amber-50">
-                    <TableCell colSpan={2} className="font-semibold text-amber-900">
-                      รวมทั้งหมด
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-amber-900">
-                      {formatWeight(cartTotalWeight)}
-                    </TableCell>
-                    <TableCell />
-                    <TableCell className="text-right font-bold text-amber-900">
-                      {formatBaht(cartTotalAmount)} บาท
-                    </TableCell>
-                    <TableCell />
-                    <TableCell />
-                  </TableRow>
-                </TableFooter>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Bill Options */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">ตั้งค่าใบขาย</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Date/Time */}
-            <div className="space-y-2">
-              <Label htmlFor="sell-datetime">วันที่/เวลา</Label>
-              <Input
-                id="sell-datetime"
-                type="datetime-local"
-                value={dateTime}
-                onChange={(e) => setDateTime(e.target.value)}
-              />
-            </div>
-
-            {/* Customer Selection */}
-            <div className="space-y-2">
-              <Label htmlFor="sell-customer">ลูกค้า</Label>
-              <div className="flex gap-2">
-                <Select value={selectedCustomerId} onValueChange={(val) => {
-                  setSelectedCustomerId(val === '__none__' ? '' : val);
-                  if (val === '__none__') {
-                    setIsCredit(false);
-                  }
-                }}>
-                  <SelectTrigger className="flex-1" id="sell-customer">
-                    <SelectValue placeholder="— ไม่ระบุ —" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— ไม่ระบุ —</SelectItem>
-                    {customers.map((customer) => (
-                      <SelectItem key={customer.id} value={customer.id}>
-                        {customer.name}
-                        {customer.phone ? ` (${customer.phone})` : ''}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="icon" className="shrink-0">
-                      <UserPlus className="h-4 w-4" />
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>เพิ่มลูกค้าใหม่</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="new-customer-name">ชื่อลูกค้า *</Label>
-                        <Input
-                          id="new-customer-name"
-                          type="text"
-                          placeholder="ชื่อ-นามสกุล"
-                          value={newCustomerName}
-                          onChange={(e) => setNewCustomerName(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="new-customer-phone">เบอร์โทร (ไม่จำเป็น)</Label>
-                        <Input
-                          id="new-customer-phone"
-                          type="text"
-                          placeholder="0XX-XXX-XXXX"
-                          value={newCustomerPhone}
-                          onChange={(e) => setNewCustomerPhone(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <DialogClose asChild>
-                        <Button variant="outline">ยกเลิก</Button>
-                      </DialogClose>
-                      <Button
-                        onClick={handleCreateCustomer}
-                        disabled={creatingCustomer}
-                        className="bg-amber-600 hover:bg-amber-700 text-white"
-                      >
-                        {creatingCustomer ? (
-                          <>
-                            <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                            บันทึก...
-                          </>
-                        ) : (
-                          'บันทึก'
-                        )}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-            </div>
-          </div>
-
-          {/* Credit Toggle */}
-          <div className="space-y-2">
-            <Label htmlFor="sell-credit">ขายเชื่อ</Label>
-            <div className="flex items-center gap-3 h-9">
-              <Switch
-                id="sell-credit"
-                checked={isCredit}
-                onCheckedChange={setIsCredit}
-                disabled={!selectedCustomerId}
-              />
-              <span className="text-sm text-gray-600">
-                {!selectedCustomerId
-                  ? 'เลือกลูกค้าก่อนจึงจะขายเชื่อได้'
-                  : isCredit
-                    ? 'ขายเชื่อ'
-                    : 'ขายสด'}
-              </span>
-            </div>
-          </div>
-
-          {/* Note */}
-          <div className="space-y-2">
-            <Label htmlFor="sell-note">หมายเหตุ (ไม่จำเป็น)</Label>
-            <Input
-              id="sell-note"
-              type="text"
-              placeholder="หมายเหตุเพิ่มเติม..."
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          </div>
-
-          <Separator />
-
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              onClick={handleSubmit}
-              disabled={sellCartItems.length === 0 || submitting}
-              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white h-12 text-base font-semibold"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  กำลังบันทึก...
-                </>
-              ) : (
-                'บันทึกใบขาย'
+                </div>
               )}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                clearSellCart();
-                toast.info('ล้างตะกร้าแล้ว');
-              }}
-              disabled={sellCartItems.length === 0}
-              className="border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
-            >
-              ล้างตะกร้า
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right: Sticky Summary */}
+        <div className="lg:col-span-1">
+          <Card className="lg:sticky lg:top-4">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">สรุป</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2.5">
+              {/* Totals */}
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">จำนวนรายการ</span>
+                <span className="font-medium">{sellCartItems.length} รายการ</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">น้ำหนักรวม</span>
+                <span className="font-medium">{formatWeight(cartTotalWeight)} กก.</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">ยอดขายรวม</span>
+                <span className="font-bold text-amber-800">{formatBaht(cartTotalAmount)} บาท</span>
+              </div>
+              {estimatedSourceCost > 0 && (
+                <>
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>ต้นทุนต้นทาง (ประมาณ)</span>
+                    <span>{formatBaht(estimatedSourceCost)} บาท</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className={estimatedProfit >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      กำไร/ขาดทุน (ประมาณ)
+                    </span>
+                    <span className={`font-medium ${estimatedProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatBaht(estimatedProfit)} บาท
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <Separator />
+
+              {/* Date + Customer + Credit + Note */}
+              <div className="grid grid-cols-1 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="sell-datetime" className="text-xs">วันที่/เวลา</Label>
+                  <Input
+                    id="sell-datetime"
+                    type="datetime-local"
+                    value={dateTime}
+                    onChange={(e) => setDateTime(e.target.value)}
+                    className="text-sm h-8"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="sell-customer" className="text-xs">ลูกค้า</Label>
+                  <div className="flex gap-2">
+                    <Select value={selectedCustomerId} onValueChange={(val) => {
+                      setSelectedCustomerId(val === '__none__' ? '' : val);
+                      if (val === '__none__') setIsCredit(false);
+                    }}>
+                      <SelectTrigger className="flex-1 h-8 text-sm" id="sell-customer">
+                        <SelectValue placeholder="— ไม่ระบุ —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">— ไม่ระบุ —</SelectItem>
+                        {customers.map((customer) => (
+                          <SelectItem key={customer.id} value={customer.id}>
+                            {customer.name}
+                            {customer.phone ? ` (${customer.phone})` : ''}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Dialog open={customerDialogOpen} onOpenChange={setCustomerDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="icon" className="shrink-0 h-8 w-8">
+                          <UserPlus className="h-3.5 w-3.5" />
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>เพิ่มลูกค้าใหม่</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4 py-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="new-customer-name">ชื่อลูกค้า *</Label>
+                            <Input
+                              id="new-customer-name"
+                              type="text"
+                              placeholder="ชื่อ-นามสกุล"
+                              value={newCustomerName}
+                              onChange={(e) => setNewCustomerName(e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="new-customer-phone">เบอร์โทร (ไม่จำเป็น)</Label>
+                            <Input
+                              id="new-customer-phone"
+                              type="text"
+                              placeholder="0XX-XXX-XXXX"
+                              value={newCustomerPhone}
+                              onChange={(e) => setNewCustomerPhone(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <DialogFooter>
+                          <DialogClose asChild>
+                            <Button variant="outline">ยกเลิก</Button>
+                          </DialogClose>
+                          <Button
+                            onClick={handleCreateCustomer}
+                            disabled={creatingCustomer}
+                            className="bg-amber-600 hover:bg-amber-700 text-white"
+                          >
+                            {creatingCustomer ? (
+                              <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> บันทึก...</>
+                            ) : 'บันทึก'}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="sell-credit" className="text-xs">ประเภทการขาย</Label>
+                  <div className="flex items-center gap-2 h-8">
+                    <Switch
+                      id="sell-credit"
+                      checked={isCredit}
+                      onCheckedChange={setIsCredit}
+                      disabled={!selectedCustomerId}
+                    />
+                    <span className="text-xs text-gray-600">
+                      {!selectedCustomerId
+                        ? 'เลือกลูกค้าก่อนจึงจะขายเชื่อได้'
+                        : isCredit ? 'ขายเชื่อ' : 'ขายสด'}
+                    </span>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="sell-note" className="text-xs">หมายเหตุ</Label>
+                  <Input
+                    id="sell-note"
+                    type="text"
+                    placeholder="ถ้ามี"
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    className="text-sm h-8"
+                  />
+                </div>
+              </div>
+
+              <Button
+                onClick={handleSubmit}
+                disabled={submitting || sellCartItems.length === 0}
+                className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                {submitting ? (
+                  <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> กำลังบันทึก...</>
+                ) : (
+                  <><Coins className="h-4 w-4 mr-1" /> บันทึกใบขาย</>
+                )}
+              </Button>
+              {sellCartItems.length === 0 && (
+                <p className="text-[11px] text-amber-600 text-center">เพิ่มรายการก่อนบันทึก</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Empty state */}
+      {sellCartItems.length === 0 && !selectedProductId && (
+        <Card>
+          <CardContent className="p-8 text-center text-gray-400 text-sm">
+            <Coins className="h-10 w-10 mx-auto mb-2 opacity-40" />
+            เลือกสินค้าและเพิ่มรายการขายเพื่อเริ่ม
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
