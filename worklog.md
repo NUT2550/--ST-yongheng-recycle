@@ -894,3 +894,39 @@ Owner should:
 2. Upload the .xls file
 3. Review the preview (13 bills, all products matched)
 4. Click "นำเข้า 13 บิล" to create the bills
+
+---
+
+## Task ID: 31
+## Agent: Main
+## Task: Fix Product Management Add Product Save Failure
+
+### Root Cause
+`/api/products/route.ts` had only a GET handler — no POST handler existed.
+The products page "เพิ่มสินค้า" button calls `POST /api/products`, which
+returned 405 Method Not Allowed, causing the save to fail silently.
+
+### Fix
+- Added POST /api/products handler (admin only) with:
+  - Validation: name required ("กรุณากรอกชื่อสินค้า"), categoryId required ("กรุณาเลือกหมวดหมู่")
+  - Duplicate check: "มีสินค้านี้อยู่แล้ว" (409)
+  - Category verification
+  - Creates product with defaultBuyPrice + sortOrder
+- Improved frontend validation: separate messages for missing name vs missing category
+
+### Files Changed
+- src/app/api/products/route.ts — added POST handler
+- src/components/products-page.tsx — improved validation messages + safe JSON parse
+
+### Commit
+- 85adc64 fix: add missing POST handler to products API
+
+### Production Smoke Test
+1. Opened จัดการสินค้า ✓
+2. Added "ทดสอบสินค้า TEMP ZAI" (category: อื่นๆ, price: 1) ✓
+3. Product appeared in list (107 products) ✓
+4. Product appeared in Buy page dropdown ✓
+5. Deleted temp product (no stock, safe) → 106 products ✓
+6. Sell page loads ✓
+7. Sorting page loads ✓
+8. StockTransfer page loads ✓
