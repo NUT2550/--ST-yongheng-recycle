@@ -149,19 +149,25 @@ model SortingBillItem {
 }
 
 // แกะของ/ย้ายสต็อก — consume 1 source product, produce N output products.
-// Structurally similar to SortingBill but has NO bonus fields/relations and NO
-// sourcePricePerKg. Keeps bonus-calculation logic fully isolated.
+// Structurally similar to SortingBill but has NO bonus fields/relations.
+// Keeps bonus-calculation logic fully isolated.
 model StockTransfer {
   id                     String               @id @default(cuid())
   billNumber             String?              @unique
   date                   DateTime             @default(now())
+  roomNumber             String?              // เลขห้อง (dedicated field; do not use note for room)
   // Source (consumed via FIFO)
   sourceProductId        String
   sourceProduct          Product              @relation("TransferSource", fields: [sourceProductId], references: [id])
   sourceWeight           Float
   sourceWeightExpression String?              // สูตรน้ำหนักต้นทาง เช่น "100-0.5"
   sourceCostPerKg        Float                @default(0) // FIFO weighted-avg cost of consumed lots (stored for audit)
-  sourceTotalCost        Float                @default(0) // sourceWeight * sourceCostPerKg
+  sourceTotalCost        Float                @default(0) // sourceWeight * sourceCostPerKg (FIFO accounting cost)
+  // Profitability analysis fields (manually entered, separate from FIFO stock cost)
+  sourcePricePerKg       Float                @default(0) // ราคาต้นทาง/กก. (manual entry for profitability)
+  laborCost              Float                @default(0) // เวลา/ค่าแรง (manual entry)
+  outputTotalValue       Float                @default(0) // sum(outputWeight * outputPricePerKg) — calculated
+  profitLoss             Float                @default(0) // outputTotalValue - (sourceWeight * sourcePricePerKg) - laborCost
   // Outputs summary
   weighedTotal           Float                @default(0) // optional manual weighed total (cross-check)
   weighedTotalExpression String?
@@ -188,7 +194,8 @@ model StockTransferItem {
   isWaste          Boolean        @default(false) // ขยะ/สูญเสีย row — no stock lot created
   costPerKg        Float          @default(0) // allocated source cost (FIFO avg)
   totalCost        Float          @default(0)
-  // NOTE: no sortedPricePerKg, no bonusAmount — dismantle has no worker bonus
+  outputPricePerKg Float          @default(0) // ราคาปลายทาง/กก. (manual entry for profitability analysis)
+  // NOTE: no bonusAmount — dismantle has no worker bonus
 }
 
 model Customer {

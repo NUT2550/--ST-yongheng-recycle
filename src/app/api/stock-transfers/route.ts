@@ -64,6 +64,9 @@ export async function POST(request: NextRequest) {
       sourceProductId,
       sourceWeight,
       sourceWeightExpression,
+      roomNumber,
+      sourcePricePerKg,
+      laborCost,
       weighedTotal,
       weighedTotalExpression,
       note,
@@ -73,6 +76,9 @@ export async function POST(request: NextRequest) {
       sourceProductId: string;
       sourceWeight: number;
       sourceWeightExpression?: string;
+      roomNumber?: string;
+      sourcePricePerKg?: number;
+      laborCost?: number;
       weighedTotal?: number;
       weighedTotalExpression?: string;
       note?: string;
@@ -81,6 +87,7 @@ export async function POST(request: NextRequest) {
         weight: number;
         weightExpression?: string;
         isWaste: boolean;
+        outputPricePerKg?: number;
       }>;
     };
 
@@ -148,12 +155,23 @@ export async function POST(request: NextRequest) {
         isWaste: item.isWaste,
         costPerKg: item.isWaste ? 0 : sourceCostPerKg,
         totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
+        outputPricePerKg: item.isWaste ? 0 : (item.outputPricePerKg || 0),
       }));
+
+      // Profitability analysis (manually entered prices, separate from FIFO cost)
+      const srcPricePerKg = sourcePricePerKg || 0;
+      const labor = laborCost || 0;
+      const outputTotalValue = Math.round(
+        items.reduce((s, i) => s + (i.isWaste ? 0 : i.weight * (i.outputPricePerKg || 0)), 0) * 100
+      ) / 100;
+      const sourceAnalysisCost = Math.round(sourceWeight * srcPricePerKg * 100) / 100;
+      const profitLoss = Math.round((outputTotalValue - sourceAnalysisCost - labor) * 100) / 100;
 
       const created = await tx.stockTransfer.create({
         data: {
           billNumber,
           date: new Date(date),
+          roomNumber: roomNumber?.trim() || null,
           sourceProductId,
           sourceWeight,
           sourceWeightExpression: isRealFormula(sourceWeightExpression)
@@ -161,6 +179,10 @@ export async function POST(request: NextRequest) {
             : null,
           sourceCostPerKg,
           sourceTotalCost,
+          sourcePricePerKg: srcPricePerKg,
+          laborCost: labor,
+          outputTotalValue,
+          profitLoss,
           weighedTotal: weighedTotal || 0,
           weighedTotalExpression: isRealFormula(weighedTotalExpression)
             ? weighedTotalExpression!.trim()

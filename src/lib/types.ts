@@ -58,6 +58,7 @@ export interface TransferCartItem {
   weight: number;
   weightExpression?: string;
   isWaste: boolean;
+  outputPricePerKg: number;
 }
 
 // Bill types (from API response)
@@ -156,6 +157,12 @@ export interface StockTransfer {
   sourceWeightExpression?: string | null;
   sourceCostPerKg: number;
   sourceTotalCost: number;
+  // Profitability analysis
+  roomNumber: string | null;
+  sourcePricePerKg: number;
+  laborCost: number;
+  outputTotalValue: number;
+  profitLoss: number;
   weighedTotal: number;
   weighedTotalExpression?: string | null;
   lossWeight: number;
@@ -177,6 +184,7 @@ export interface StockTransferItem {
   isWaste: boolean;
   costPerKg: number;
   totalCost: number;
+  outputPricePerKg: number;
 }
 
 export interface Customer {
@@ -361,6 +369,9 @@ export interface CreateStockTransferRequest {
   sourceProductId: string;
   sourceWeight: number;
   sourceWeightExpression?: string;
+  roomNumber?: string;
+  sourcePricePerKg?: number;
+  laborCost?: number;
   weighedTotal?: number;
   weighedTotalExpression?: string;
   note?: string;
@@ -369,6 +380,7 @@ export interface CreateStockTransferRequest {
     weight: number;
     weightExpression?: string;
     isWaste: boolean;
+    outputPricePerKg?: number;
   }>;
 }
 

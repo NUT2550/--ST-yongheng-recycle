@@ -28,9 +28,15 @@ export function TransferPage() {
     transferSourceProductId,
     transferSourceWeight,
     transferWeighedTotal,
+    transferRoomNumber,
+    transferSourcePricePerKg,
+    transferLaborCost,
     setTransferSourceProduct,
     setTransferSourceWeight,
     setTransferWeighedTotal,
+    setTransferRoomNumber,
+    setTransferSourcePricePerKg,
+    setTransferLaborCost,
     addTransferCartItem,
     removeTransferCartItem,
     clearTransferCart,
@@ -43,6 +49,7 @@ export function TransferPage() {
   // Form state
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [itemWeight, setItemWeight] = useState<string>('');
+  const [itemOutputPrice, setItemOutputPrice] = useState<string>('');
   const [sourceWeightInput, setSourceWeightInput] = useState<string>('');
   const [weighedTotalInput, setWeighedTotalInput] = useState<string>('');
   const [isWaste, setIsWaste] = useState(false);
@@ -65,7 +72,7 @@ export function TransferPage() {
     loadProducts();
   }, []);
 
-  // Group ALL products by category (no category restriction — all products allowed)
+  // Group ALL products by category
   const groupedProducts = useMemo(() => {
     const groups: Record<string, { category: Product['category']; products: Product[] }> = {};
     for (const product of products) {
@@ -88,13 +95,11 @@ export function TransferPage() {
     }));
   }, [groupedProducts]);
 
-  // Source product details
   const sourceProduct = useMemo(
     () => products.find((p) => p.id === transferSourceProductId),
     [products, transferSourceProductId]
   );
 
-  // Source available stock
   const sourceAvailableWeight = useMemo(
     () => sourceProduct?.stock?.totalWeight ?? 0,
     [sourceProduct]
@@ -104,13 +109,11 @@ export function TransferPage() {
     [sourceProduct]
   );
 
-  // Total output weight
   const totalOutputWeight = useMemo(
     () => calculateCartWeight(transferCartItems),
     [transferCartItems]
   );
 
-  // Loss calculation
   const lossWeight = useMemo(
     () => Math.round((transferSourceWeight - totalOutputWeight) * 100) / 100,
     [transferSourceWeight, totalOutputWeight]
@@ -119,6 +122,22 @@ export function TransferPage() {
   const lossCost = useMemo(
     () => Math.round(lossWeight * sourceCostPerKg * 100) / 100,
     [lossWeight, sourceCostPerKg]
+  );
+
+  // Profitability analysis
+  const outputTotalValue = useMemo(
+    () => Math.round(
+      transferCartItems.reduce((s, i) => s + (i.isWaste ? 0 : i.weight * i.outputPricePerKg), 0) * 100
+    ) / 100,
+    [transferCartItems]
+  );
+  const sourceAnalysisCost = useMemo(
+    () => Math.round(transferSourceWeight * transferSourcePricePerKg * 100) / 100,
+    [transferSourceWeight, transferSourcePricePerKg]
+  );
+  const profitLoss = useMemo(
+    () => Math.round((outputTotalValue - sourceAnalysisCost - transferLaborCost) * 100) / 100,
+    [outputTotalValue, sourceAnalysisCost, transferLaborCost]
   );
 
   // Add item to cart
@@ -147,17 +166,20 @@ export function TransferPage() {
     }
 
     const selectedProd = products.find((p) => p.id === selectedProductId);
+    const outPrice = isWaste ? 0 : (parseFloat(itemOutputPrice) || 0);
     const item: TransferCartItem = {
       productId: selectedProductId,
       productName: selectedProd?.name || '',
       weight: w,
       weightExpression: weightResult.isFormula ? weightResult.expression : undefined,
       isWaste,
+      outputPricePerKg: outPrice,
     };
 
     addTransferCartItem(item);
     setSelectedProductId('');
     setItemWeight('');
+    setItemOutputPrice('');
     setIsWaste(false);
     const formulaHintStr = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
     toast.success(`เพิ่ม "${item.productName}" ลงรายการแล้ว${formulaHintStr}`);
@@ -177,14 +199,12 @@ export function TransferPage() {
       toast.error('กรุณากรอกน้ำหนักต้นทาง');
       return;
     }
-    // HARD RULE: output total must not exceed source
     if (totalOutputWeight > transferSourceWeight + 0.01) {
       toast.error(
         `น้ำหนัก output รวม (${formatWeight(totalOutputWeight)}) เกินน้ำหนักต้นทาง (${formatWeight(transferSourceWeight)})`
       );
       return;
     }
-    // Source stock check
     if (sourceAvailableWeight > 0 && transferSourceWeight > sourceAvailableWeight) {
       toast.error(
         `สต็อกไม่เพียงพอ! มี ${formatWeight(sourceAvailableWeight)}, ต้องการ ${formatWeight(transferSourceWeight)}`
@@ -204,6 +224,9 @@ export function TransferPage() {
         sourceProductId: transferSourceProductId,
         sourceWeight: transferSourceWeight,
         sourceWeightExpression,
+        roomNumber: transferRoomNumber || undefined,
+        sourcePricePerKg: transferSourcePricePerKg || undefined,
+        laborCost: transferLaborCost || undefined,
         weighedTotal: transferWeighedTotal,
         weighedTotalExpression,
         note: note || undefined,
@@ -212,13 +235,14 @@ export function TransferPage() {
           weight: item.weight,
           weightExpression: item.weightExpression,
           isWaste: item.isWaste,
+          outputPricePerKg: item.outputPricePerKg,
         })),
       });
 
       const billData = result as unknown as {
-        bill?: { lossWeight: number; lossCost: number; sourceCostPerKg: number };
+        bill?: { lossWeight: number; lossCost: number; profitLoss: number };
       };
-      const bill = billData.bill ?? (result as unknown as { lossWeight: number; lossCost: number; sourceCostPerKg: number });
+      const bill = billData.bill ?? (result as unknown as { lossWeight: number; lossCost: number; profitLoss: number });
 
       clearTransferCart();
       setSourceWeightInput('');
@@ -226,8 +250,9 @@ export function TransferPage() {
       setDateTime(getCurrentDateForInput());
       setNote('');
 
+      const profitMsg = ` | กำไร/ขาดทุน ${formatBaht(bill?.profitLoss ?? profitLoss)} บาท`;
       toast.success(
-        `บันทึกใบย้ายสต็อกสำเร็จ! สูญเสีย ${formatWeight(bill?.lossWeight ?? lossWeight)} (${formatBaht(bill?.lossCost ?? lossCost)} บาท)`
+        `บันทึกใบย้ายสต็อกสำเร็จ! สูญเสีย ${formatWeight(bill?.lossWeight ?? lossWeight)} (${formatBaht(bill?.lossCost ?? lossCost)} บาท)${profitMsg}`
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
@@ -249,12 +274,12 @@ export function TransferPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">แกะของ / ย้ายสต็อก</h2>
-          <p className="text-gray-500 mt-1">แกะสินค้าต้นทางออกเป็นสินค้าย่อย (ไม่มีโบนัสพนักงาน)</p>
+          <p className="text-gray-500 mt-1 text-sm">แกะสินค้าต้นทางออกเป็นสินค้าย่อย (ไม่มีโบนัสพนักงาน)</p>
         </div>
         {transferCartItems.length > 0 && (
           <Badge variant="secondary" className="bg-cyan-100 text-cyan-700">
@@ -264,205 +289,249 @@ export function TransferPage() {
         )}
       </div>
 
-      {/* Source Selection */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">สินค้าต้นทาง (ที่จะแกะ/ย้าย)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Source Product — ALL products */}
-            <div className="space-y-2">
-              <Label htmlFor="transfer-source">เลือกสินค้าต้นทาง</Label>
-              <ProductCombobox
-                groups={groupedProductsForCombobox}
-                value={transferSourceProductId}
-                onValueChange={setTransferSourceProduct}
-                placeholder="เลือกสินค้าต้นทาง"
-                searchPlaceholder="พิมพ์ค้นหาสินค้า..."
-                id="transfer-source"
-                renderLabel={(product) => `${product.name} (สต็อก ${formatWeight(product.stock?.totalWeight ?? 0)})`}
-                onSelect={() => document.getElementById('transfer-source-weight')?.focus()}
-              />
-              {sourceProduct && (
-                <p className="text-xs text-gray-500">
-                  สต็อก: {formatWeight(sourceAvailableWeight)} · ต้นทุนเฉลี่ย {formatBaht(sourceCostPerKg)}/กก.
-                </p>
-              )}
-            </div>
-
-            {/* Source Weight */}
-            <div className="space-y-2">
-              <Label htmlFor="transfer-source-weight">น้ำหนักต้นทาง (กก.)</Label>
-              <Input
-                id="transfer-source-weight"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00 หรือ 100-0.5"
-                value={sourceWeightInput}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setSourceWeightInput(v);
-                  const result = parseWeightExpression(v);
-                  setTransferSourceWeight(result.error ? 0 : result.value);
-                }}
-              />
-              {sourceWeightInput && (
-                <p className="text-xs text-gray-500">
-                  {previewWeightValue(sourceWeightInput) ? `= ${previewWeightValue(sourceWeightInput)} กก.` : formulaHint(sourceWeightInput)}
-                </p>
-              )}
-            </div>
-
-            {/* Weighed total (optional cross-check) */}
-            <div className="space-y-2">
-              <Label htmlFor="transfer-weighed-total">น้ำหนักชั่งรวม (กก.) <span className="text-gray-400 font-normal">(ถ้ามี)</span></Label>
-              <Input
-                id="transfer-weighed-total"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={weighedTotalInput}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setWeighedTotalInput(v);
-                  const result = parseWeightExpression(v);
-                  setTransferWeighedTotal(result.error ? 0 : result.value);
-                }}
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Add Output Item */}
-      <Card>
-        <CardHeader className="pb-4">
-          <CardTitle className="text-base font-semibold">เพิ่มสินค้า output</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-            {/* Output product — ALL products */}
-            <div className="space-y-2">
-              <Label htmlFor="transfer-output">สินค้า output</Label>
-              <ProductCombobox
-                groups={groupedProductsForCombobox}
-                value={selectedProductId}
-                onValueChange={setSelectedProductId}
-                placeholder="เลือกสินค้า"
-                searchPlaceholder="พิมพ์ค้นหาสินค้า..."
-                id="transfer-output"
-                renderLabel={(product) => product.name}
-              />
-            </div>
-
-            {/* Weight */}
-            <div className="space-y-2">
-              <Label htmlFor="transfer-item-weight">น้ำหนัก (กก.)</Label>
-              <Input
-                id="transfer-item-weight"
-                type="text"
-                inputMode="decimal"
-                placeholder="0.00 หรือ 20-0.1"
-                value={itemWeight}
-                onChange={(e) => setItemWeight(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddItem();
-                  }
-                }}
-              />
-              {itemWeight && (
-                <p className="text-xs text-gray-500">
-                  {previewWeightValue(itemWeight) ? `= ${previewWeightValue(itemWeight)} กก.` : formulaHint(itemWeight)}
-                </p>
-              )}
-            </div>
-
-            {/* Waste checkbox */}
-            <div className="flex items-center space-x-2 pb-2">
-              <Checkbox
-                id="transfer-is-waste"
-                checked={isWaste}
-                onCheckedChange={(v) => setIsWaste(v === true)}
-              />
-              <Label htmlFor="transfer-is-waste" className="text-sm cursor-pointer">
-                เศษ/ขยะ (ไม่สร้างสต็อก)
-              </Label>
-            </div>
-
-            {/* Add button */}
-            <Button onClick={handleAddItem} className="w-full">
-              <Plus className="h-4 w-4 mr-1" />
-              เพิ่ม
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Cart + Summary */}
-      {transferCartItems.length > 0 ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Items list */}
-          <Card className="lg:col-span-2">
+      {/* Main grid: left form + right sticky summary */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Left: Input form (2 cols) */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Source Selection + Room + Source Price */}
+          <Card>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base font-semibold">รายการ output</CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => clearTransferCart()}
-                  className="text-xs text-red-600 hover:text-red-700"
-                >
-                  <Trash2 className="h-3 w-3 mr-1" />
-                  ล้างทั้งหมด
-                </Button>
-              </div>
+              <CardTitle className="text-base font-semibold">สินค้าต้นทาง</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {transferCartItems.map((item, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-2 rounded-md bg-gray-50 border"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-900 truncate">
-                        {item.productName}
-                      </span>
-                      {item.isWaste && (
-                        <Badge variant="secondary" className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0">
-                          เศษ
-                        </Badge>
-                      )}
-                    </div>
-                    <span className="text-xs text-gray-500">
-                      {formatWeight(item.weight)} กก.
-                      {item.weightExpression && (
-                        <span className="ml-1 text-gray-400">({formulaHint(item.weightExpression)})</span>
-                      )}
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => removeTransferCartItem(index)}
-                    className="text-red-600 hover:text-red-700 h-8 w-8 p-0"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-source" className="text-xs">เลือกสินค้าต้นทาง</Label>
+                  <ProductCombobox
+                    groups={groupedProductsForCombobox}
+                    value={transferSourceProductId}
+                    onValueChange={setTransferSourceProduct}
+                    placeholder="เลือกสินค้าต้นทาง"
+                    searchPlaceholder="พิมพ์ค้นหาสินค้า..."
+                    id="transfer-source"
+                    renderLabel={(product) => `${product.name} (สต็อก ${formatWeight(product.stock?.totalWeight ?? 0)})`}
+                    onSelect={() => document.getElementById('transfer-source-weight')?.focus()}
+                  />
+                  {sourceProduct && (
+                    <p className="text-[11px] text-gray-500">
+                      สต็อก: {formatWeight(sourceAvailableWeight)} · ต้นทุน FIFO {formatBaht(sourceCostPerKg)}/กก.
+                    </p>
+                  )}
                 </div>
-              ))}
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-source-weight" className="text-xs">น้ำหนักต้นทาง (กก.)</Label>
+                  <Input
+                    id="transfer-source-weight"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00 หรือ 100-0.5"
+                    value={sourceWeightInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSourceWeightInput(v);
+                      const result = parseWeightExpression(v);
+                      setTransferSourceWeight(result.error ? 0 : result.value);
+                    }}
+                  />
+                  {sourceWeightInput && (
+                    <p className="text-[11px] text-gray-500">
+                      {previewWeightValue(sourceWeightInput) ? `= ${previewWeightValue(sourceWeightInput)} กก.` : formulaHint(sourceWeightInput)}
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-room" className="text-xs">เลขห้อง</Label>
+                  <Input
+                    id="transfer-room"
+                    type="text"
+                    placeholder="เช่น 22, 23"
+                    value={transferRoomNumber}
+                    onChange={(e) => setTransferRoomNumber(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-source-price" className="text-xs">ราคาต้นทาง/กก. (บาท)</Label>
+                  <Input
+                    id="transfer-source-price"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={transferSourcePricePerKg || ''}
+                    onChange={(e) => setTransferSourcePricePerKg(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-labor" className="text-xs">เวลา/ค่าแรง (บาท)</Label>
+                  <Input
+                    id="transfer-labor"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={transferLaborCost || ''}
+                    onChange={(e) => setTransferLaborCost(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-weighed-total" className="text-xs">น้ำหนักชั่งรวม (กก.) <span className="text-gray-400">(ถ้ามี)</span></Label>
+                  <Input
+                    id="transfer-weighed-total"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={weighedTotalInput}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setWeighedTotalInput(v);
+                      const result = parseWeightExpression(v);
+                      setTransferWeighedTotal(result.error ? 0 : result.value);
+                    }}
+                  />
+                </div>
+              </div>
             </CardContent>
           </Card>
 
-          {/* Summary + Submit */}
+          {/* Add Output Item */}
           <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold">เพิ่มสินค้า output</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-output" className="text-xs">สินค้า output</Label>
+                  <ProductCombobox
+                    groups={groupedProductsForCombobox}
+                    value={selectedProductId}
+                    onValueChange={setSelectedProductId}
+                    placeholder="เลือกสินค้า"
+                    searchPlaceholder="พิมพ์ค้นหาสินค้า..."
+                    id="transfer-output"
+                    renderLabel={(product) => product.name}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-item-weight" className="text-xs">น้ำหนัก (กก.)</Label>
+                  <Input
+                    id="transfer-item-weight"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0.00 หรือ 20-0.1"
+                    value={itemWeight}
+                    onChange={(e) => setItemWeight(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddItem();
+                      }
+                    }}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-item-price" className="text-xs">ราคาปลายทาง/กก.</Label>
+                  <Input
+                    id="transfer-item-price"
+                    type="number"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={itemOutputPrice}
+                    onChange={(e) => setItemOutputPrice(e.target.value)}
+                    disabled={isWaste}
+                  />
+                </div>
+
+                <div className="flex items-center space-x-2 pb-2">
+                  <Checkbox
+                    id="transfer-is-waste"
+                    checked={isWaste}
+                    onCheckedChange={(v) => setIsWaste(v === true)}
+                  />
+                  <Label htmlFor="transfer-is-waste" className="text-xs cursor-pointer">
+                    เศษ/ขยะ
+                  </Label>
+                </div>
+
+                <Button onClick={handleAddItem} className="w-full">
+                  <Plus className="h-4 w-4 mr-1" />
+                  เพิ่ม
+                </Button>
+              </div>
+
+              {/* Cart */}
+              {transferCartItems.length > 0 && (
+                <div className="mt-3 space-y-1.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-gray-600">รายการ output ({transferCartItems.length})</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => clearTransferCart()}
+                      className="text-xs text-red-600 hover:text-red-700 h-6"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" />
+                      ล้าง
+                    </Button>
+                  </div>
+                  {transferCartItems.map((item, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-2 rounded-md bg-gray-50 border text-sm"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-gray-900 truncate">
+                            {item.productName}
+                          </span>
+                          {item.isWaste && (
+                            <Badge variant="secondary" className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0">
+                              เศษ
+                            </Badge>
+                          )}
+                        </div>
+                        <span className="text-[11px] text-gray-500">
+                          {formatWeight(item.weight)} กก.
+                          {!item.isWaste && item.outputPricePerKg > 0 && ` · ${formatBaht(item.outputPricePerKg)}/กก.`}
+                          {item.weightExpression && (
+                            <span className="ml-1 text-gray-400">({formulaHint(item.weightExpression)})</span>
+                          )}
+                        </span>
+                      </div>
+                      {!item.isWaste && item.outputPricePerKg > 0 && (
+                        <span className="text-xs font-medium text-gray-700 mr-2 shrink-0">
+                          {formatBaht(item.weight * item.outputPricePerKg)} บาท
+                        </span>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeTransferCartItem(index)}
+                        className="text-red-600 hover:text-red-700 h-7 w-7 p-0"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Right: Sticky Summary */}
+        <div className="lg:col-span-1">
+          <Card className="lg:sticky lg:top-4">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">สรุป</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2.5">
+              {/* Weight summary */}
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">น้ำหนักต้นทาง</span>
                 <span className="font-medium">{formatWeight(transferSourceWeight)} กก.</span>
@@ -471,7 +540,6 @@ export function TransferPage() {
                 <span className="text-gray-500">น้ำหนัก output รวม</span>
                 <span className="font-medium">{formatWeight(totalOutputWeight)} กก.</span>
               </div>
-              <Separator />
               {lossWeight > 0 ? (
                 <div className="flex justify-between text-sm">
                   <span className="text-red-600">สูญเสีย</span>
@@ -495,15 +563,36 @@ export function TransferPage() {
                   <span className="font-medium text-green-600">0.00 กก.</span>
                 </div>
               )}
-              {sourceCostPerKg > 0 && (
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>ต้นทุนต้นทาง/กก.</span>
-                  <span>{formatBaht(sourceCostPerKg)}</span>
+
+              <Separator />
+
+              {/* Profitability analysis */}
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-cyan-700">การวิเคราะห์กำไร/ขาดทุน</p>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">ต้นทุนรวม (ต้นทาง)</span>
+                  <span className="font-medium">{formatBaht(sourceAnalysisCost)} บาท</span>
                 </div>
-              )}
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">เวลา/ค่าแรง</span>
+                  <span className="font-medium">{formatBaht(transferLaborCost)} บาท</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-500">มูลค่าปลายทางรวม</span>
+                  <span className="font-medium text-green-700">{formatBaht(outputTotalValue)} บาท</span>
+                </div>
+              </div>
+              <div className="flex justify-between text-sm pt-1.5 border-t">
+                <span className={`font-bold ${profitLoss >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  กำไร/ขาดทุน
+                </span>
+                <span className={`font-bold ${profitLoss >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                  {formatBaht(profitLoss)} บาท
+                </span>
+              </div>
 
               {/* Note */}
-              <div className="space-y-1">
+              <div className="space-y-1 pt-1">
                 <Label htmlFor="transfer-note" className="text-xs">หมายเหตุ</Label>
                 <Input
                   id="transfer-note"
@@ -516,7 +605,7 @@ export function TransferPage() {
 
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || lossWeight < 0 || transferSourceWeight <= 0}
+                disabled={submitting || lossWeight < 0 || transferSourceWeight <= 0 || transferCartItems.length === 0}
                 className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
               >
                 {submitting ? (
@@ -528,7 +617,10 @@ export function TransferPage() {
             </CardContent>
           </Card>
         </div>
-      ) : (
+      </div>
+
+      {/* Empty state when no items */}
+      {transferCartItems.length === 0 && !transferSourceProductId && (
         <Card>
           <CardContent className="p-8 text-center text-gray-400 text-sm">
             <PackageOpen className="h-10 w-10 mx-auto mb-2 opacity-40" />

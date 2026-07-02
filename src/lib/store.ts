@@ -41,10 +41,16 @@ interface AppState {
   transferSourceProductId: string;
   transferSourceWeight: number;
   transferWeighedTotal: number;
+  transferRoomNumber: string;
+  transferSourcePricePerKg: number;
+  transferLaborCost: number;
   transferCartItems: TransferCartItem[];
   setTransferSourceProduct: (productId: string) => void;
   setTransferSourceWeight: (weight: number) => void;
   setTransferWeighedTotal: (weight: number) => void;
+  setTransferRoomNumber: (room: string) => void;
+  setTransferSourcePricePerKg: (price: number) => void;
+  setTransferLaborCost: (cost: number) => void;
   addTransferCartItem: (item: TransferCartItem) => void;
   removeTransferCartItem: (index: number) => void;
   updateTransferCartItem: (index: number, item: Partial<TransferCartItem>) => void;
@@ -127,11 +133,17 @@ export const useAppStore = create<AppState>((set) => ({
   transferSourceProductId: '',
   transferSourceWeight: 0,
   transferWeighedTotal: 0,
+  transferRoomNumber: '',
+  transferSourcePricePerKg: 0,
+  transferLaborCost: 0,
   transferCartItems: [],
   setTransferSourceProduct: (productId) =>
     set({ transferSourceProductId: productId }),
   setTransferSourceWeight: (weight) => set({ transferSourceWeight: weight }),
   setTransferWeighedTotal: (weight) => set({ transferWeighedTotal: weight }),
+  setTransferRoomNumber: (room) => set({ transferRoomNumber: room }),
+  setTransferSourcePricePerKg: (price) => set({ transferSourcePricePerKg: price }),
+  setTransferLaborCost: (cost) => set({ transferLaborCost: cost }),
   addTransferCartItem: (item) =>
     set((state) => ({ transferCartItems: [...state.transferCartItems, item] })),
   removeTransferCartItem: (index) =>
@@ -150,5 +162,8 @@ export const useAppStore = create<AppState>((set) => ({
       transferSourceProductId: '',
       transferSourceWeight: 0,
       transferWeighedTotal: 0,
+      transferRoomNumber: '',
+      transferSourcePricePerKg: 0,
+      transferLaborCost: 0,
     }),
 }));

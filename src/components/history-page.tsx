@@ -831,6 +831,11 @@ function TransferBillCard({
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
                       {formatDate(bill.date)}
                     </span>
+                    {bill.roomNumber && (
+                      <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 hover:bg-cyan-100 text-[10px] px-1.5 py-0 shrink-0">
+                        เลขห้อง {bill.roomNumber}
+                      </Badge>
+                    )}
                     {cancelled && <CancelledBadge />}
                   </div>
                   <p className="text-xs text-gray-500">
@@ -923,14 +928,47 @@ function TransferBillCard({
             <Separator className="my-2" />
             {/* Bill-level summary */}
             <div className="flex justify-between text-xs text-gray-500">
-              <span>ต้นทุนรับซื้อต้นทาง/กก.</span>
+              <span>ต้นทุน FIFO/กก.</span>
               <span>{bill.sourceCostPerKg > 0 ? formatBaht(bill.sourceCostPerKg) : '-'}</span>
             </div>
             <div className="flex justify-between text-xs text-gray-500">
-              <span>ต้นทุนต้นทางรวม</span>
+              <span>ต้นทุน FIFO รวม</span>
               <span>{bill.sourceTotalCost > 0 ? `${formatBaht(bill.sourceTotalCost)} บาท` : '-'}</span>
             </div>
-            <div className="flex justify-between text-xs text-gray-500">
+            {/* Profitability analysis (if any price entered) */}
+            {(bill.sourcePricePerKg > 0 || bill.outputTotalValue > 0 || bill.laborCost > 0) && (
+              <>
+                <Separator className="my-1.5" />
+                <p className="text-[10px] font-medium text-cyan-700 uppercase tracking-wide">การวิเคราะห์กำไร/ขาดทุน</p>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>ราคาต้นทาง/กก.</span>
+                  <span>{bill.sourcePricePerKg > 0 ? formatBaht(bill.sourcePricePerKg) : '-'}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>ต้นทุนรวม (ต้นทาง)</span>
+                  <span>{formatBaht(Math.round(bill.sourceWeight * bill.sourcePricePerKg * 100) / 100)} บาท</span>
+                </div>
+                {bill.laborCost > 0 && (
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>เวลา/ค่าแรง</span>
+                    <span>{formatBaht(bill.laborCost)} บาท</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>มูลค่าปลายทางรวม</span>
+                  <span className="text-green-700">{formatBaht(bill.outputTotalValue)} บาท</span>
+                </div>
+                <div className="flex justify-between text-xs font-bold pt-0.5 border-t">
+                  <span className={bill.profitLoss >= 0 ? 'text-green-700' : 'text-red-700'}>
+                    กำไร/ขาดทุน
+                  </span>
+                  <span className={bill.profitLoss >= 0 ? 'text-green-700' : 'text-red-700'}>
+                    {formatBaht(bill.profitLoss)} บาท
+                  </span>
+                </div>
+              </>
+            )}
+            <div className="flex justify-between text-xs text-gray-500 mt-1">
               <span>น้ำหนักชั่งรวม</span>
               <span>
                 {formatWeight(bill.weighedTotal)}
