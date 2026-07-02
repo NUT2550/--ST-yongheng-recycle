@@ -79,12 +79,22 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
     'อลูมิเนียมตูดกะทะ': 'อลูมีเนียมตูดกะทะ',
   };
 
+  // Fix Thai text garbled by XLSX library in browser (TIS-620 read as Latin-1)
+  function fixThaiText(text: string): string {
+    if (!text) return text;
+    // Check if text looks like garbled Thai (chars in 0xA0-0xFF range = Latin-1 extended)
+    const hasGarbled = [...text].some(c => c.charCodeAt(0) >= 0x80 && c.charCodeAt(0) <= 0xFF);
+    if (!hasGarbled) return text; // already proper UTF-8 Thai
+    try {
+      const bytes = new Uint8Array([...text].map(c => c.charCodeAt(0) & 0xFF));
+      return new TextDecoder('windows-874').decode(bytes);
+    } catch {
+      return text;
+    }
+  }
+
   function matchProduct(excelName: string): Product | null {
     const trimmed = excelName.trim().normalize('NFC');
-    // Debug: log first few matches
-    if (products.length > 0) {
-      console.log('matchProduct:', JSON.stringify({trimmed, productCount: products.length, firstProduct: products[0]?.name, mapHas: productMap.has(trimmed), mapSize: productMap.size}));
-    }
     // 1. Exact match (normalized)
     if (productMap.has(trimmed)) return productMap.get(trimmed)!;
     // 2. Safe alias (normalized)
@@ -139,7 +149,7 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
         // Seller summary row: col 0 has code, col 1 has name
         if (r[0] && r[1] && !r[2] && r[9] == null) {
-          currentSeller = String(r[1]);
+          currentSeller = fixThaiText(String(r[1]));
           continue;
         }
 
@@ -149,8 +159,8 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
           currentBill = {
             externalBillNumber: String(r[2]).trim(),
             seller: currentSeller,
-            date: String(r[1]).trim(),
-            note: r[4] ? String(r[4]).trim() : '',
+            date: fixThaiText(String(r[1])).trim(),
+            note: r[4] ? fixThaiText(String(r[4])).trim() : '',
             items: [],
             totalWeight: 0,
             totalAmount: 0,
@@ -163,7 +173,7 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
         // Item row: col 2 has product code, col 3 has product name, col 9 has weight
         if (r[2] && r[3] && r[9] != null && currentBill) {
-          const productName = String(r[3]).trim();
+          const productName = fixThaiText(String(r[3])).trim();
           const weight = parseFloat(String(r[9])) || 0;
           const pricePerKg = parseFloat(String(r[11])) || 0;
           const amount = parseFloat(String(r[12])) || 0;
