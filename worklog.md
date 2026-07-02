@@ -800,3 +800,41 @@ Rewrote buy-page.tsx from 3 vertical cards to a 2-column compact layout matching
 6. Cancelled smoke test bill safely ✓
 7. Stock restored (เหล็กหนาสั้น back to 102,178.5 kg) ✓
 8. Sorting page still works (compact layout intact, source combobox + submit present) ✓
+
+---
+
+## Task ID: 29
+## Agent: Main
+## Task: Refactor Sell page to compact layout
+
+### Layout Changes
+Rewrote sell-page.tsx from 3 vertical cards to a 2-column compact layout matching Buy/Sorting/StockTransfer:
+- **Left column (2/3 width):** Add item card (product combobox with stock>0 filter, weight, price, amount, add button + Excel import + compact cart list with stock validation badges)
+- **Right column (1/3 width, sticky):** Summary card with totals (items, weight, amount), estimated source cost (avgCostPerKg), estimated profit/loss, date/time, customer select + create-new dialog, credit toggle, note, submit button
+- Mobile: stacked
+
+### Features Preserved
+- Product combobox (stock > 0 only) with search ✓
+- Weight formula support (e.g. "860-3") with live preview ✓
+- Excel import with stock validation (skips items that exceed stock) ✓
+- Customer select + create-new dialog ✓
+- Credit toggle (ขายสด/ขายเชื่อ, requires customer) ✓
+- Note field ✓
+- FIFO stock deduction (server-side, unchanged) ✓
+- Stock validation in cart (shows "สต๊อกไม่พอ!" badge) ✓
+- History/cancel behavior (unchanged) ✓
+- New: estimated source cost + profit/loss in summary (uses avgCostPerKg)
+
+### Commit
+- b2b1738 refactor: compact Sell page layout (left form + right sticky summary)
+
+### Production Smoke Test
+1. Sell page compact layout appears ✓ (product, weight, price, add, Excel import on left; sticky summary on right)
+2. Excel import button present ✓
+3. Created SELL-2569-00002: เหล็กหนาสั้น 5kg @ 15/kg = 75 baht ✓
+4. Save worked (FIFO totalCost=47.10 calculated server-side) ✓
+5. Stock deducted: 102178.5 → 102173.5 (-5) ✓
+6. Cancelled smoke test bill safely ✓
+7. Stock restored: 102173.5 → 102178.5 (+5) ✓
+8. Buy page still works (compact layout intact) ✓
+9. Sorting page still works (compact layout intact) ✓
