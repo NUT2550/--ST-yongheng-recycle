@@ -80,6 +80,11 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
   function matchProduct(excelName: string): Product | null {
     const trimmed = excelName.trim();
+    // 0. Debug: if products not loaded, return null
+    if (!products || products.length === 0) {
+      console.warn('matchProduct: products array is empty!');
+      return null;
+    }
     // 1. Exact match
     if (productMap.has(trimmed)) return productMap.get(trimmed)!;
     // 2. Safe alias
