@@ -684,3 +684,48 @@ TWO bugs found and fixed:
 - Root cause of UI save failure fixed (billNumber collision + pgbouncer tx timeout)
 - Sorting UI save now works end-to-end
 - Error messages now surface backend details to the user
+
+---
+
+## Task ID: 26
+## Agent: Main
+## Task: StockTransfer profitability fields + room number + compact layout
+
+### Part A: Profitability Fields
+Schema additions:
+- StockTransfer: roomNumber, sourcePricePerKg, laborCost, outputTotalValue, profitLoss
+- StockTransferItem: outputPricePerKg
+
+Formula (calculated server-side in POST /api/stock-transfers):
+  sourceAnalysisCost = sourceWeight * sourcePricePerKg
+  outputTotalValue = sum(outputWeight * outputPricePerKg)  (non-waste items)
+  profitLoss = outputTotalValue - sourceAnalysisCost - laborCost
+
+FIFO stock cost (sourceCostPerKg) kept separate from manual analysis price (sourcePricePerKg).
+No fake cost invented — if price is 0, history shows "-".
+
+### Part B: Room Number
+- StockTransfer.roomNumber field (same as SortingBill)
+- History TransferBillCard shows "เลขห้อง XX" badge, separate from note
+
+### Part C: Compact Layout
+- transfer-page: 2-column grid (left: form, right: sticky summary) on desktop; stacked on mobile
+- Buy/Sell/Sort: deferred (existing layouts work; full refactor risks breaking — dedicated task needed)
+
+### Production DB Migration
+- ALTER TABLE added 5 columns to StockTransfer + 1 to StockTransferItem via pg
+
+### Commit
+- d4aaa9c feat: add StockTransfer profitability fields + room number + compact layout
+
+### Production Smoke Test
+1. Created TRN-2569-00003: room=99, source เหล็กหนาสั้น 10kg @ 9/kg, labor 50,
+   outputs: ทองแดงใหญ่ 6kg@100 + เหล็กหนายาว 3kg@20
+   - outputTotalValue = 660 ✓ (6*100 + 3*20)
+   - profitLoss = 520 ✓ (660 - 90 - 50)
+   - lossWeight = 1 ✓ (10 - 9)
+   - roomNumber = "99" ✓
+2. Stock movement: source -10, outputs +6/+3 ✓
+3. Cancel restored stock ✓
+4. Transfer page UI: เลขห้อง, ราคาต้นทาง/กก., ราคาปลายทาง/กก., เวลา/ค่าแรง all visible ✓
+5. History TransferBillCard: room badge + profitability summary in expanded view ✓
