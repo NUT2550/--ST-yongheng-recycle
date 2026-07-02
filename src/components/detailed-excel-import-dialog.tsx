@@ -60,11 +60,12 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
   const [fileName, setFileName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Build product lookup map: exact name → product
+  // Build product lookup map: normalized exact name → product
+  // NFC normalization handles Thai Unicode variant differences (combining vs precomposed)
   const productMap = useMemo(() => {
     const m = new Map<string, Product>();
     for (const p of products) {
-      m.set(p.name.trim(), p);
+      m.set(p.name.trim().normalize('NFC'), p);
     }
     return m;
   }, [products]);
@@ -79,19 +80,17 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
   };
 
   function matchProduct(excelName: string): Product | null {
-    const trimmed = excelName.trim();
-    // 0. Debug: if products not loaded, return null
-    if (!products || products.length === 0) {
-      console.warn('matchProduct: products array is empty!');
-      return null;
-    }
-    // 1. Exact match
+    const trimmed = excelName.trim().normalize('NFC');
+    // 1. Exact match (normalized)
     if (productMap.has(trimmed)) return productMap.get(trimmed)!;
-    // 2. Safe alias
-    const alias = safeAliases[trimmed];
+    // 2. Safe alias (normalized)
+    const alias = safeAliases[excelName.trim()]?.normalize('NFC');
     if (alias && productMap.has(alias)) return productMap.get(alias)!;
-    // 3. Try contains match (single result only — no ambiguity)
-    const contains = products.filter(p => p.name.includes(trimmed) || trimmed.includes(p.name));
+    // 3. Try contains match (single result only — no ambiguity, normalized)
+    const contains = products.filter(p => {
+      const pn = p.name.normalize('NFC');
+      return pn.includes(trimmed) || trimmed.includes(pn);
+    });
     if (contains.length === 1) return contains[0];
     return null;
   }
