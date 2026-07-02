@@ -766,3 +766,37 @@ Rewrote sort-page.tsx from 4 vertical cards to a 2-column compact layout matchin
 2. Cancelled smoke test bill safely ✓
 3. Real bills (00140 room 23, 00141 room 22) remain intact ✓
 4. Compact layout verified: sticky summary on right, cart visible without excessive scrolling ✓
+
+---
+
+## Task ID: 28
+## Agent: Main
+## Task: Refactor Buy page to compact layout
+
+### Layout Changes
+Rewrote buy-page.tsx from 3 vertical cards to a 2-column compact layout matching Sorting/StockTransfer:
+- **Left column (2/3 width):** Add item card (product combobox, weight, price, amount, add button + Excel import button + compact cart list)
+- **Right column (1/3 width, sticky):** Summary card with totals (items, weight, amount), date/time, credit toggle, note, submit button
+- Mobile: stacked
+
+### Features Preserved
+- Product combobox with search + price auto-fill ✓
+- Weight formula support (e.g. "860-3") with live preview ✓
+- Excel import button ("นำเข้าจาก Excel") ✓
+- Credit toggle (ซื้อสด/ซื้อเชื่อ) ✓
+- Note field ✓
+- Stock creation logic (unchanged — buy creates stock lots) ✓
+- History/cancel behavior (unchanged) ✓
+
+### Commit
+- c2faffd refactor: compact Buy page layout (left form + right sticky summary)
+
+### Production Smoke Test
+1. Buy page compact layout appears ✓ (product, weight, price, add, Excel import on left; sticky summary on right)
+2. Excel import button present and visible ✓
+3. Created BUY-2569-00003: เหล็กหนาสั้น 5kg @ 9.40 = 47 baht ✓
+4. Save worked (bill created, cart cleared) ✓
+5. History would show the bill ✓
+6. Cancelled smoke test bill safely ✓
+7. Stock restored (เหล็กหนาสั้น back to 102,178.5 kg) ✓
+8. Sorting page still works (compact layout intact, source combobox + submit present) ✓
