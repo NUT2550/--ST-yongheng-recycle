@@ -729,3 +729,40 @@ No fake cost invented — if price is 0, history shows "-".
 3. Cancel restored stock ✓
 4. Transfer page UI: เลขห้อง, ราคาต้นทาง/กก., ราคาปลายทาง/กก., เวลา/ค่าแรง all visible ✓
 5. History TransferBillCard: room badge + profitability summary in expanded view ✓
+
+---
+
+## Task ID: 27
+## Agent: Main
+## Task: Refactor Sorting page to compact layout
+
+### Layout Changes
+Rewrote sort-page.tsx from 4 vertical cards to a 2-column compact layout matching the transfer-page:
+- **Left column (2/3 width):** Source selection card (product, weight, price, weighed total) + Add item card (product, weight, price, waste, bonus preview, compact cart list)
+- **Right column (1/3 width):** Sticky summary card with weight summary, loss, bonus preview (with loss deduction), date/time, เลขห้อง, note, and submit button
+- Mobile: stacked layout
+
+### roomNumber behavior
+- เลขห้อง input is in the sticky summary card (right side), separate from note
+- Stored in SortingBill.roomNumber (not note)
+- History shows "เลขห้อง XX" badge in the SortBillCard header
+- Existing bills with backfilled roomNumber display correctly
+
+### Bonus formula (unchanged from Task 25)
+- grossProfitFromOutputs = sum((sortedPricePerKg - sourcePricePerKg) * weight)
+- lossCost = lossWeight * sourcePricePerKg
+- netProfitForBonus = max(grossProfitFromOutputs - lossCost, 0)
+- bonus = netProfitForBonus * 10%
+- Preview shows: กำไรขั้นต้น / หักสูญเสีย / ฐานคิดโบนัส / โบนัส 10%
+
+### Commit
+- 37589d0 refactor: compact sorting page layout (left form + right sticky summary)
+
+### Production Smoke Test
+1. Created SORT-2569-00145: room=99, source เหล็กหนาสั้น 5kg, output เหล็กหนายาว 4kg@20, loss 1kg
+   - Save worked ✓
+   - History shows "เลขห้อง 99" badge + loss 1.00 กก. (9.42 บาท) ✓
+   - Bonus preview: กำไรขั้นต้น 42.40, หักสูญเสีย -9.40, ฐาน 33.00, โบนัส 3.30 บาท ✓
+2. Cancelled smoke test bill safely ✓
+3. Real bills (00140 room 23, 00141 room 22) remain intact ✓
+4. Compact layout verified: sticky summary on right, cart visible without excessive scrolling ✓
