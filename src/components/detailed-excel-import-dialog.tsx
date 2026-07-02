@@ -81,6 +81,10 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
   function matchProduct(excelName: string): Product | null {
     const trimmed = excelName.trim().normalize('NFC');
+    // Debug: log first few matches
+    if (products.length > 0) {
+      console.log('matchProduct:', JSON.stringify({trimmed, productCount: products.length, firstProduct: products[0]?.name, mapHas: productMap.has(trimmed), mapSize: productMap.size}));
+    }
     // 1. Exact match (normalized)
     if (productMap.has(trimmed)) return productMap.get(trimmed)!;
     // 2. Safe alias (normalized)
