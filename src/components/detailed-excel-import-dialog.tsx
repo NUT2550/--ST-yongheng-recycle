@@ -74,7 +74,8 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
   const safeAliases: Record<string, string> = {
     'อลูมิเนียมแข็ง (หล่อ/หนา)': 'อลูมีเนียมแข็ง',
     'อลูมิเนียมฝาแกะ': 'ฝาอลูมีเนียมเนียม',
-    'ถัง 15ถึง200 ลิตร': 'เหล็กคละ',
+    'อลูมิเนียมกระป๋อง': 'กระป๋องอลูมีเนียม',
+    'อลูมิเนียมตูดกะทะ': 'อลูมีเนียมตูดกะทะ',
   };
 
   function matchProduct(excelName: string): Product | null {
