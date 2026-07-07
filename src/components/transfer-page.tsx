@@ -205,9 +205,15 @@ export function TransferPage() {
       );
       return;
     }
-    if (sourceAvailableWeight > 0 && transferSourceWeight > sourceAvailableWeight) {
+    if (sourceAvailableWeight <= 0) {
       toast.error(
-        `สต็อกไม่เพียงพอ! มี ${formatWeight(sourceAvailableWeight)}, ต้องการ ${formatWeight(transferSourceWeight)}`
+        `สินค้าต้นทางมีสต็อก 0 กก. กรุณาเพิ่มสต็อกก่อนบันทึกการย้าย`
+      );
+      return;
+    }
+    if (transferSourceWeight > sourceAvailableWeight) {
+      toast.error(
+        `สต็อกไม่เพียงพอ! มี ${formatWeight(sourceAvailableWeight)} กก., ต้องการ ${formatWeight(transferSourceWeight)} กก.`
       );
       return;
     }
@@ -603,9 +609,23 @@ export function TransferPage() {
                 />
               </div>
 
+              {/* Stock warning */}
+              {transferSourceProductId && sourceAvailableWeight <= 0 && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  สินค้าต้นทางมีสต็อก 0 กก. — กรุณาเพิ่มสต็อกก่อนบันทึกการย้าย
+                </div>
+              )}
+              {transferSourceProductId && sourceAvailableWeight > 0 && transferSourceWeight > sourceAvailableWeight && (
+                <div className="flex items-center gap-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  สต็อกไม่เพียงพอ! มี {formatWeight(sourceAvailableWeight)} กก., ต้องการ {formatWeight(transferSourceWeight)} กก.
+                </div>
+              )}
+
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || lossWeight < 0 || transferSourceWeight <= 0 || transferCartItems.length === 0}
+                disabled={submitting || lossWeight < 0 || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight}
                 className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
               >
                 {submitting ? (

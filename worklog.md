@@ -1464,3 +1464,82 @@ This is **expected behavior** (strict FIFO validation). The API correctly preven
 - ✅ No SortingBills created
 - ✅ No stock adjusted
 - ✅ No code patched
+
+---
+
+## Task ID: 50
+## Agent: Main
+## Task: Improve Transfer Page Stock Validation UX and Add Initial Stock for สายไฟทองแดง
+
+### Part A: UX Fix — Transfer Page Stock Validation
+
+**File changed**: `src/components/transfer-page.tsx`
+
+**Changes**:
+1. **Fixed handleSubmit validation** (lines 208-219):
+   - OLD: `if (sourceAvailableWeight > 0 && transferSourceWeight > sourceAvailableWeight)` — skipped when stock=0
+   - NEW: Two separate checks:
+     - `if (sourceAvailableWeight <= 0)` → toast "สินค้าต้นทางมีสต็อก 0 กก. กรุณาเพิ่มสต็อกก่อนบันทึกการย้าย"
+     - `if (transferSourceWeight > sourceAvailableWeight)` → toast "สต็อกไม่เพียงพอ! มี X กก., ต้องการ Y กก."
+
+2. **Improved save button disabled state** (line 614):
+   - OLD: `disabled={submitting || lossWeight < 0 || transferSourceWeight <= 0 || transferCartItems.length === 0}`
+   - NEW: Added `|| sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight`
+
+3. **Added visual warning banners** (lines 612-624):
+   - Red warning box when source stock = 0: "สินค้าต้นทางมีสต็อก 0 กก. — กรุณาเพิ่มสต็อกก่อนบันทึกการย้าย"
+   - Red warning box when stock insufficient: "สต็อกไม่เพียงพอ! มี X กก., ต้องการ Y กก."
+
+**Backend validation unchanged** — API still correctly rejects if stock is insufficient.
+
+### Part B: Add Initial Stock for สายไฟทองแดง
+
+**Product**: สายไฟทองแดง (id: cmr7up02q000hmzw7wkn7huiq, category: ทองแดง)
+
+**Before**: 0 kg stock, 0 StockLots
+
+**After**: 1,000 kg stock, 1 StockLot
+
+| Field | Value |
+|---|---|
+| StockLot ID | cmraqonog0001wv4lnb89enxd |
+| Product ID | cmr7up02q000hmzw7wkn7huiq |
+| remainingWeight | 1,000 kg |
+| costPerKg | 40 THB/kg |
+| Total cost | 40,000 THB |
+| Source | BUY |
+| SourceId | OWNER_INITIAL_STOCK_SETUP |
+| AuditLog ID | cmraqonxq0002wv4lg8tn4loq |
+
+### Safety Verification
+
+| Metric | Before | After | Changed? |
+|---|---:|---:|---|
+| Products | 112 | 112 | NO ✅ |
+| StockLots | 864 | 865 | YES (+1, expected) ✅ |
+| BuyBills | 15 | 15 | NO ✅ |
+| SellBills | 9 | 9 | NO ✅ |
+| SortingBills | 144 | 144 | NO ✅ |
+| StockTransfers | 3 | 3 | NO ✅ |
+| Total stock weight | 547,538.70 | 548,538.70 | YES (+1,000, expected) ✅ |
+
+### Part C: Test Results
+
+- **Lint**: ✅ Clean (no errors)
+- **FIFO check**: ✅ สายไฟทองแดง has 1 active lot with 1,000 kg available — 13.7 kg requested would pass FIFO
+- **Transfer saveability**: ✅ The original 13.7 kg transfer should now be saveable (stock 1,000 ≥ 13.7)
+
+### Final Summary
+
+1. **Files changed for UX patch**: `src/components/transfer-page.tsx`
+2. **Validation logic added**: Stock=0 check + insufficient stock check + visual warnings + button disabled state
+3. **Product ID**: cmr7up02q000hmzw7wkn7huiq
+4. **Before stock**: 0 kg
+5. **After stock**: 1,000 kg
+6. **StockLot ID**: cmraqonog0001wv4lnb89enxd
+7. **AuditLog ID**: cmraqonxq0002wv4lg8tn4loq
+8. **Tests run**: Lint (clean), FIFO check (passes)
+9. **Original 13.7 kg transfer saveable**: ✅ YES (1,000 kg ≥ 13.7 kg)
+10. **No other products changed**: ✅ Confirmed
+
+UX patch completed and owner-approved initial stock for สายไฟทองแดง applied.
