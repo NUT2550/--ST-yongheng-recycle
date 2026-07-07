@@ -1,0 +1,254 @@
+﻿source sheet,source row number,sale date,product start date,bill number,buyer/customer code,buyer/customer name,raw product name,matched product name,product code,weight,unit,price per kg,amount,note,exclusion reason
+Sheet1,6,07/01/2569,,A2007348,0051,จีสตีล,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29015,กก.,10.6471411338963,308926.8,,Unmatched steel — out of scope
+Sheet1,7,10/01/2569,,A2007361,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29195,กก.,10.4594588114403,305363.9,,Unmatched steel — out of scope
+Sheet1,8,16/01/2569,,A2007370,0051,จีสตีล,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29290,กก.,10.8551553431205,317947.5,,Unmatched steel — out of scope
+Sheet1,9,02/02/2569,,A2007390,0051,จีสตีล,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29115,กก.,11.0590692083119,321984.8,,Unmatched steel — out of scope
+Sheet1,10,18/02/2569,,A2007411,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29155,กก.,11.4133253301321,332755.5,,Unmatched steel — out of scope
+Sheet1,11,17/03/2569,,A2007449,0051,จีสตีล,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,30235,กก.,11.5809426161733,350149.8,,Unmatched steel — out of scope
+Sheet1,12,28/04/2569,,A2007514,0051,จีสตีล,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29115,กก.,12.937777777777802,376683.4,,Unmatched steel — out of scope
+Sheet1,13,07/05/2569,,A2007525,0051,จีสตีล,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29285,กก.,12.3755847703603,362419,,Unmatched steel — out of scope
+Sheet1,14,02/06/2569,,A2007573,0059,สิงห์ไทย,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29180,กก.,10.9218094585332,318698.4,,Unmatched steel — out of scope
+Sheet1,15,03/06/2569,,A2007574,0059,สิงห์ไทย,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29095,กก.,10.6279841897233,309221.2,,Unmatched steel — out of scope
+Sheet1,16,06/06/2569,,A2007583,0059,สิงห์ไทย,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29460,กก.,10.8928173794976,320902.4,,Unmatched steel — out of scope
+Sheet1,17,20/06/2569,,A2007598,0059,สิงห์ไทย,เหล็กหนาพิเศษ,(UNMATCHED STEEL),0101,29160,กก.,10.7024691358025,312084,,Unmatched steel — out of scope
+Sheet1,20,06/01/2569,,A2007346,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,10030,กก.,9.65564659427443,96846.14,,Unmatched steel — out of scope
+Sheet1,21,08/01/2569,,A2007352,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30380,กก.,10.1323469387755,307820.7,,Unmatched steel — out of scope
+Sheet1,22,09/01/2569,,A2007355,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28270,กก.,9.73122037495578,275101.6,,Unmatched steel — out of scope
+Sheet1,23,10/01/2569,,A2007362,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29350,กก.,9.77494037478705,286894.5,,Unmatched steel — out of scope
+Sheet1,24,14/01/2569,,A2007367,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29460,กก.,9.9722878479294,293783.6,,Unmatched steel — out of scope
+Sheet1,25,15/01/2569,,A2007369,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29100,กก.,9.98089347079038,290444,,Unmatched steel — out of scope
+Sheet1,26,17/01/2569,,A2007371,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29025,กก.,10.0066838931955,290444,,Unmatched steel — out of scope
+Sheet1,27,20/01/2569,,A2007373,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28985,กก.,9.99954459203036,289836.8,,Unmatched steel — out of scope
+Sheet1,28,26/01/2569,,A2007380,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29030,กก.,10.402032380296301,301971,,Unmatched steel — out of scope
+Sheet1,29,28/01/2569,,A2007383,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30725,กก.,10.723918633035,329492.4,,Unmatched steel — out of scope
+Sheet1,30,30/01/2569,,A2007387,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30040,กก.,10.3014114513981,309454.4,,Unmatched steel — out of scope
+Sheet1,31,06/02/2569,,A2007399,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29330,กก.,10.7933515172179,316569,,Unmatched steel — out of scope
+Sheet1,32,07/02/2569,,A2007401,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30555,กก.,10.3657993781705,316727,,Unmatched steel — out of scope
+Sheet1,33,11/02/2569,,A2007404,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30025,กก.,10.3521931723564,310824.6,,Unmatched steel — out of scope
+Sheet1,34,14/02/2569,,A2007409,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29210,กก.,10.967182471756201,320351.4,,Unmatched steel — out of scope
+Sheet1,35,21/02/2569,,A2007416,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29545,กก.,10.9509967845659,323547.2,,Unmatched steel — out of scope
+Sheet1,36,23/02/2569,,A2007418,0001,ลูกค้าทั่วไป,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,117.8,กก.,20,2356,,Unmatched steel — out of scope
+Sheet1,37,24/02/2569,,A2007419,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29430,กก.,10.9413659531091,322004.4,,Unmatched steel — out of scope
+Sheet1,38,05/03/2569,,A2007430,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30300,กก.,10.8163300330033,327734.8,,Unmatched steel — out of scope
+Sheet1,39,10/03/2569,,A2007438,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29285,กก.,11.0938671674919,324883.9,,Unmatched steel — out of scope
+Sheet1,40,16/03/2569,,A2007447,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29360,กก.,10.598886239782,311183.3,,Unmatched steel — out of scope
+Sheet1,41,18/03/2569,,A2007451,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29090,กก.,11.5838432451014,336974,,Unmatched steel — out of scope
+Sheet1,42,23/03/2569,,A2007458,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30220,กก.,11.632256783587,351526.8,,Unmatched steel — out of scope
+Sheet1,43,26/03/2569,,A2007463,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29185,กก.,11.9537570669865,348870.4,,Unmatched steel — out of scope
+Sheet1,44,31/03/2569,,A2007474,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29115,กก.,12.312691052722,358484,,Unmatched steel — out of scope
+Sheet1,45,03/04/2569,,A2007480,709,บริษัท เอบี สตีล จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29270,กก.,12.2559617355654,358732,,Unmatched steel — out of scope
+Sheet1,46,07/04/2569,,A2007485,709,บริษัท เอบี สตีล จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,30295,กก.,12.2751609176432,371876,,Unmatched steel — out of scope
+Sheet1,47,27/04/2569,,A2007512,709,บริษัท เอบี สตีล จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29070,กก.,12.593106295149601,366081.60000000003,,Unmatched steel — out of scope
+Sheet1,48,30/04/2569,,A2007517,709,บริษัท เอบี สตีล จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29005,กก.,12.333735562834002,357740,,Unmatched steel — out of scope
+Sheet1,49,05/05/2569,,A2007522,710,บริษัท มิลล์คอนบูรพา จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29215,กก.,12.567413999657703,367157,,Unmatched steel — out of scope
+Sheet1,50,08/05/2569,,A2007526,709,บริษัท เอบี สตีล จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,27360,กก.,11.904375,325703.7,,Unmatched steel — out of scope
+Sheet1,51,11/05/2569,,A2007531,0013,เหล็กสยามยามาโตะ,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29175,กก.,11.9486203941731,348601,,Unmatched steel — out of scope
+Sheet1,52,12/05/2569,,A2007532,0013,เหล็กสยามยามาโตะ,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29075,กก.,11.599105760963,337244,,Unmatched steel — out of scope
+Sheet1,53,15/05/2569,,A2007539,0013,เหล็กสยามยามาโตะ,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28930,กก.,11.299602488766,326897.5,,Unmatched steel — out of scope
+Sheet1,54,23/05/2569,,A2007553,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29090,กก.,10.887383980749402,316714,,Unmatched steel — out of scope
+Sheet1,55,29/05/2569,,A2007566,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29165,กก.,10.1867649579976,297097,,Unmatched steel — out of scope
+Sheet1,56,04/06/2569,,A2007579,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,26970,กก.,10.462439747868,282172,,Unmatched steel — out of scope
+Sheet1,57,05/06/2569,,A2007580,0059,สิงห์ไทย,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29450,กก.,10.896502546689302,320902,,Unmatched steel — out of scope
+Sheet1,58,08/06/2569,,A2007586,0046,บ.หยงซิงสตีล,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28970,กก.,10.600289955126,307090.4,,Unmatched steel — out of scope
+Sheet1,59,19/06/2569,,A2007594,710,บริษัท มิลล์คอนบูรพา จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28955,กก.,10.762769815230502,311636,,Unmatched steel — out of scope
+Sheet1,60,22/06/2569,,A2007600,710,บริษัท มิลล์คอนบูรพา จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28850,กก.,10.7288734835355,309528,,Unmatched steel — out of scope
+Sheet1,61,22/06/2569,,A2007602,710,บริษัท มิลล์คอนบูรพา จำกัด,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29260,กก.,10.7483253588517,314496,,Unmatched steel — out of scope
+Sheet1,62,27/06/2569,,A2007615,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,29415,กก.,10.49,308563.35,,Unmatched steel — out of scope
+Sheet1,63,01/07/2569,,A2007619,0034,เชาว์สตีล ปราจีนบุรี (ผ่านตัวแทน),เหล็กหนาสั้น,(UNMATCHED STEEL),0103,28885,กก.,10.3538133979574,299069.9,,Unmatched steel — out of scope
+Sheet1,64,04/07/2569,,A2007623,0001,ลูกค้าทั่วไป,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,0.8,กก.,25,20,,Unmatched steel — out of scope
+Sheet1,65,06/07/2569,,A2007624,0001,ลูกค้าทั่วไป,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,6,กก.,22,132,,Unmatched steel — out of scope
+Sheet1,66,06/07/2569,,A2007626,0001,ลูกค้าทั่วไป,เหล็กหนาสั้น,(UNMATCHED STEEL),0103,1.5,กก.,20,30,,Unmatched steel — out of scope
+Sheet1,69,12/01/2569,,A2007364,0051,จีสตีล,เหล็กบาง,(UNMATCHED STEEL),0106,29160,กก.,9.88257887517147,288176,,Unmatched steel — out of scope
+Sheet1,70,24/01/2569,,A2007377,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,28965,กก.,9.77731745209736,283200,,Unmatched steel — out of scope
+Sheet1,71,03/02/2569,,A2007391,0001,ลูกค้าทั่วไป,เหล็กบาง,(UNMATCHED STEEL),0106,0.1,กก.,20,2,,Unmatched steel — out of scope
+Sheet1,72,13/02/2569,,A2007408,0051,จีสตีล,เหล็กบาง,(UNMATCHED STEEL),0106,30195,กก.,10.3263421096208,311803.9,,Unmatched steel — out of scope
+Sheet1,73,20/02/2569,,A2007415,0051,จีสตีล,เหล็กบาง,(UNMATCHED STEEL),0106,29390,กก.,10.4321197686288,306600,,Unmatched steel — out of scope
+Sheet1,74,07/03/2569,,A2007433,0051,จีสตีล,เหล็กบาง,(UNMATCHED STEEL),0106,30135,กก.,10.5202422432388,317027.5,,Unmatched steel — out of scope
+Sheet1,75,27/03/2569,,A2007468,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,29870,กก.,11.2281218613994,335384,,Unmatched steel — out of scope
+Sheet1,76,06/04/2569,,A2007482,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,29460,กก.,11.8394093686354,348789,,Unmatched steel — out of scope
+Sheet1,77,10/04/2569,,A2007486,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,28995,กก.,11.927573719606801,345840,,Unmatched steel — out of scope
+Sheet1,78,18/04/2569,,A2007499,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,28335,กก.,11.9385918475384,338280,,Unmatched steel — out of scope
+Sheet1,79,16/05/2569,,A2007541,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,29100,กก.,11.0876288659794,322650,,Unmatched steel — out of scope
+Sheet1,80,21/05/2569,,A2007549,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,28985,กก.,10.846110056926,314374.5,,Unmatched steel — out of scope
+Sheet1,81,01/06/2569,,A2007570,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,29160,กก.,10.1639231824417,296380,,Unmatched steel — out of scope
+Sheet1,82,06/06/2569,,A2007584,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,29115,กก.,10.0750472265155,293335,,Unmatched steel — out of scope
+Sheet1,83,23/06/2569,,A2007606,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,28775,กก.,10.0600521285838,289478,,Unmatched steel — out of scope
+Sheet1,84,29/06/2569,,A2007616,0001,ลูกค้าทั่วไป,เหล็กบาง,(UNMATCHED STEEL),0106,2,กก.,15,30,,Unmatched steel — out of scope
+Sheet1,85,02/07/2569,,A2007620,0013,เหล็กสยามยามาโตะ,เหล็กบาง,(UNMATCHED STEEL),0106,28795,กก.,10.1094634485154,291102,,Unmatched steel — out of scope
+Sheet1,88,09/01/2569,,A2007357,055,ทาทา,"กระป๋อง,ปี๊บ เหล็ก",(UNMATCHED STEEL),0107,1330,กก.,7.276000000000001,9677.08,,Unmatched steel — out of scope
+Sheet1,89,24/03/2569,,A2007460,055,ทาทา,"กระป๋อง,ปี๊บ เหล็ก",(UNMATCHED STEEL),0107,29180,กก.,8.31693625771076,242688.2,,Unmatched steel — out of scope
+Sheet1,90,11/04/2569,,A2007493,055,ทาทา,"กระป๋อง,ปี๊บ เหล็ก",(UNMATCHED STEEL),0107,29100,กก.,8.80518900343643,256231,,Unmatched steel — out of scope
+Sheet1,91,11/06/2569,,A2007588,0001,ลูกค้าทั่วไป,"กระป๋อง,ปี๊บ เหล็ก",(UNMATCHED STEEL),0107,12.4,กก.,6.46,80.1,,Unmatched steel — out of scope
+Sheet1,94,05/06/2569,,A2007582,0052,ไทคูณ TYsteel,สังกะสี,(UNMATCHED STEEL),0108,9310,กก.,6.6000000000000005,61446,,Unmatched steel — out of scope
+Sheet1,95,27/06/2569,,A2007614,0001,ลูกค้าทั่วไป,สังกะสี,(UNMATCHED STEEL),0108,24.8,กก.,16,396.8,,Unmatched steel — out of scope
+Sheet1,98,12/01/2569,,A2007365,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10420,กก.,12.995009596929002,135408,,Unmatched steel — out of scope
+Sheet1,99,19/01/2569,,A2007372,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10465,กก.,13.0062111801242,136110,,Unmatched steel — out of scope
+Sheet1,100,24/01/2569,,A2007378,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10625,กก.,12.7987952941176,135987.2,,Unmatched steel — out of scope
+Sheet1,101,31/01/2569,,A2007388,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10200,กก.,12.8,130560,,Unmatched steel — out of scope
+Sheet1,102,09/02/2569,,A2007402,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10530,กก.,11.5114909781576,121216,,Unmatched steel — out of scope
+Sheet1,103,18/02/2569,,A2007412,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10460,กก.,12.8,133888,,Unmatched steel — out of scope
+Sheet1,104,27/02/2569,,A2007421,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10285,กก.,12.8012445308702,131660.8,,Unmatched steel — out of scope
+Sheet1,105,07/03/2569,,A2007434,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10155,กก.,12.793697685869002,129920,,Unmatched steel — out of scope
+Sheet1,106,14/03/2569,,A2007445,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10000,กก.,12.78464,127846.40000000001,,Unmatched steel — out of scope
+Sheet1,107,20/03/2569,,A2007456,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10330,กก.,12.770261374637,131916.8,,Unmatched steel — out of scope
+Sheet1,108,28/03/2569,,A2007469,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10435,กก.,12.798754192621,133555,,Unmatched steel — out of scope
+Sheet1,109,06/04/2569,,A2007481,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,15780,กก.,13.2965779467681,209820,,Unmatched steel — out of scope
+Sheet1,110,27/04/2569,,A2007510,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10320,กก.,13.5920930232558,140270.4,,Unmatched steel — out of scope
+Sheet1,111,05/05/2569,,A2007520,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10330,กก.,13.7866408518877,142416,,Unmatched steel — out of scope
+Sheet1,112,13/05/2569,,A2007533,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10120,กก.,13.8381818181818,140042.4,,Unmatched steel — out of scope
+Sheet1,113,21/05/2569,,A2007547,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,12580,กก.,13.789030206677301,173466,,Unmatched steel — out of scope
+Sheet1,114,29/05/2569,,A2007565,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10264.2,กก.,13.3075154420218,136591,,Unmatched steel — out of scope
+Sheet1,115,08/06/2569,,A2007585,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10455,กก.,13.2860066953611,138905.2,,Unmatched steel — out of scope
+Sheet1,116,15/06/2569,,A2007589,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10275,กก.,1,10275,,Unmatched steel — out of scope
+Sheet1,117,20/06/2569,,A2007599,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10740,กก.,13.3,142842,,Unmatched steel — out of scope
+Sheet1,118,26/06/2569,,A2007611,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,10725,กก.,13.0841212121212,140327.2,,Unmatched steel — out of scope
+Sheet1,119,06/07/2569,,A2007625,056,วรรธนา,เหล็กหล่อเล็ก,(UNMATCHED STEEL),0114,12235,กก.,13.1,160278.5,,Unmatched steel — out of scope
+Sheet1,122,25/03/2569,,A2007462,0051,จีสตีล,เหล็กหล่อใหญ่,(UNMATCHED STEEL),0115,30065,กก.,12.2707433893231,368919.9,,Unmatched steel — out of scope
+Sheet1,125,21/04/2569,,A2007504,0001,ลูกค้าทั่วไป,ถัง 15 ถึง 200 ลิตร,(UNMATCHED STEEL),0116,9.8,กก.,15,147,,Unmatched steel — out of scope
+Sheet1,128,05/01/2569,,A2007343,0001,ลูกค้าทั่วไป,โช๊ค,(UNMATCHED STEEL),0117,6.8,กก.,20,136,,Unmatched steel — out of scope
+Sheet1,131,06/01/2569,,A2007344,0036,สยามมิตร สตีล,เหล็กเส้น 3-4 หุน,(UNMATCHED STEEL),0121,1638,กก.,16,26208,,Unmatched steel — out of scope
+Sheet1,134,12/01/2569,,A2007363,0053,เฮียหม่อง,อะไหล่,(UNMATCHED STEEL),0122,17.8,กก.,30,534,,Unmatched steel — out of scope
+Sheet1,135,17/04/2569,,A2007494,0053,เฮียหม่อง,อะไหล่,(UNMATCHED STEEL),0122,39,กก.,25,975,,Unmatched steel — out of scope
+Sheet1,136,01/07/2569,,A2007617,0001,ลูกค้าทั่วไป,อะไหล่,(UNMATCHED STEEL),0122,5.6000000000000005,กก.,25,140,,Unmatched steel — out of scope
+Sheet1,139,18/06/2569,,A2007593,0001,ลูกค้าทั่วไป,เครื่องจักร,(UNMATCHED STEEL),0124,1470,กก.,9,13230,,Unmatched steel — out of scope
+Sheet1,142,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,161.6,กก.,24.7524752475,4000,,Unmatched steel — out of scope
+Sheet1,143,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,22.2,กก.,31.5315315315,700,,Unmatched steel — out of scope
+Sheet1,144,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,8.4,กก.,225,1890,,Unmatched steel — out of scope
+Sheet1,145,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,5,กก.,70,350,,Unmatched steel — out of scope
+Sheet1,146,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,13,กก.,92.3076923076,1200,,Unmatched steel — out of scope
+Sheet1,147,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,68.6,กก.,29.154518950400004,2000,,Unmatched steel — out of scope
+Sheet1,148,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,73.2,กก.,40.9836065573,3000,,Unmatched steel — out of scope
+Sheet1,149,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,184.20000000000002,กก.,38.0021715526,7000,,Unmatched steel — out of scope
+Sheet1,150,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,31.8,กก.,100,3180,,Unmatched steel — out of scope
+Sheet1,151,17/04/2569,,A2007495,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,13.200000000000001,กก.,90.90909090900001,1200,,Unmatched steel — out of scope
+Sheet1,152,21/04/2569,,A2007503,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,1880,กก.,17,31960,,Unmatched steel — out of scope
+Sheet1,153,29/05/2569,,A2007563,0001,ลูกค้าทั่วไป,เหล็กคัดขาย,(UNMATCHED STEEL),0128,6.8,กก.,20,136,,Unmatched steel — out of scope
+Sheet1,154,29/05/2569,,A2007564,0053,เฮียหม่อง,เหล็กคัดขาย,(UNMATCHED STEEL),0128,7.2,กก.,25,180,,Unmatched steel — out of scope
+Sheet1,157,24/06/2569,,A2007608,0001,ลูกค้าทั่วไป,เมทัลชีส(มือสอง),(UNMATCHED STEEL),0198,285,กก.,17,4845,,Unmatched steel — out of scope
+Sheet1,158,27/06/2569,,A2007613,0001,ลูกค้าทั่วไป,เมทัลชีส(มือสอง),(UNMATCHED STEEL),0198,130,กก.,18,2340,,Unmatched steel — out of scope
+Sheet1,159,27/06/2569,,A2007614,0001,ลูกค้าทั่วไป,เมทัลชีส(มือสอง),(UNMATCHED STEEL),0198,70,กก.,18,1260,,Unmatched steel — out of scope
+Sheet1,162,05/01/2569,,A2007342,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,53.4,กก.,30,1602,,Unmatched steel — out of scope
+Sheet1,163,06/01/2569,,A2007345,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,475,กก.,20,9500,,Unmatched steel — out of scope
+Sheet1,164,08/01/2569,,A2007353,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,31.2,กก.,19.8717948717949,620,,Unmatched steel — out of scope
+Sheet1,165,08/01/2569,,A2007354,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,13.6,กก.,20,272,,Unmatched steel — out of scope
+Sheet1,166,13/01/2569,,A2007366,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,8,กก.,30,240,,Unmatched steel — out of scope
+Sheet1,167,15/01/2569,,A2007368,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,110,กก.,20,2200,,Unmatched steel — out of scope
+Sheet1,168,22/01/2569,,A2007374,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.3,กก.,33.33,10,,Unmatched steel — out of scope
+Sheet1,169,23/01/2569,,A2007376,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,230,กก.,20,4600,,Unmatched steel — out of scope
+Sheet1,170,26/01/2569,,A2007379,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,150,กก.,20,3000,,Unmatched steel — out of scope
+Sheet1,171,27/01/2569,,A2007381,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,7.6000000000000005,กก.,20,152,,Unmatched steel — out of scope
+Sheet1,172,28/01/2569,,A2007382,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,27,กก.,20,540,,Unmatched steel — out of scope
+Sheet1,173,29/01/2569,,A2007384,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,28,กก.,20,560,,Unmatched steel — out of scope
+Sheet1,174,29/01/2569,,A2007386,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,4.2,กก.,20,84,,Unmatched steel — out of scope
+Sheet1,175,02/02/2569,,A2007389,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,7.6000000000000005,กก.,30,228,,Unmatched steel — out of scope
+Sheet1,176,05/02/2569,,A2007392,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,180,กก.,20,3600,,Unmatched steel — out of scope
+Sheet1,177,06/02/2569,,A2007398,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.9000000000000001,กก.,18,34.2,,Unmatched steel — out of scope
+Sheet1,178,10/02/2569,,A2007403,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,33.2,กก.,30,996,,Unmatched steel — out of scope
+Sheet1,179,12/02/2569,,A2007405,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,2.4,กก.,20.8333333333333,50,,Unmatched steel — out of scope
+Sheet1,180,13/02/2569,,A2007407,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,6,กก.,23.3333333333333,140,,Unmatched steel — out of scope
+Sheet1,181,14/02/2569,,A2007410,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,5.6000000000000005,กก.,30,168,,Unmatched steel — out of scope
+Sheet1,182,19/02/2569,,A2007413,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.2,กก.,20,24,,Unmatched steel — out of scope
+Sheet1,183,20/02/2569,,A2007414,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,90.60000000000001,กก.,20,1812,,Unmatched steel — out of scope
+Sheet1,184,23/02/2569,,A2007417,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,5,กก.,20,100,,Unmatched steel — out of scope
+Sheet1,185,26/02/2569,,A2007420,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,6.2,กก.,56.5,350.3,,Unmatched steel — out of scope
+Sheet1,186,27/02/2569,,A2007425,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,71,กก.,20,1420,,Unmatched steel — out of scope
+Sheet1,187,02/03/2569,,A2007426,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,12.6,กก.,30,378,,Unmatched steel — out of scope
+Sheet1,188,03/03/2569,,A2007427,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,10,กก.,20,200,,Unmatched steel — out of scope
+Sheet1,189,03/03/2569,,A2007428,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,110,กก.,20,2200,,Unmatched steel — out of scope
+Sheet1,190,04/03/2569,,A2007429,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,169.8,กก.,20,3396,,Unmatched steel — out of scope
+Sheet1,191,06/03/2569,,A2007431,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,19.4,กก.,30,582,,Unmatched steel — out of scope
+Sheet1,192,07/03/2569,,A2007432,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,23,กก.,20,460,,Unmatched steel — out of scope
+Sheet1,193,09/03/2569,,A2007436,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.8,กก.,25,20,,Unmatched steel — out of scope
+Sheet1,194,09/03/2569,,A2007437,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.6,กก.,20,72,,Unmatched steel — out of scope
+Sheet1,195,09/03/2569,,A2007435,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,50.6,กก.,30,1518,,Unmatched steel — out of scope
+Sheet1,196,12/03/2569,,A2007439,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1,กก.,20,20,,Unmatched steel — out of scope
+Sheet1,197,12/03/2569,,A2007441,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,18.8,กก.,19.1489361702128,360,,Unmatched steel — out of scope
+Sheet1,198,13/03/2569,,A2007442,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.5,กก.,20,30,,Unmatched steel — out of scope
+Sheet1,199,13/03/2569,,A2007443,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,22,กก.,30,660,,Unmatched steel — out of scope
+Sheet1,200,13/03/2569,,A2007444,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,37.6,กก.,18,676.8000000000001,,Unmatched steel — out of scope
+Sheet1,201,16/03/2569,,A2007446,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,4,กก.,30,120,,Unmatched steel — out of scope
+Sheet1,202,17/03/2569,,A2007448,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,4.2,กก.,20,84,,Unmatched steel — out of scope
+Sheet1,203,18/03/2569,,A2007452,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.6,กก.,20,12,,Unmatched steel — out of scope
+Sheet1,204,20/03/2569,,A2007454,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.3,กก.,53.8461538461538,70,,Unmatched steel — out of scope
+Sheet1,205,20/03/2569,,A2007455,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.4,กก.,20,68,,Unmatched steel — out of scope
+Sheet1,206,23/03/2569,,A2007457,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.4,กก.,25,85,,Unmatched steel — out of scope
+Sheet1,207,25/03/2569,,A2007461,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,8.6,กก.,30,258,,Unmatched steel — out of scope
+Sheet1,208,27/03/2569,,A2007464,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,5.5,กก.,23,126.5,,Unmatched steel — out of scope
+Sheet1,209,27/03/2569,,A2007465,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.8000000000000003,กก.,17.1052631578947,65,,Unmatched steel — out of scope
+Sheet1,210,27/03/2569,,A2007467,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.2,กก.,25,30,,Unmatched steel — out of scope
+Sheet1,211,02/04/2569,,A2007479,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,10.8,กก.,30,324,,Unmatched steel — out of scope
+Sheet1,212,07/04/2569,,A2007483,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,59.6,กก.,20,1192,,Unmatched steel — out of scope
+Sheet1,213,07/04/2569,,A2007484,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,49.2,กก.,20,984,,Unmatched steel — out of scope
+Sheet1,214,11/04/2569,,A2007489,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,8.6,กก.,23.255813953400004,200,,Unmatched steel — out of scope
+Sheet1,215,11/04/2569,,A2007490,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,275,กก.,19,5225,,Unmatched steel — out of scope
+Sheet1,216,11/04/2569,,A2007491,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,4.6,กก.,20,92,,Unmatched steel — out of scope
+Sheet1,217,17/04/2569,,A2007497,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.8,กก.,31.25,25,,Unmatched steel — out of scope
+Sheet1,218,17/04/2569,,A2007496,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,34,กก.,25,850,,Unmatched steel — out of scope
+Sheet1,219,18/04/2569,,A2007498,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,195,กก.,7.75384615384,1512,,Unmatched steel — out of scope
+Sheet1,220,20/04/2569,,A2007501,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,95,กก.,19,1805,,Unmatched steel — out of scope
+Sheet1,221,20/04/2569,,A2007500,0053,เฮียหม่อง,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,6,กก.,25,150,,Unmatched steel — out of scope
+Sheet1,222,22/04/2569,,A2007506,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1820,กก.,17,30940,,Unmatched steel — out of scope
+Sheet1,223,22/04/2569,,A2007507,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1965,กก.,17,33405,,Unmatched steel — out of scope
+Sheet1,224,23/04/2569,,A2007508,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1890,กก.,17,32130,,Unmatched steel — out of scope
+Sheet1,225,25/04/2569,,A2007509,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,5.2,กก.,22,114.4,,Unmatched steel — out of scope
+Sheet1,226,25/04/2569,,A2007509,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,19.2,กก.,18,345.6,,Unmatched steel — out of scope
+Sheet1,227,27/04/2569,,A2007511,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,22.2,กก.,36.036036036036,800,,Unmatched steel — out of scope
+Sheet1,228,28/04/2569,,A2007513,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.8000000000000003,กก.,25,95,,Unmatched steel — out of scope
+Sheet1,229,29/04/2569,,A2007515,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,4,กก.,20,80,,Unmatched steel — out of scope
+Sheet1,230,29/04/2569,,A2007516,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,11,กก.,25,275,,Unmatched steel — out of scope
+Sheet1,231,04/05/2569,,A2007519,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,100,กก.,19,1900,,Unmatched steel — out of scope
+Sheet1,232,05/05/2569,,A2007521,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,31,กก.,19,589,,Unmatched steel — out of scope
+Sheet1,233,07/05/2569,,A2007523,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,40,กก.,118,4720,,Unmatched steel — out of scope
+Sheet1,234,07/05/2569,,A2007524,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,490,กก.,18,8820,,Unmatched steel — out of scope
+Sheet1,235,09/05/2569,,A2007527,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,6.6000000000000005,กก.,20,132,,Unmatched steel — out of scope
+Sheet1,236,11/05/2569,,A2007529,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.8,กก.,25,20,,Unmatched steel — out of scope
+Sheet1,237,11/05/2569,,A2007530,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,22,กก.,25,550,,Unmatched steel — out of scope
+Sheet1,238,14/05/2569,,A2007537,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.6,กก.,20,72,,Unmatched steel — out of scope
+Sheet1,239,19/05/2569,,A2007543,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,95,กก.,19,1805,,Unmatched steel — out of scope
+Sheet1,240,21/05/2569,,A2007546,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,80,กก.,20,1600,,Unmatched steel — out of scope
+Sheet1,241,23/05/2569,,A2007552,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,31,กก.,17,527,,Unmatched steel — out of scope
+Sheet1,242,25/05/2569,,A2007554,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.5,กก.,33.333,50,,Unmatched steel — out of scope
+Sheet1,243,28/05/2569,,A2007559,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,23,กก.,25,575,,Unmatched steel — out of scope
+Sheet1,244,28/05/2569,,A2007561,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,270,กก.,7.05185185185,1904,,Unmatched steel — out of scope
+Sheet1,245,30/05/2569,,A2007567,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,50,กก.,122,6100,,Unmatched steel — out of scope
+Sheet1,246,30/05/2569,,A2007568,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,530,กก.,18,9540,,Unmatched steel — out of scope
+Sheet1,247,30/05/2569,,A2007569,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,90,กก.,6.5,585,,Unmatched steel — out of scope
+Sheet1,248,30/05/2569,,A2007569,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,17.4,กก.,3,52.2,,Unmatched steel — out of scope
+Sheet1,249,02/06/2569,,A2007571,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,11,กก.,25,275,,Unmatched steel — out of scope
+Sheet1,250,02/06/2569,,A2007572,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,3.1,กก.,19,58.9,,Unmatched steel — out of scope
+Sheet1,251,03/06/2569,,A2007575,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,35.2,กก.,25,880,,Unmatched steel — out of scope
+Sheet1,252,04/06/2569,,A2007576,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,89,กก.,20,1780,,Unmatched steel — out of scope
+Sheet1,253,04/06/2569,,A2007576,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,6.2,กก.,22,136.4,,Unmatched steel — out of scope
+Sheet1,254,04/06/2569,,A2007577,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,45,กก.,25,1125,,Unmatched steel — out of scope
+Sheet1,255,04/06/2569,,A2007578,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,41.800000000000004,กก.,29,1212.2,,Unmatched steel — out of scope
+Sheet1,256,05/06/2569,,A2007581,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,11.200000000000001,กก.,16.0714285714286,180,,Unmatched steel — out of scope
+Sheet1,257,09/06/2569,,A2007587,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.4000000000000001,กก.,19,26.6,,Unmatched steel — out of scope
+Sheet1,258,18/06/2569,,A2007592,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,2.7,กก.,25,67.5,,Unmatched steel — out of scope
+Sheet1,259,19/06/2569,,A2007595,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,100,กก.,120,12000,,Unmatched steel — out of scope
+Sheet1,260,19/06/2569,,A2007596,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,1.7,กก.,19,32.3,,Unmatched steel — out of scope
+Sheet1,261,20/06/2569,,A2007597,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,10.700000000000001,กก.,30,321,,Unmatched steel — out of scope
+Sheet1,262,22/06/2569,,A2007601,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,135,กก.,25.9259259259259,3500,,Unmatched steel — out of scope
+Sheet1,263,22/06/2569,,A2007601,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,130,กก.,26.9230769230769,3500,,Unmatched steel — out of scope
+Sheet1,264,23/06/2569,,A2007605,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.7000000000000001,กก.,42.8571428571429,30,,Unmatched steel — out of scope
+Sheet1,265,01/07/2569,,A2007618,0001,ลูกค้าทั่วไป,เหล็กคัดใช้งาน,(UNMATCHED STEEL),0199,0.2,กก.,300,60,,Unmatched steel — out of scope
+Sheet1,268,29/01/2569,,A2007385,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29405,กก.,10.4053732358442,305970,,Owner scope decision
+Sheet1,269,12/02/2569,,A2007406,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29290,กก.,10.6890406282008,313082,,Owner scope decision
+Sheet1,270,12/03/2569,,A2007440,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29260,กก.,11.016011619959,322328.5,,Owner scope decision
+Sheet1,271,30/03/2569,,A2007471,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,28970,กก.,11.7040386606835,339066,,Owner scope decision
+Sheet1,272,21/04/2569,,A2007505,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29130,กก.,12.491417782355002,363875,,Owner scope decision
+Sheet1,273,02/05/2569,,A2007518,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29115,กก.,12.7215352910871,370387.5,,Owner scope decision
+Sheet1,274,09/05/2569,,A2007528,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,27390,กก.,12.2236582694414,334806,,Owner scope decision
+Sheet1,275,14/05/2569,,A2007534,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,28935,กก.,11.6077242094349,335869.5,,Owner scope decision
+Sheet1,276,15/05/2569,,A2007538,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29905,กก.,11.5467647550577,345306,,Owner scope decision
+Sheet1,277,16/05/2569,,A2007540,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,30275,กก.,13.0420974401321,394849.5,,Owner scope decision
+Sheet1,278,18/05/2569,,A2007542,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,28850,กก.,11.5975043327556,334588,,Owner scope decision
+Sheet1,279,19/05/2569,,A2007544,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,28990,กก.,11.577664711969602,335636.5,,Owner scope decision
+Sheet1,280,20/05/2569,,A2007545,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29140,กก.,11.2837851750172,328809.5,,Owner scope decision
+Sheet1,281,21/05/2569,,A2007548,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29250,กก.,11.3073162393162,330739,,Owner scope decision
+Sheet1,282,22/05/2569,,A2007550,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,28270,กก.,11.2656880084896,318481,,Owner scope decision
+Sheet1,283,25/05/2569,,A2007555,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29010,กก.,10.9623922785247,318019,,Owner scope decision
+Sheet1,284,27/05/2569,,A2007556,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29215,กก.,10.4940270409036,306583,,Owner scope decision
+Sheet1,285,28/05/2569,,A2007560,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,29250,กก.,10.499504273504298,307110.5,,Owner scope decision
+Sheet1,286,17/06/2569,,A2007591,0013,เหล็กสยามยามาโตะ,"เหล็กสลิง,สแตน",(OUT OF SCOPE),0200,30240,กก.,10.288343253968302,311119.5,,Owner scope decision
+Sheet1,530,10/04/2569,,A2007487,701,แกะของแกะจากST,ของแกะราคาสูง,(OUT OF SCOPE),0816,46,กก.,175,8050,,Owner scope decision
+Sheet1,534,31/12/2442,,,,,ของแกะราคาสูง,(OUT OF SCOPE),0816,0,กก.,0,0,,Owner scope decision

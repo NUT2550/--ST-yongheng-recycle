@@ -1145,3 +1145,77 @@ Since deleted products can no longer be queried directly, safety was verified in
 - ✅ All 4 owner rules verified
 - ✅ No stock/bill data changed
 - This was VERIFICATION ONLY — no production modifications were made
+
+---
+
+## Task ID: 45
+## Agent: Main
+## Task: Verify Sales After Product Stock-Count Start Dates
+
+### Goal
+Parse the detailed Recycle sales Excel file and list all sale rows that occurred on or after each product's stock-count start date. VERIFICATION ONLY — no production modifications.
+
+### Input
+- File: `รวมขายสิ้นค้า 1-1-69 ถึง 6-7-69 แบบละเอียด.xls` (534 rows, 416 sale item rows, 55 unique raw product names)
+
+### Output
+- Folder: `/home/z/my-project/reconciliation/sales-after-start-date-verification/`
+- 7 files: SALES_AFTER_START_DATE.csv, SALES_AFTER_START_DATE_SUMMARY.csv, SALES_BEFORE_START_DATE_AUDIT.csv, UNMATCHED_SALES_PRODUCTS.csv, AMBIGUOUS_SALES_PRODUCTS.csv, EXCLUDED_NOT_IN_SCOPE_SALES.csv, FINAL_REPORT.md
+
+### Results
+
+| # | Metric | Value |
+|---|---|---:|
+| 1 | Total Excel rows parsed | 534 |
+| 2 | Total detailed sale item rows | 416 |
+| 3 | Unique raw sale product names | 55 |
+| 4 | Matched product count | 33 |
+| 5 | Unmatched product count | 4 |
+| 6 | Ambiguous product count | 0 |
+| 7 | Products with sales after start date | 33 |
+| 8 | Total sale rows after start date | 41 |
+| 9 | Total sale weight after start date | 12,314.9 kg |
+| 10 | Total sale amount after start date | 870,308.95 THB |
+| | Excluded before start date | 111 rows |
+| | Excluded not in scope | 253 rows |
+
+### Top 10 Products by Sale Weight After Start Date
+
+| # | Product | Start date | Rows | Weight (kg) | Amount (THB) |
+|---|---|---|---:|---:|---:|
+| 1 | สแตนเลส 304 | 05/02/2569 | 4 | 5,786.3 | 201,250 |
+| 2 | อลูมิเนียมฉาก | 24/06/2569 | 2 | 1,051.4 | 1,051.4 |
+| 3 | อลูมิเนียมกระป๋อง | 25/06/2569 | 1 | 770 | 65,450 |
+| 4 | สแตนเลส 202 | 05/02/2569 | 3 | 735.2 | 12,220 |
+| 5 | อลูมิเนียมบาง | 27/06/2569 | 1 | 515.2 | 39,990 |
+| 6 | อลูมิเนียมสายไฟ | 23/06/2569 | 1 | 398.4 | 44,725 |
+| 7 | ขี้กลึงอลูมิเนียม | 22/01/2569 | 1 | 377.2 | 18,482.8 |
+| 8 | หม้อน้ำทองแดง | 04/07/2569 | 1 | 347.2 | 77,034 |
+| 9 | ทองเหลือง | 04/07/2569 | 1 | 280.6 | 74,936 |
+| 10 | หม้อน้ำอลูมิเนียม | 23/06/2569 | 1 | 208.2 | 14,532 |
+
+### Unmatched Sales Products (4)
+
+| Raw name | Code | Rows | Weight (kg) | Reason |
+|---|---|---:|---:|---|
+| - | 0210 | 5 | 174.6 | Empty product name (owner confirmed deleted/blanked) |
+| ทองแดงท่อ Candy | 0312 | 4 | 134.7 | No matching product (archived in Task 41) |
+| อลูมิเนียมแผ่นเพจ | 0224 | 1 | 15.8 | No matching product (no start date configured) |
+| อลูมิเนียมเพลท | 0232 | 1 | 6.7 | No matching product (no start date configured) |
+
+### Ambiguous Sales Products: 0 ✅
+
+### Owner Review Needed: YES (before stock reconciliation)
+
+These sales **should be deducted** during the stock reconciliation step, but:
+- Do NOT deduct them yet
+- Do NOT create SellBills
+- Do NOT adjust stock quantities
+- Owner must review this list first
+
+### Safety Confirmation
+- ✅ No production data modified
+- ✅ No SellBills created
+- ✅ No StockLots created or deleted
+- ✅ No stock adjusted
+- ✅ No product master changed
