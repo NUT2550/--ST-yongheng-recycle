@@ -257,6 +257,13 @@ export function TransferPage() {
       toast.error('กรุณาเพิ่มรายการ output');
       return;
     }
+    // Validate all cart items have a productId
+    for (let i = 0; i < transferCartItems.length; i++) {
+      if (!transferCartItems[i].productId) {
+        toast.error(`รายการ output ลำดับที่ ${i + 1} ไม่มีสินค้า กรุณาเลือกสินค้าให้ครบก่อนบันทึก`);
+        return;
+      }
+    }
     if (transferSourceWeight <= 0) {
       toast.error('กรุณากรอกน้ำหนักต้นทาง');
       return;
