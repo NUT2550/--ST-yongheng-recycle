@@ -1360,3 +1360,55 @@ Compare MetalTrack SortingBill data against the sorting/dismantling PDF source f
 - ✅ No SortingBills created/updated/deleted
 - ✅ No stock adjusted
 - ✅ No product master changed
+
+---
+
+## Task ID: 48
+## Agent: Main
+## Task: Create Owner Review Lists From Sorting Verification Task 47
+
+### Goal
+Create compact owner-review reports from Task 47 sorting verification results. REVIEW/REPORT ONLY.
+
+### Results
+
+| # | Metric | Value |
+|---|---|---:|
+| 1 | PDF-only event count | 15 |
+| 2 | MetalTrack-only total count | 81 |
+| 3 | MetalTrack-only after 27/06/2569 | 7 (likely OK / post-PDF) |
+| 4 | MetalTrack-only on/before 27/06/2569 | 74 (needs owner review) |
+| 5 | Real weight anomaly count | 1 (07/01/2569: 34.2→126.4 kg) |
+| 6 | Unique product names needing review | 35 (summarized from 156 rows) |
+| 7 | Candy copper current-scope rows | 1 (of 4 total — only 04/07/2569 22.6 kg) |
+| 8 | Files created | 12 |
+| 9 | Output folder | `reconciliation/sorting-owner-review-after-task47/` |
+
+### Recommended Owner Review Order
+1. PDF-only 15 events
+2. MetalTrack-only on/before 27/06/2569 (74 events)
+3. 07/01/2569 weight anomaly
+4. Candy copper current-scope 04/07/2569 22.6 kg
+5. Unique product-name review (35 names)
+
+### Key Findings
+- **74 MT-only events on/before 27/06/2569** need owner review — these SortingBills exist in MT but not in the PDF
+- Top source product for MT-only: เหล็กหนาสั้น (54 events)
+- Weight anomaly: 07/01/2569, input 34.2 kg → output 126.4 kg (diff +92.2 kg) — likely PDF parsing grouped outputs from multiple events
+- Candy copper: only 1 of 4 sales (04/07/2569, 22.6 kg) is in current scope; 3 others are before copper/brass restart date and can be ignored
+
+### Output Files (12)
+1. PDF_ONLY_15_OWNER_REVIEW.csv + .md
+2. METALTRACK_ONLY_AFTER_2026_06_27.csv
+3. METALTRACK_ONLY_ON_OR_BEFORE_2026_06_27_NEEDS_REVIEW.csv
+4. METALTRACK_ONLY_81_SUMMARY.md
+5. WEIGHT_ANOMALY_07012569_DETAIL.csv + .md
+6. UNIQUE_PRODUCT_NAME_REVIEW.csv + .md
+7. CANDY_COPPER_CURRENT_SCOPE_REVIEW.csv + .md
+8. FINAL_OWNER_REVIEW_INDEX.md
+
+### Safety Confirmation
+- ✅ No production data modified
+- ✅ No SortingBills created/updated/deleted
+- ✅ No stock adjusted
+- ✅ No product master changed
