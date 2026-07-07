@@ -1412,3 +1412,55 @@ Create compact owner-review reports from Task 47 sorting verification results. R
 - ✅ No SortingBills created/updated/deleted
 - ✅ No stock adjusted
 - ✅ No product master changed
+
+---
+
+## Task ID: 49
+## Agent: Main
+## Task: Debug Save Failure on แกะของ / ย้ายสต็อก Page
+
+### Problem
+Owner cannot save a stock transfer on the แกะของ / ย้ายสต็อก page. Source product is สายไฟทองแดง (stock shows 0.00 kg), source weight 13.7 kg (from formula 15.8-1.8-0.3), 7 output items totaling 13.6 kg, loss 0.1 kg.
+
+### Root Cause
+**The API rejects the request because สายไฟทองแดง has 0 kg stock and 0 StockLots.**
+
+The API (`POST /api/stock-transfers`, line 123) checks:
+```js
+if (totalAvailable < sourceWeight) { return 400 }
+```
+Since `totalAvailable = 0` and `sourceWeight = 13.7`, the check fails with error:
+```
+สต็อกไม่เพียงพอสำหรับ "สายไฟทองแดง". มี: 0 kg, ต้องการ: 13.7 kg
+```
+
+### Frontend UX Gap
+The frontend (`transfer-page.tsx`, line 208) has a stock check:
+```js
+if (sourceAvailableWeight > 0 && transferSourceWeight > sourceAvailableWeight)
+```
+When stock = 0, `sourceAvailableWeight = 0`, so `0 > 0` is `false` — the check is **skipped**. The frontend allows the submit, but the backend correctly rejects it.
+
+### Product Stock Status
+- สายไฟทองแดง (id: cmr7up02q000hmzw7wkn7huiq): **0 kg stock, 0 StockLots**
+- สายไฟไม่ปอก: 62.3 kg stock (5 lots) — different product
+- เปลือกสายไฟ: 1.8 kg stock (1 lot) — different product
+
+### Conclusion
+This is **expected behavior** (strict FIFO validation). The API correctly prevents negative stock. The only issue is a minor frontend UX gap — the frontend should warn the user before submit when source stock = 0.
+
+### Recommended Fix
+- **No core code patch needed** — API is working correctly
+- **Optional UX improvement**: Add frontend check to warn before submit when stock = 0
+- **Owner action**: Add stock to สายไฟทองแดง first, or record as physical count adjustment
+
+### Files
+- Report: `/home/z/my-project/debug/sorting-save-failure-report.md` (173 lines)
+- Frontend: `src/components/transfer-page.tsx`
+- API: `src/app/api/stock-transfers/route.ts`
+
+### Safety
+- ✅ No production data modified
+- ✅ No SortingBills created
+- ✅ No stock adjusted
+- ✅ No code patched
