@@ -1219,3 +1219,65 @@ These sales **should be deducted** during the stock reconciliation step, but:
 - ✅ No StockLots created or deleted
 - ✅ No stock adjusted
 - ✅ No product master changed
+
+---
+
+## Task ID: 46
+## Agent: Main
+## Task: Update Sales After Start Date Verification With Owner Decisions v2
+
+### Goal
+Update the sales-after-start-date verification using owner-confirmed decisions for the 4 previously-unmatched products.
+
+### Owner Decisions Applied
+
+| # | Raw name | Decision | Destination |
+|---|---|---|---|
+| 1 | "-" / code 0210 (5 rows, 174.6 kg) | Owner intentionally deleted/blanked | EXCLUDED_NOT_IN_SCOPE_SALES.csv |
+| 2 | ทองแดงท่อ Candy (4 rows, 134.7 kg) | Sorting/dismantling output from ทองแดงใหญ่ | SORTING_RELATED_SALES_NEED_MOVEMENT.csv |
+| 3 | อลูมิเนียมแผ่นเพจ (1 row, 15.8 kg) | Map to อลูมิเนียมแผ่นเพลท (old wrong name) | SALES_AFTER_START_DATE.csv |
+| 4 | อลูมิเนียมเพลท (1 row, 6.7 kg) | Map to อลูมิเนียมแผ่นเพลท (owner prefers "อลูมิเนียมเพลท" as future name) | SALES_AFTER_START_DATE.csv |
+
+### Aluminum Plate Naming Check
+- **Current active MT product**: อลูมิเนียมแผ่นเพลท (id cmr7a7plm0007mzie5kkgqpdh, 0 stock)
+- **Old MT product**: อลูมิเนียมเพลท (id prod_mqgp9g5d78sw9tuoeuem3i1b, 0 stock) — also exists
+- **Owner-preferred future name**: อลูมิเนียมเพลท
+- **Product master cleanup recommended**: YES — consolidate to one product (both have 0 stock, no movement)
+- **For this report**: mapped to อลูมิเนียมแผ่นเพลท (has start date 23/06/2569)
+
+### Results (v2 vs v1)
+
+| Metric | v1 | v2 | Change |
+|---|---:|---:|---|
+| Matched rows after start date | 41 | **42** | +1 (อลูมิเนียมเพลท now mapped) |
+| Products with sales after start date | 33 | **34** | +1 (อลูมิเนียมแผ่นเพลท) |
+| Unmatched | 4 | **0** | -4 (all resolved by owner decisions) |
+| Ambiguous | 0 | **0** | — |
+| Excluded not in scope | 253 | **258** | +5 (0210/"-" rows moved here) |
+| Sorting-related | 0 | **4** | +4 (ทองแดงท่อ Candy) |
+| Aluminum plate rows mapped | 0 | **2** | +2 (แผ่นเพจ + เพลท) |
+| Total sale weight after start date | 12,314.9 kg | **12,321.6 kg** | +6.7 kg (อลูมิเนียมเพลท sale) |
+
+### Output Files (8 files in v2 folder)
+1. `SALES_AFTER_START_DATE.csv` — 42 detailed rows
+2. `SALES_AFTER_START_DATE_SUMMARY.csv` — 34 products with totals
+3. `SALES_BEFORE_START_DATE_AUDIT.csv` — 112 rows excluded (before start date)
+4. `EXCLUDED_NOT_IN_SCOPE_SALES.csv` — 258 rows (steel + ของแกะ + ST variants + "-" / 0210)
+5. `SORTING_RELATED_SALES_NEED_MOVEMENT.csv` — 4 rows (ทองแดงท่อ Candy)
+6. `UNMATCHED_SALES_PRODUCTS.csv` — **0 items** ✅
+7. `AMBIGUOUS_SALES_PRODUCTS.csv` — **0 items** ✅
+8. `FINAL_REPORT.md` — full report
+
+### Sorting-Related Sales Detail (ทองแดงท่อ Candy)
+- 4 rows, 134.7 kg total, 51,630 THB total
+- Source product: ทองแดงใหญ่ (purchased as ทองแดงใหญ่, then sorted/extracted and sold at higher price)
+- Required handling: create/verify sorting movement before final stock reconciliation
+- Movement type: sorting/dismantling output from ทองแดงใหญ่
+- Do NOT force-deduct from ทองแดงใหญ่ directly
+
+### Safety Confirmation
+- ✅ No production data modified
+- ✅ No SellBills created
+- ✅ No StockLots created or deleted
+- ✅ No stock adjusted
+- ✅ No product master changed
