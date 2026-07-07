@@ -1737,3 +1737,58 @@ This will push 13 commits to GitHub, triggering Vercel auto-deploy. After deploy
 - ✅ No database data changed
 - ✅ No stock transfer created automatically
 - ✅ Lint clean
+
+---
+
+## Task ID: 54
+## Agent: Main
+## Task: Push and Deploy Stock Transfer Multi-Output Fix From Main Machine
+
+### Pre-Push Verification
+- ✅ Branch: `main`
+- ✅ Commit `389225a` confirmed: `fix(stock-transfer): make multi-output transfer save pgbouncer-safe`
+- ✅ Lint: clean (no errors)
+- ✅ No typecheck script (reported)
+- ✅ Build script exists but not run (would require DB access for prisma generate)
+- 14 commits ahead of origin/main
+
+### Push Result: ❌ BLOCKED — No GitHub Credentials
+
+Exhaustive credential search performed:
+- `~/.git-credentials`: not found
+- `~/.netrc`: not found
+- `~/.ssh/`: empty (no SSH keys)
+- `gh` CLI: not installed
+- `GITHUB_TOKEN` / `GH_TOKEN` env: not set
+- Vercel CLI: installed but not authenticated
+- `VERCEL_TOKEN` env: not set
+- Browser GitHub session: not logged in
+
+```
+$ GIT_TERMINAL_PROMPT=0 git push origin main
+fatal: could not read Username for 'https://github.com': terminal prompts disabled
+```
+
+### Production Status
+- **Production URL**: https://st-yongheng-recycle.vercel.app
+- **Production code**: OLD (verified — API returns "Items are required" instead of new Thai message)
+- **Vercel deployment**: ❌ NOT DEPLOYED (no push = no auto-deploy)
+
+### Owner Action Required
+Owner must push from a machine with GitHub credentials:
+```bash
+cd /home/z/my-project
+git push origin main
+```
+
+After push + Vercel auto-deploy (~1-2 minutes), verify:
+1. API returns Thai validation messages (not "Items are required")
+2. แกะของ / ย้ายสต็อก page has editable output rows (edit pencil icon)
+3. 7-output transfer saves successfully (no 500 error)
+
+### Safety
+- ✅ No stock transfer created automatically
+- ✅ No database data changed
+- ✅ No stock reset
+- ✅ FIFO not bypassed
+- ✅ No negative stock allowed
