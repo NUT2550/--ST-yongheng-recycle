@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ProductCombobox, ProductComboboxGroup } from '@/components/ui/product-combobox';
-import { PackageOpen, Plus, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { PackageOpen, Plus, Trash2, Loader2, AlertTriangle, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 
@@ -39,6 +39,7 @@ export function TransferPage() {
     setTransferLaborCost,
     addTransferCartItem,
     removeTransferCartItem,
+    updateTransferCartItem,
     clearTransferCart,
   } = useAppStore();
 
@@ -55,6 +56,13 @@ export function TransferPage() {
   const [isWaste, setIsWaste] = useState(false);
   const [dateTime, setDateTime] = useState<string>(getCurrentDateForInput());
   const [note, setNote] = useState<string>('');
+
+  // Edit state for output rows
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editProductId, setEditProductId] = useState<string>('');
+  const [editWeight, setEditWeight] = useState<string>('');
+  const [editOutputPrice, setEditOutputPrice] = useState<string>('');
+  const [editIsWaste, setEditIsWaste] = useState(false);
 
   // Fetch products on mount
   useEffect(() => {
@@ -183,6 +191,60 @@ export function TransferPage() {
     setIsWaste(false);
     const formulaHintStr = weightResult.isFormula ? ` (จาก ${weightResult.expression})` : '';
     toast.success(`เพิ่ม "${item.productName}" ลงรายการแล้ว${formulaHintStr}`);
+  };
+
+  // Start editing an output row
+  const startEdit = (index: number) => {
+    const item = transferCartItems[index];
+    if (!item) return;
+    setEditingIndex(index);
+    setEditProductId(item.productId);
+    setEditWeight(item.weightExpression || String(item.weight));
+    setEditOutputPrice(item.isWaste ? '' : String(item.outputPricePerKg));
+    setEditIsWaste(item.isWaste);
+  };
+
+  // Cancel editing
+  const cancelEdit = () => {
+    setEditingIndex(null);
+    setEditProductId('');
+    setEditWeight('');
+    setEditOutputPrice('');
+    setEditIsWaste(false);
+  };
+
+  // Save edit
+  const saveEdit = () => {
+    if (editingIndex === null) return;
+    if (!editProductId) {
+      toast.error('กรุณาเลือกสินค้า');
+      return;
+    }
+    const weightResult = parseWeightExpression(editWeight);
+    if (weightResult.error) {
+      toast.error(`น้ำหนัก: ${weightResult.error}`);
+      return;
+    }
+    const w = weightResult.value;
+    if (!w || w <= 0) {
+      toast.error('น้ำหนักต้องมากกว่า 0');
+      return;
+    }
+    if (editProductId === transferSourceProductId && !editIsWaste) {
+      toast.error('สินค้า output ต้องไม่เหมือนสินค้าต้นทาง');
+      return;
+    }
+    const editProd = products.find((p) => p.id === editProductId);
+    const outPrice = editIsWaste ? 0 : (parseFloat(editOutputPrice) || 0);
+    updateTransferCartItem(editingIndex, {
+      productId: editProductId,
+      productName: editProd?.name || '',
+      weight: w,
+      weightExpression: weightResult.isFormula ? weightResult.expression : undefined,
+      isWaste: editIsWaste,
+      outputPricePerKg: outPrice,
+    });
+    cancelEdit();
   };
 
   // Submit bill
@@ -488,40 +550,113 @@ export function TransferPage() {
                   {transferCartItems.map((item, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between p-2 rounded-md bg-gray-50 border text-sm"
+                      className={`p-2 rounded-md border text-sm ${editingIndex === index ? 'bg-blue-50 border-blue-300' : 'bg-gray-50'}`}
                     >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-gray-900 truncate">
-                            {item.productName}
-                          </span>
-                          {item.isWaste && (
-                            <Badge variant="secondary" className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0">
+                      {editingIndex === index ? (
+                        /* Inline edit mode */
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <ProductCombobox
+                              groups={groupedProductsForCombobox}
+                              value={editProductId}
+                              onValueChange={setEditProductId}
+                              placeholder="เลือกสินค้า"
+                              searchPlaceholder="ค้นหาสินค้า..."
+                              renderLabel={(product) => `${product.name} (สต็อก ${formatWeight(product.stock?.totalWeight ?? 0)})`}
+                            />
+                            <label className="flex items-center gap-1 text-xs whitespace-nowrap">
+                              <Checkbox
+                                checked={editIsWaste}
+                                onCheckedChange={(v) => setEditIsWaste(v === true)}
+                              />
                               เศษ
-                            </Badge>
-                          )}
+                            </label>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-gray-500">น้ำหนัก (กก.)</Label>
+                              <Input
+                                value={editWeight}
+                                onChange={(e) => setEditWeight(e.target.value)}
+                                placeholder="น้ำหนัก"
+                                className="text-xs h-8"
+                              />
+                              {editWeight && (
+                                <p className="text-[10px] text-gray-400">
+                                  {previewWeightValue(editWeight) ? `= ${previewWeightValue(editWeight)} กก.` : formulaHint(editWeight)}
+                                </p>
+                              )}
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] text-gray-500">ราคา/กก.</Label>
+                              <Input
+                                type="number"
+                                value={editOutputPrice}
+                                onChange={(e) => setEditOutputPrice(e.target.value)}
+                                placeholder="0"
+                                disabled={editIsWaste}
+                                className="text-xs h-8"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex justify-end gap-1">
+                            <Button size="sm" variant="outline" onClick={cancelEdit} className="h-7 text-xs">
+                              <X className="h-3 w-3 mr-1" /> ยกเลิก
+                            </Button>
+                            <Button size="sm" onClick={saveEdit} className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white">
+                              <Check className="h-3 w-3 mr-1" /> บันทึกการแก้ไข
+                            </Button>
+                          </div>
                         </div>
-                        <span className="text-[11px] text-gray-500">
-                          {formatWeight(item.weight)} กก.
-                          {!item.isWaste && item.outputPricePerKg > 0 && ` · ${formatBaht(item.outputPricePerKg)}/กก.`}
-                          {item.weightExpression && (
-                            <span className="ml-1 text-gray-400">({formulaHint(item.weightExpression)})</span>
-                          )}
-                        </span>
-                      </div>
-                      {!item.isWaste && item.outputPricePerKg > 0 && (
-                        <span className="text-xs font-medium text-gray-700 mr-2 shrink-0">
-                          {formatBaht(item.weight * item.outputPricePerKg)} บาท
-                        </span>
+                      ) : (
+                        /* Display mode */
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0 flex-1 cursor-pointer" onClick={() => startEdit(index)}>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-gray-900 truncate">
+                                {item.productName}
+                              </span>
+                              {item.isWaste && (
+                                <Badge variant="secondary" className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0">
+                                  เศษ
+                                </Badge>
+                              )}
+                            </div>
+                            <span className="text-[11px] text-gray-500">
+                              {formatWeight(item.weight)} กก.
+                              {!item.isWaste && item.outputPricePerKg > 0 && ` · ${formatBaht(item.outputPricePerKg)}/กก.`}
+                              {item.weightExpression && (
+                                <span className="ml-1 text-gray-400">({formulaHint(item.weightExpression)})</span>
+                              )}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {!item.isWaste && item.outputPricePerKg > 0 && (
+                              <span className="text-xs font-medium text-gray-700 mr-2">
+                                {formatBaht(item.weight * item.outputPricePerKg)} บาท
+                              </span>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => startEdit(index)}
+                              className="text-blue-600 hover:text-blue-700 h-7 w-7 p-0"
+                              title="แก้ไข"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeTransferCartItem(index)}
+                              className="text-red-600 hover:text-red-700 h-7 w-7 p-0"
+                              title="ลบ"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        </div>
                       )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeTransferCartItem(index)}
-                        className="text-red-600 hover:text-red-700 h-7 w-7 p-0"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
                     </div>
                   ))}
                 </div>
