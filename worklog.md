@@ -1281,3 +1281,82 @@ Update the sales-after-start-date verification using owner-confirmed decisions f
 - ✅ No StockLots created or deleted
 - ✅ No stock adjusted
 - ✅ No product master changed
+
+---
+
+## Task ID: 47
+## Agent: Main
+## Task: Verify MetalTrack SortingBills Against Sorting PDF Source
+
+### Goal
+Compare MetalTrack SortingBill data against the sorting/dismantling PDF source file. VERIFICATION ONLY.
+
+### Input
+- PDF: `สต๊อกทั้งหมด_คัดแยก_เสียหาย_Google_ชีต.pdf` (9 pages, 68 events, 682 output rows)
+- MetalTrack DB: 134 SortingBills (not cancelled)
+
+### Results
+
+| # | Metric | Value |
+|---|---|---:|
+| 1 | PDF pages parsed | 9 |
+| 2 | PDF sorting events found | 68 |
+| 3 | PDF output rows found | 682 |
+| 4 | MetalTrack SortingBills found | 134 |
+| 5 | Matched exact count | 48 |
+| 6 | Matched with small difference | 5 |
+| 7 | PDF-only count | 15 |
+| 8 | MetalTrack-only count | 81 |
+| 9 | Needs owner review | 0 |
+| 10 | Weight anomaly count | 3 |
+| 11 | Product-name review count | 156 |
+| 12 | ทองแดงท่อ Candy check | No matching sorting events found |
+| 13 | Data ready for stock reconciliation | NO |
+| 14 | Must fix before reconciliation | See below |
+| 15 | Output folder | `reconciliation/sorting-verification-against-pdf/` |
+
+### Match Results
+
+| Status | Count |
+|---|---:|
+| MATCHED_EXACT | 48 |
+| MATCHED_WITH_SMALL_DIFFERENCE | 5 |
+| PDF_ONLY | 15 |
+| METALTRACK_ONLY | 81 |
+| NEED_OWNER_REVIEW | 0 |
+
+### Weight Anomalies (3)
+1. **OUTPUT_EXCEEDS_INPUT** (cmqoykaaz003vqjihzgx53tjf, 07/01/2569): Output 126.4 kg exceeds input 34.2 kg by 92.2 kg — this is the "เหล็กเส้น 3-4 หุน" sorting event where source was หนาสั้น 34.2kg but outputs total 126.4kg (likely a different event or data entry error)
+2. **NEGATIVE_LOSS** (same bill): Same event, output + waste exceeds input
+3. **OUTPUT_EXCEEDS_INPUT** (cmqoyrd170001qjn33fd1piit, 05/03/2569): Output 68.1 kg = input 68.1 kg (floating point, not a real anomaly)
+
+### ทองแดงท่อ Candy Check
+- 4 sales requiring sorting movement (2.9 + 53.2 + 56.0 + 22.6 = 134.7 kg)
+- 0 PDF candidates found (no PDF event has ทองแดงใหญ่ as source that could produce Candy)
+- 0 MT candidates found (no MT SortingBill with ทองแดงใหญ่ as source)
+- Recommendation: May need to create sorting movement manually
+
+### What Must Be Fixed Before Reconciliation
+1. **15 PDF-only events**: Sorting events in PDF but not in MetalTrack — owner must decide whether to create SortingBills
+2. **81 MetalTrack-only events**: SortingBills in MT but not in PDF — likely post-PDF events (after 27/06/2569) or duplicates
+3. **3 weight anomalies**: Events where output exceeds input
+4. **156 product-name reviews**: PDF product names that could not be confidently normalized (OCR artifacts)
+5. **ทองแดงท่อ Candy**: 4 sales require sorting movement verification — no matching events found
+
+### Output Files (10 files)
+1. `SORTING_PDF_PARSED_EVENTS.csv` — 68 PDF events
+2. `SORTING_PDF_PARSED_OUTPUT_ROWS.csv` — 682 output rows
+3. `METALTRACK_SORTINGBILLS_EXPORT.csv` — 134 MT bills
+4. `SORTING_MATCH_REPORT.csv` — 149 match results
+5. `SORTING_WEIGHT_ANOMALIES.csv` — 3 anomalies
+6. `SORTING_PRODUCT_NAME_REVIEW.csv` — 156 items
+7. `PDF_ONLY_SORTING_EVENTS.csv` — 15 events
+8. `METALTRACK_ONLY_SORTING_EVENTS.csv` — 81 events
+9. `CANDY_COPPER_SORTING_CHECK.csv` — 4 sales checked
+10. `FINAL_REPORT.md` — full report
+
+### Safety Confirmation
+- ✅ No production data modified
+- ✅ No SortingBills created/updated/deleted
+- ✅ No stock adjusted
+- ✅ No product master changed
