@@ -1694,3 +1694,46 @@ All 8 validation steps pass:
 - ✅ No blind database changes
 - ✅ No data deleted
 - ✅ No product master changes (except ทองแดงเส้น created in Task 51)
+
+---
+
+## Task ID: 53
+## Agent: Main
+## Task: Deploy Stock Transfer 500 Fix to Production
+
+### Status
+- ✅ Code changes reviewed (2 files)
+- ✅ Lint passed (clean)
+- ✅ Committed with proper message: `fix(stock-transfer): make multi-output transfer save pgbouncer-safe`
+- ❌ **PUSH BLOCKED** — no GitHub credentials in sandbox (same as Task 37)
+
+### Commit Details
+- **Commit hash**: `389225a810651d73f3cc6c0a9df5536e5ad19856`
+- **Branch**: `main`
+- **Commits ahead of origin/main**: 13
+- **Commit message**: `fix(stock-transfer): make multi-output transfer save pgbouncer-safe`
+
+### Files in Commit
+1. `src/app/api/stock-transfers/route.ts` — complete rewrite (pgbouncer-safe sequential queries + validation)
+2. `src/components/transfer-page.tsx` — added cart item productId validation + editable output rows
+3. `reconciliation/simulate-transfer.mjs` — validation simulation script
+4. `worklog.md` — Task 52 record
+
+### Production Status
+- **Production URL**: https://st-yongheng-recycle.vercel.app
+- **Vercel deployment**: ❌ NOT DEPLOYED (no GitHub push = no auto-deploy)
+- **Production code**: OLD (still has pgbouncer transaction bug)
+- **Verified**: Production API returns old validation message ("Items are required") instead of new Thai message ("กรุณาเพิ่มรายการ output อย่างน้อย 1 รายการ")
+
+### Owner Action Required
+The owner must push from a machine with GitHub credentials:
+```bash
+cd /home/z/my-project
+git push origin main
+```
+This will push 13 commits to GitHub, triggering Vercel auto-deploy. After deploy (~1-2 minutes), the 7-output transfer should save successfully.
+
+### Safety
+- ✅ No database data changed
+- ✅ No stock transfer created automatically
+- ✅ Lint clean
