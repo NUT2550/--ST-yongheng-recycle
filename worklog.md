@@ -1868,3 +1868,63 @@ The old parser only handled Format A. When owner uploaded Format B, the parser c
 - ✅ No stock changed
 - ✅ No product master changed
 - ✅ Import only happens when owner clicks "นำเข้า N บิล" button
+
+---
+
+## Task ID: 60
+## Agent: Main
+## Task: Enter Manual Sorting/Dismantling Records for 08/07/2569
+
+### Records Validated: 3
+
+| Record | Type | Room | Source | Source wt | Output wt | Loss | Status |
+|---|---|---|---|---:|---:|---:|---|
+| 1 | คัดแยก | 21 | เหล็กหนาสั้น | 62.6 kg | 62.5 kg | 0.1 kg | ❌ NEEDS REVIEW |
+| 2 | คัดแยก | 22 | เครื่องจักร | 20.6 kg | 20.4 kg | 0.2 kg | ❌ NEEDS REVIEW |
+| 3 | แกะของ | 24 | ของแกะราคาสูง | 2.1 kg | 2.1 kg | 0.0 kg | ✅ CREATED |
+
+### Record 3 Created Successfully
+- **ID**: cmrc3nnjh0001jy04yu8s3cat
+- **Bill number**: TRN-2569-00006
+- **Source**: ของแกะราคาสูง 2.1 kg (FIFO deducted, source cost 170 THB/kg)
+- **Outputs**: ตะกั่วแข็ง 1.9 kg @ 63 THB/kg, เหล็กบาง 0.2 kg @ 8.4 THB/kg
+- **Loss**: 0 kg
+- **Stock after**:
+  - ของแกะราคาสูง: 0.4 kg (was 2.5 kg, -2.1 kg)
+  - ตะกั่วแข็ง: 207.6 kg (was 205.7 kg, +1.9 kg)
+  - เหล็กบาง: 60163.4 kg (was 60163.2 kg, +0.2 kg)
+
+### Records 1 & 2 Need Owner Review
+
+**Record 1 issues** (5 product names not found):
+- "ทองเหลืองหน้าแดง" → likely "ทองเหลืองเนื้อแดง" (typo)
+- "ทองเหลือง" → which product? "ทองเหลืองหนา" or "ทองเหลืองเนื้อแดง"?
+- "ตะกั่วแข่ง" → likely "ตะกั่วแข็ง" (typo)
+- "สแตนเลส 304" → system has "แสตนเลส 304" (spelling: ส vs แส)
+- "อลูมิเนียมแข็ง" → system has "อลูมิเนียมแข็ง (หล่อ/หนา)" (with suffix)
+
+**Record 2 issues** (3 product names not found):
+- "ทองเหลือง" → same as Record 1
+- "สายไฟ" × 2 → ambiguous, two rows with different prices (30 and 50 THB/kg)
+
+### Owner Decisions Needed
+1. "ทองเหลืองหน้าแดง" → "ทองเหลืองเนื้อแดง"?
+2. "ทองเหลือง" → which product?
+3. "ตะกั่วแข่ง" → "ตะกั่วแข็ง"?
+4. "สแตนเลส 304" → "แสตนเลส 304"?
+5. "อลูมิเนียมแข็ง" → "อลูมิเนียมแข็ง (หล่อ/หนา)"?
+6. "สายไฟ" (Record 2) → which product?
+
+### Output Files
+- `reconciliation/manual-sorting-2026-07-08/MANUAL_SORTING_VALIDATION.csv`
+- `reconciliation/manual-sorting-2026-07-08/CREATED_SORTING_RECORDS.csv`
+- `reconciliation/manual-sorting-2026-07-08/NEED_OWNER_REVIEW.csv`
+- `reconciliation/manual-sorting-2026-07-08/WEIGHT_SUMMARY.csv`
+- `reconciliation/manual-sorting-2026-07-08/FINAL_REPORT.md`
+
+### Safety
+- ✅ FIFO validation enabled
+- ✅ No negative stock
+- ✅ No historical bills modified
+- ✅ Only safe record (Record 3) created
+- ✅ Ambiguous records not created
