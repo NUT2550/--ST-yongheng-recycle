@@ -1823,3 +1823,48 @@ After push + Vercel auto-deploy (~1-2 minutes), verify:
 | Total stock weight | 548,537.70 | 548,537.70 | NO ✅ |
 | PhysicalCountSessions | 0 | 2 | YES (+2, expected) |
 | PhysicalCountItems | 0 | 8 | YES (+8, expected) |
+
+---
+
+## Task ID: 58
+## Agent: Main
+## Task: Debug Detailed Excel Import Modal File Picker on Buy Page
+
+### Root Cause
+**The parser was designed for one Excel format but owner is uploading a different format.**
+
+Two file formats exist:
+- **Format A** (ซื้อ 1-7-2569 แบบละเอียด.xls): Per-seller layout — seller summary rows, bill header rows, item rows
+- **Format B** (รวมซื้อสิ้นค้า 1-1-69 ถึง 6-7-69 แบบละเอียด.xls): Per-product layout — product summary rows, then transaction rows with date+bill number+seller+weight
+
+The old parser only handled Format A. When owner uploaded Format B, the parser couldn't identify any rows (no seller rows, no bill headers, no items in the expected columns), so it produced 0 bills — appearing as if nothing happened.
+
+### Fix Applied
+1. **Auto-detect format** by checking row 3 headers:
+   - Format A: row 3 col 0 = "ผู้ขาย" or col 1 = "วัสดุ"
+   - Format B: row 3 col 0 = "วัสดุ" (different layout)
+
+2. **Format B parser**: Reads product summary rows (col 0=4-digit code, col 1=name) to get current product, then reads transaction rows (col 0=date, col 1=bill number, col 9=weight) to build bills grouped by bill number.
+
+3. **Fixed safe aliases**: Updated from old broken aliases (`ฝาอลูมีเนียมเนียม` → `ฝาอลูมิเนียม`) to match Task 35 product renames.
+
+4. **Added spelling normalization**: `อลูมีเนียม → อลูมิเนียม` in matchProduct() (per Task 35 owner decision).
+
+5. **Added DialogDescription**: Fixes accessibility warning "Missing Description for DialogContent".
+
+6. **Expanded accept attribute**: Now includes MIME types for .xls and .xlsx.
+
+### Files Changed
+- `src/components/detailed-excel-import-dialog.tsx` — complete parser rewrite + accessibility + spelling fix
+
+### Deployed
+- Commit: `c5bdfd1`
+- Pushed to GitHub ✅
+- Vercel auto-deployed ✅ (HTTP 200 verified)
+
+### Safety
+- ✅ No BuyBills created
+- ✅ No StockLots created
+- ✅ No stock changed
+- ✅ No product master changed
+- ✅ Import only happens when owner clicks "นำเข้า N บิล" button
