@@ -1,0 +1,15 @@
+{
+  "label": "pre-physical-test",
+  "timestamp": "2026-07-08T11:28:25.003Z",
+  "counts": {
+    "products": 113,
+    "stockLots": 872,
+    "buyBills": 15,
+    "sellBills": 9,
+    "sortingBills": 144,
+    "transfers": 5,
+    "physicalSessions": 0,
+    "physicalItems": 0
+  },
+  "totalStockWeight": 548537.7
+}

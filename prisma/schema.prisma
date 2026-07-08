@@ -30,6 +30,7 @@ model Product {
   sortingItems    SortingBillItem[]
   transferSource   StockTransfer[]    @relation("TransferSource")
   transferItems    StockTransferItem[]
+  physicalCountItems PhysicalCountItem[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -288,4 +289,38 @@ model AuditLog {
 
   @@index([entityType, entityId])
   @@index([createdAt])
+}
+
+// Physical count session for end-of-day stock verification
+model PhysicalCountSession {
+  id        String   @id @default(cuid())
+  countDate DateTime
+  group     String   // ทองแดง, ทองเหลือง
+  status    String   @default("DRAFT") // DRAFT, PREVIEWED, APPLIED
+  note      String?
+  items     PhysicalCountItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([countDate])
+  @@index([group])
+}
+
+model PhysicalCountItem {
+  id               String   @id @default(cuid())
+  sessionId        String
+  session          PhysicalCountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId        String
+  product          Product  @relation(fields: [productId], references: [id])
+  systemWeight     Float
+  physicalWeight   Float    @default(0)
+  differenceWeight Float    @default(0)
+  averageCost      Float    @default(0)
+  valueDifference  Float    @default(0)
+  note             String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([sessionId])
+  @@index([productId])
 }
