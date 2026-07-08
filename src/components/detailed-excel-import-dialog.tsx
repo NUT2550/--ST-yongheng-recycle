@@ -12,6 +12,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
   DialogClose,
 } from '@/components/ui/dialog';
@@ -72,11 +73,13 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
   // Safe aliases: map common Excel name variants to canonical product names
   // Only within the same material category — no cross-category guessing.
+  // NOTE: All MetalTrack aluminum product names use "อลูมิเนียม" spelling
+  // (normalized from "อลูมีเนียม" per owner decision Task 35).
   const safeAliases: Record<string, string> = {
-    'อลูมิเนียมแข็ง (หล่อ/หนา)': 'อลูมีเนียมแข็ง',
-    'อลูมิเนียมฝาแกะ': 'ฝาอลูมีเนียมเนียม',
-    'อลูมิเนียมกระป๋อง': 'กระป๋องอลูมีเนียม',
-    'อลูมิเนียมตูดกะทะ': 'อลูมีเนียมตูดกะทะ',
+    'อลูมิเนียมแข็ง (หล่อ/หนา)': 'อลูมิเนียมแข็ง',
+    'อลูมิเนียมฝาแกะ': 'ฝาอลูมิเนียม',
+    'อลูมิเนียมกระป๋อง': 'กระป๋องอลูมิเนียม',
+    'อลูมิเนียมตูดกะทะ': 'อลูมิเนียมตูดกะทะ',
   };
 
   // Fix Thai text garbled by XLSX library in browser (TIS-620 read as Latin-1)
@@ -94,11 +97,15 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
   }
 
   function matchProduct(excelName: string): Product | null {
-    const trimmed = excelName.trim().normalize('NFC');
+    // Standardize aluminum spelling: อลูมีเนียม → อลูมิเนียม
+    // (per owner Decision 1, Task 35 — all MetalTrack products now use อลูมิเนียม spelling.
+    //  Old Excel files may still use อลูมีเนียม, so normalize before matching.)
+    const normalizedInput = excelName.replace(/อลูมีเนียม/g, 'อลูมิเนียม');
+    const trimmed = normalizedInput.trim().normalize('NFC');
     // 1. Exact match (normalized)
     if (productMap.has(trimmed)) return productMap.get(trimmed)!;
     // 2. Safe alias (normalized)
-    const alias = safeAliases[excelName.trim()]?.normalize('NFC');
+    const alias = safeAliases[normalizedInput.trim()]?.normalize('NFC');
     if (alias && productMap.has(alias)) return productMap.get(alias)!;
     // 3. Try contains match (single result only — no ambiguity, normalized)
     const contains = products.filter(p => {
@@ -136,60 +143,134 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as any[][];
 
-      // Parse the detailed format:
-      // Row 3: headers
-      // Row 4+: seller summary | bill header | item rows | empty separators
+      // Detect file format by checking row 3 (headers) and row 4 structure
+      // Format A (per-seller): Row 3 = "ผู้ขาย | · | วัสดุ | ...", Row 4 = seller code + name
+      // Format B (per-product): Row 3 = "วัสดุ | ผู้ขาย | ...", Row 4 = product code + name + weight
+      const row3 = rows[3] || [];
+      const isFormatA = String(row3[0] || '').includes('ผู้ขาย') || String(row3[1] || '').includes('วัสดุ');
+      // Format B: col 0 = "วัสดุ" (product header), col 1 = "ผู้ขาย" (seller header)
+      // In Format B, row 4 has col 0 = product code (4-digit), col 1 = product name, col 9 = weight, col 12 = amount
+      // In Format B, row 5+ has col 0 = date, col 1 = bill number (A...), col 2 = seller code, col 3 = seller name
+
       const bills: PlannedBill[] = [];
       let currentBill: PlannedBill | null = null;
       let currentSeller = '';
+      let currentProductName = '';
 
-      for (let i = 4; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r || r.every(c => c === null || c === undefined)) continue; // empty row
+      if (isFormatA) {
+        // Format A: per-seller layout (ซื้อ 1-7-2569 แบบละเอียด.xls)
+        // Row 4: seller summary (col 0=code, col 1=name)
+        // Row 5: bill header (col 1=date, col 2=bill number, col 12=total)
+        // Row 6: item (col 2=product code, col 3=product name, col 9=weight)
+        for (let i = 4; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.every(c => c === null || c === undefined)) continue;
 
-        // Seller summary row: col 0 has code, col 1 has name
-        if (r[0] && r[1] && !r[2] && r[9] == null) {
-          currentSeller = fixThaiText(String(r[1]));
-          continue;
+          // Seller summary row: col 0 has code, col 1 has name, no col 2
+          if (r[0] && r[1] && !r[2] && r[9] == null) {
+            currentSeller = fixThaiText(String(r[1]));
+            continue;
+          }
+
+          // Bill header row: col 1 has date, col 2 has bill number (starts with A), col 12 has total
+          if (r[1] && r[2] && String(r[2]).trim().match(/^A\d+/i) && r[12] != null) {
+            if (currentBill) bills.push(currentBill);
+            currentBill = {
+              externalBillNumber: String(r[2]).trim(),
+              seller: currentSeller,
+              date: fixThaiText(String(r[1])).trim(),
+              note: r[4] ? fixThaiText(String(r[4])).trim() : '',
+              items: [],
+              totalWeight: 0,
+              totalAmount: 0,
+              excelTotalAmount: parseFloat(String(r[12])) || 0,
+              amountDiff: 0,
+              isDuplicate: false,
+            };
+            continue;
+          }
+
+          // Item row: col 2 has product code, col 3 has product name, col 9 has weight
+          if (r[2] && r[3] && r[9] != null && currentBill) {
+            const productName = fixThaiText(String(r[3])).trim();
+            const weight = parseFloat(String(r[9])) || 0;
+            const pricePerKg = parseFloat(String(r[11])) || 0;
+            const amount = parseFloat(String(r[12])) || 0;
+            const matched = matchProduct(productName);
+
+            currentBill.items.push({
+              productName,
+              productCode: String(r[2]).trim(),
+              productId: matched?.id || null,
+              weight,
+              pricePerKg,
+              amount,
+              matched: !!matched,
+            });
+            currentBill.totalWeight += weight;
+            currentBill.totalAmount += amount;
+          }
         }
+      } else {
+        // Format B: per-product layout (รวมซื้อสิ้นค้า 1-1-69 ถึง 6-7-69 แบบละเอียด.xls)
+        // Row 4: product summary (col 0=4-digit product code, col 1=product name, col 9=total weight, col 12=total amount)
+        // Row 5+: transaction rows (col 0=date, col 1=bill number A..., col 2=seller code, col 3=seller name, col 9=weight, col 11=price, col 12=amount)
+        for (let i = 4; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || r.every(c => c === null || c === undefined)) continue;
 
-        // Bill header row: col 1 has date, col 2 has bill number, col 12 has total
-        if (r[1] && r[2] && String(r[2]).trim().match(/^A\d+/i) && r[12] != null) {
-          if (currentBill) bills.push(currentBill);
-          currentBill = {
-            externalBillNumber: String(r[2]).trim(),
-            seller: currentSeller,
-            date: fixThaiText(String(r[1])).trim(),
-            note: r[4] ? fixThaiText(String(r[4])).trim() : '',
-            items: [],
-            totalWeight: 0,
-            totalAmount: 0,
-            excelTotalAmount: parseFloat(String(r[12])) || 0,
-            amountDiff: 0,
-            isDuplicate: false,
-          };
-          continue;
-        }
+          // Product summary row: col 0 = 4-digit code, col 1 = product name, col 9 = total weight
+          if (r[0] && /^\d{4}$/.test(String(r[0]).trim()) && r[1] && typeof r[1] === 'string' && r[9] != null) {
+            currentProductName = fixThaiText(String(r[1])).trim();
+            continue;
+          }
 
-        // Item row: col 2 has product code, col 3 has product name, col 9 has weight
-        if (r[2] && r[3] && r[9] != null && currentBill) {
-          const productName = fixThaiText(String(r[3])).trim();
-          const weight = parseFloat(String(r[9])) || 0;
-          const pricePerKg = parseFloat(String(r[11])) || 0;
-          const amount = parseFloat(String(r[12])) || 0;
-          const matched = matchProduct(productName);
+          // Transaction row: col 0 = date (parseable), col 1 = bill number (A...), col 9 = weight
+          if (r[0] && r[1] && r[9] != null) {
+            const dateStr = fixThaiText(String(r[0])).trim();
+            const billNo = String(r[1]).trim();
+            // Check if col 0 looks like a date (dd/m/yyyy or similar)
+            if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/)) {
+              const sellerCode = String(r[2] ?? '').trim();
+              const sellerName = String(r[3] ?? '').trim();
+              const weight = parseFloat(String(r[9])) || 0;
+              const pricePerKg = parseFloat(String(r[11])) || 0;
+              const amount = parseFloat(String(r[12])) || 0;
+              const note = r[6] ? fixThaiText(String(r[6])).trim() : '';
 
-          currentBill.items.push({
-            productName,
-            productCode: String(r[2]).trim(),
-            productId: matched?.id || null,
-            weight,
-            pricePerKg,
-            amount,
-            matched: !!matched,
-          });
-          currentBill.totalWeight += weight;
-          currentBill.totalAmount += amount;
+              // Find or create bill for this bill number
+              if (!currentBill || currentBill.externalBillNumber !== billNo) {
+                if (currentBill) bills.push(currentBill);
+                currentBill = {
+                  externalBillNumber: billNo,
+                  seller: sellerName || sellerCode,
+                  date: dateStr,
+                  note,
+                  items: [],
+                  totalWeight: 0,
+                  totalAmount: 0,
+                  excelTotalAmount: 0,
+                  amountDiff: 0,
+                  isDuplicate: false,
+                };
+              }
+
+              const productName = currentProductName || '(ไม่ระบุสินค้า)';
+              const matched = matchProduct(productName);
+
+              currentBill.items.push({
+                productName,
+                productCode: String(r[0]).trim(),
+                productId: matched?.id || null,
+                weight,
+                pricePerKg,
+                amount,
+                matched: !!matched,
+              });
+              currentBill.totalWeight += weight;
+              currentBill.totalAmount += amount;
+            }
+          }
         }
       }
       if (currentBill) bills.push(currentBill);
@@ -330,6 +411,9 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
             <FileSpreadsheet className="h-5 w-5 text-green-600" />
             นำเข้า Excel แบบละเอียด แยกบิลตามเลขบิล
           </DialogTitle>
+          <DialogDescription>
+            เลือกไฟล์ Excel รายละเอียดการซื้อ — ระบบจะแยกบิลตามเลขบิลอัตโนมัติ
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -341,7 +425,7 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
                 id="detailed-excel-file"
                 ref={fileInputRef}
                 type="file"
-                accept=".xls,.xlsx"
+                accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 onChange={handleFileSelect}
                 disabled={loading}
               />

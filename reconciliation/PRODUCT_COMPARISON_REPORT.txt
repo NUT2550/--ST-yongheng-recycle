@@ -1,0 +1,335 @@
+====================================================================================================================================================================================
+PRODUCT LIST COMPARISON REPORT — Old/Source System vs MetalTrack Product Master
+REPORT-ONLY — No production changes were made.
+====================================================================================================================================================================================
+
+INPUT FILE: รายการสิ้นต้า.xls (192 rows, 11 groups: เหล็ก/อลูมิเนียม/ทองแดง/ทองเหลือง/แสตนเลส/ตะกั่ว/ขยะอิเล็กทรอนิค/อื่นๆ/พลาสติก/รายรับอื่นๆ/คัดแยก)
+METALTRACK PRODUCTS: 108 products across 9 categories (เหล็ก=31, ทองแดง=13, ทองเหลือง=9, แสตนเลส=7, อลูมิเนียม=24, ตะกั่ว=3, อื่นๆ=12, อิเล็กทรอนิกส์=8, พลาสติก=1)
+OLD/SOURCE ENTRIES PARSED: 164 total (119 products + 3 services + 42 sorted-output entries)
+
+NORMALIZATION APPLIED (same as detailed import dialog):
+  - TIS-620 / codepage 874 decoding fix (TextDecoder windows-874)
+  - Unicode NFC normalization
+  - Whitespace trim + collapse repeated spaces
+  - Removed invisible chars (zero-width, BOM, non-breaking spaces)
+  - Original raw name preserved for reporting
+
+MATCHING RULES (same as detailed import dialog):
+  1. Exact match (NFC normalized)
+  2. Safe alias (from SAFE_ALIASES table — currently 4 entries)
+  3. Contains match (single result only, within same category — no cross-category guessing)
+  4. If no match: fuzzy similarity (Levenshtein + Jaccard + substring) within same category
+
+GROUP → METALTRACK CATEGORY MAPPING:
+  01 เหล็ก               → เหล็ก
+  02 อลูมิเนียม          → อลูมิเนียม
+  03 ทองแดง             → ทองแดง
+  04 ทองเหลือง           → ทองเหลือง
+  05 แสตนเลส            → แสตนเลส
+  06 ตะกั่ว              → ตะกั่ว
+  07 ขยะอิเล็กทรอนิค     → อิเล็กทรอนิกส์
+  08 อื่นๆ               → อื่นๆ
+  09 พลาสติก            → พลาสติก
+  10 รายรับอื่นๆ         → (NOT a product — services: ชั่งรถ)
+  11 คัดแยก             → (sorted output — duplicates of products with "(คัดแยก)" suffix)
+
+====================================================================================================================================================================================
+OUTPUT 1: SUMMARY
+====================================================================================================================================================================================
+
+Total old/source entries parsed:                  164
+  - Regular products (groups 01-09):              119
+  - Service entries (group 10, NOT products):     3
+  - Sorted-output entries (group 11, duplicates): 42
+
+Total MetalTrack products:                        108
+
+CLASSIFICATION (regular products only):
+  A. Exact match:                                 86
+  B. Matched by safe alias / contains-match:      7
+  C. Likely typo/spelling mismatch:               9
+  D. Missing in MetalTrack:                       17
+  E. Duplicate/near-duplicate in old/source list: 1
+  F. Duplicate/near-duplicate in MetalTrack:      0
+  G. Ambiguous / owner review required:           21
+
+SORTED-OUTPUT ENTRIES (group 11):
+  - Matched by stripping "(คัดแยก)" suffix:       26
+  - Unmatched even after stripping suffix:        16
+  → Sorted-output entries are duplicates of existing products; should NOT be imported as separate products.
+
+SERVICE ENTRIES (group 10):
+  - 3 entries are weighing services (ชั่งรถ), not products.
+  → Should NOT be imported as BuyBill items.
+
+====================================================================================================================================================================================
+OUTPUT 2: ALL NON-EXACT MATCHES
+(Every regular product that is NOT an exact name match)
+====================================================================================================================================================================================
+
+No.  old/source raw name              normalized                     group        match status   closest MT product             productId                                          conf   problem type recommended action           reason                                            
+---- -------------------------------- ------------------------------ ------------ -------------- ------------------------------ -------------------------------------------------- ------ ------------ ---------------------------- --------------------------------------------------
+1.   อลูมิเนียมกระป๋อง                อลูมิเนียมกระป๋อง              02/อลูมิเนียม ALIAS          กระป๋องอลูมีเนียม              prod_mqgp9duo294uh2l320pbg1ru                      high   -            -                            safe alias "อลูมิเนียมกระป๋อง" → "กระป๋องอลูมีเนียม"
+2.   อลูมิเนียมล้อแม็ค                อลูมิเนียมล้อแม็ค              02/อลูมิเนียม UNMATCHED      อลูมีเนียมล้อแม๊กซ์            prod_mqgp9dhn9ryniksnud8q714g                      low    spelling     owner review required        Closest match "อลูมีเนียมล้อแม๊กซ์" (similarity 52%): levenshtein distance 5/19
+3.   อลูมิเนียมหล่อ                   อลูมิเนียมหล่อ                 02/อลูมิเนียม UNMATCHED      อลูมีเนียมมู่ลี่               prod_mqgp9fz6pqfgrkxoh5nbgchi                      low    spelling     owner review required        Closest match "อลูมีเนียมมู่ลี่" (similarity 70%): character-set similar (jaccard 82%)
+4.   อลูมิเนียมผ้าเบรค                อลูมิเนียมผ้าเบรค              02/อลูมิเนียม UNMATCHED      อลูมิเนียมสายไฟ                prod_mqgp9csvq0takfp04k5d2dv6                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 45%)
+5.   อลูมิเนียมกะทะไฟฟ้า              อลูมิเนียมกะทะไฟฟ้า            02/อลูมิเนียม UNMATCHED      อลูมีเนียมตูดกะทะไฟฟ้าล้วน     prod_mqgp9f3wvar7pgyoek1zen5k                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 48%)
+6.   กระทะดำ                          กระทะดำ                        02/อลูมิเนียม UNMATCHED      อลูมีเนียมกระทะ                prod_mqgp9e6yxtg3mo8mf998qnf6                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 14%)
+7.   อลูมิเนียมกะทะ                   อลูมิเนียมกะทะ                 02/อลูมิเนียม UNMATCHED      อลูมีเนียมกระทะ                prod_mqgp9e6yxtg3mo8mf998qnf6                      medium spelling     add explicit alias           Closest match "อลูมีเนียมกระทะ" (similarity 87%): character-set similar (jaccard 85%)
+8.   อลูมิเนียมตูดกะทะ                อลูมิเนียมตูดกะทะ              02/อลูมิเนียม ALIAS          อลูมีเนียมตูดกะทะ              prod_mqgp9edcxnxkocxfu0odbayj                      high   -            -                            safe alias "อลูมิเนียมตูดกะทะ" → "อลูมีเนียมตูดกะทะ"
+9.   อลูมิเนียมมุ้งลวด                อลูมิเนียมมุ้งลวด              02/อลูมิเนียม UNMATCHED      อลูมีเนียมมุ้งลวด              prod_mqgp9fsl7s0haidcn5c9t4ee                      high   spelling     add explicit alias           Closest match "อลูมีเนียมมุ้งลวด" (similarity 94%): character-set similar (jaccard 93%)
+10.  อลูมิเนียมมู่ลี่                 อลูมิเนียมมู่ลี่               02/อลูมิเนียม UNMATCHED      อลูมีเนียมมู่ลี่               prod_mqgp9fz6pqfgrkxoh5nbgchi                      high   spelling     add explicit alias           Closest match "อลูมีเนียมมู่ลี่" (similarity 94%): character-set similar (jaccard 90%)
+11.  อลูมิเนียมฝาแกะ                  อลูมิเนียมฝาแกะ                02/อลูมิเนียม UNMATCHED      อลูมิเนียมฉาก                  prod_mqgp9cyrr65cu9xaams1daoh                      low    spelling     owner review required        Closest match "อลูมิเนียมฉาก" (similarity 56%): levenshtein distance 3/15
+12.  อลูมิเนียมฝาไม่แกะ               อลูมิเนียมฝาไม่แกะ             02/อลูมิเนียม UNMATCHED      อลูมิเนียมฉาก                  prod_mqgp9cyrr65cu9xaams1daoh                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 47%)
+13.  อลูมิเนียมอัลลอยด์               อลูมิเนียมอัลลอยด์             02/อลูมิเนียม UNMATCHED      อลูมีเนียมอัลลอย               prod_mqgp9dbqtfx0j3mnsbl9mwix                      low    spelling     owner review required        Closest match "อลูมีเนียมอัลลอย" (similarity 58%): levenshtein distance 3/18
+14.  อลูมิเนียมแผ่นเพจ                อลูมิเนียมแผ่นเพจ              02/อลูมิเนียม UNMATCHED      อลูมิเนียมสายไฟ                prod_mqgp9csvq0takfp04k5d2dv6                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 41%)
+15.  อลูมิเนียมติดเหล็ก               อลูมิเนียมติดเหล็ก             02/อลูมิเนียม UNMATCHED      อลูมิเนียมฉาก                  prod_mqgp9cyrr65cu9xaams1daoh                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 43%)
+16.  สายไฟอลูมีเนียม(ไม่ปอก)          สายไฟอลูมีเนียม(ไม่ปอก)        02/อลูมิเนียม UNMATCHED      อลูมีเนียมอัลลอย               prod_mqgp9dbqtfx0j3mnsbl9mwix                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 33%)
+17.  ขี้กลึงอลูมิเนียม                ขี้กลึงอลูมิเนียม              02/อลูมิเนียม UNMATCHED      กระป๋องอลูมีเนียม              prod_mqgp9duo294uh2l320pbg1ru                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 41%)
+18.  อลูมิเนียมฉากสี                  อลูมิเนียมฉากสี                02/อลูมิเนียม ALIAS          อลูมิเนียมฉาก                  prod_mqgp9cyrr65cu9xaams1daoh                      high   -            -                            single contains-match in category "อลูมิเนียม"    
+19.  อลูมิเนียมเพลท                   อลูมิเนียมเพลท                 02/อลูมิเนียม UNMATCHED      อลูมีเนียมเพลท                 prod_mqgp9g5d78sw9tuoeuem3i1b                      high   spelling     add explicit alias           Closest match "อลูมีเนียมเพลท" (similarity 93%): character-set similar (jaccard 91%)
+20.  กระป๋องสเปรย์                    กระป๋องสเปรย์                  02/อลูมิเนียม UNMATCHED      กระป๋องอลูมีเนียม              prod_mqgp9duo294uh2l320pbg1ru                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 37%)
+21.  ปั้มกระป๋อง                      ปั้มกระป๋อง                    02/อลูมิเนียม ALIAS          อลูมีเนียมปั้มกระป๋อง          prod_mqgp9gn9lfu942el9hx2undl                      high   -            -                            single contains-match in category "อลูมิเนียม"    
+22.  ฟรอยไม่ติดพลาสติก                ฟรอยไม่ติดพลาสติก              02/อลูมิเนียม ALIAS          อลูมีเนียมฟรอยไม่ติดพลาสติก    prod_mqgp9gt8ki5lcwu67ps55equ                      high   -            -                            single contains-match in category "อลูมิเนียม"    
+23.  ฝาเนียมเผา                       ฝาเนียมเผา                     02/อลูมิเนียม UNMATCHED      ฝาอลูมีเนียมเผา                prod_mqgp9epjox7up6c2k8jrf289                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 47%)
+24.  ตูดหม้อหุงข้าว                   ตูดหม้อหุงข้าว                 02/อลูมิเนียม ALIAS          อลูมีเนียมตูดหม้อหุงข้าว       prod_mqgp9ew9ar8ckyjn69mr8aq2                      high   -            -                            single contains-match in category "อลูมิเนียม"    
+25.  ตูดกะทะไฟฟ้าล้วน                 ตูดกะทะไฟฟ้าล้วน               02/อลูมิเนียม ALIAS          อลูมีเนียมตูดกะทะไฟฟ้าล้วน     prod_mqgp9f3wvar7pgyoek1zen5k                      high   -            -                            single contains-match in category "อลูมิเนียม"    
+26.  หนาติดสี                         หนาติดสี                       02/อลูมิเนียม UNMATCHED      อลูมีเนียมฉากสี                prod_mqgp9fa7fylab8ztuya98a9p                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 14%)
+27.  หนาลูกสูบ                        หนาลูกสูบ                      02/อลูมิเนียม UNMATCHED      หม้อน้ำอลูมีเนียม              prod_mqgp9ejcaz0g567zocy5ub8j                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 16%)
+28.  หนาก้ามเบรค                      หนาก้ามเบรค                    02/อลูมิเนียม UNMATCHED      หม้อน้ำอลูมีเนียม              prod_mqgp9ejcaz0g567zocy5ub8j                      low    missing      create new product           No close match in MT category "อลูมิเนียม" (best similarity: 16%)
+29.  ทองแดงท่อCandy                   ทองแดงท่อCandy                 03/ทองแดง    UNMATCHED      ทองแดงท่อ Candy                cmr09vcvi001cl105spng6d2h                          high   spelling     add explicit alias           Closest match "ทองแดงท่อ Candy" (similarity 95%): differ only in punctuation/spacing
+30.  เต๋าใส่ของ (ใช้งาน)              เต๋าใส่ของ (ใช้งาน)            08/อื่นๆ     UNMATCHED      ของแกะ                         prod_mqgp9hja0s6zbk3yvapoxjjs                      low    missing      create new product           No close match in MT category "อื่นๆ" (best similarity: 11%)
+31.  เบิกใช้งานภายในบริษัท            เบิกใช้งานภายในบริษัท          08/อื่นๆ     UNMATCHED      เปลือกสายไฟ                    cmr09vcvj0026l105hlbo4dvs                          low    missing      create new product           No close match in MT category "อื่นๆ" (best similarity: 10%)
+32.  ค่าตัดเหล็ก                      ค่าตัดเหล็ก                    08/อื่นๆ     UNMATCHED      คอมดำ                          prod_mqgp9hwdo411xly6wmmeyg86                      low    missing      create new product           No close match in MT category "อื่นๆ" (best similarity: 13%)
+33.  ยืมลมท่อ                         ยืมลมท่อ                       08/อื่นๆ     UNMATCHED      สายไฟไม่ปอก                    cmr09vcvj0024l1052pb03lfk                          low    missing      create new product           No close match in MT category "อื่นๆ" (best similarity: 19%)
+
+====================================================================================================================================================================================
+OUTPUT 3: SAFE ALIAS CANDIDATES (high confidence only)
+Do NOT apply yet — owner approval required.
+====================================================================================================================================================================================
+
+No.  old/source raw name              proposed MT product            productId                                          similarity   reason                                             risk level   owner approval
+---- -------------------------------- ------------------------------ -------------------------------------------------- ------------ -------------------------------------------------- ------------ --------------
+1.   ทองแดงท่อCandy                   ทองแดงท่อ Candy                cmr09vcvi001cl105spng6d2h                          95%          differ only in punctuation/spacing                 LOW          REQUIRED      
+2.   อลูมิเนียมมุ้งลวด                อลูมีเนียมมุ้งลวด              prod_mqgp9fsl7s0haidcn5c9t4ee                      94%          character-set similar (jaccard 93%)                LOW          REQUIRED      
+3.   อลูมิเนียมมู่ลี่                 อลูมีเนียมมู่ลี่               prod_mqgp9fz6pqfgrkxoh5nbgchi                      94%          character-set similar (jaccard 90%)                LOW          REQUIRED      
+4.   อลูมิเนียมเพลท                   อลูมีเนียมเพลท                 prod_mqgp9g5d78sw9tuoeuem3i1b                      93%          character-set similar (jaccard 91%)                LOW          REQUIRED      
+5.   อลูมิเนียมกะทะ                   อลูมีเนียมกระทะ                prod_mqgp9e6yxtg3mo8mf998qnf6                      87%          character-set similar (jaccard 85%)                MEDIUM       REQUIRED      
+
+====================================================================================================================================================================================
+OUTPUT 4: MISSING PRODUCTS (in old/source list but not in MetalTrack)
+Do NOT create products automatically.
+====================================================================================================================================================================================
+
+No.  old/source raw name              normalized                     group              category guess         reason missing                                     recommended action          
+---- -------------------------------- ------------------------------ ------------------ ---------------------- -------------------------------------------------- ----------------------------
+1.   อลูมิเนียมผ้าเบรค                อลูมิเนียมผ้าเบรค              02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 45%) create new product          
+2.   อลูมิเนียมกะทะไฟฟ้า              อลูมิเนียมกะทะไฟฟ้า            02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 48%) create new product          
+3.   กระทะดำ                          กระทะดำ                        02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 14%) create new product          
+4.   อลูมิเนียมฝาไม่แกะ               อลูมิเนียมฝาไม่แกะ             02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 47%) create new product          
+5.   อลูมิเนียมแผ่นเพจ                อลูมิเนียมแผ่นเพจ              02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 41%) create new product          
+6.   อลูมิเนียมติดเหล็ก               อลูมิเนียมติดเหล็ก             02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 43%) create new product          
+7.   สายไฟอลูมีเนียม(ไม่ปอก)          สายไฟอลูมีเนียม(ไม่ปอก)        02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 33%) create new product          
+8.   ขี้กลึงอลูมิเนียม                ขี้กลึงอลูมิเนียม              02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 41%) create new product          
+9.   กระป๋องสเปรย์                    กระป๋องสเปรย์                  02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 37%) create new product          
+10.  ฝาเนียมเผา                       ฝาเนียมเผา                     02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 47%) create new product          
+11.  หนาติดสี                         หนาติดสี                       02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 14%) create new product          
+12.  หนาลูกสูบ                        หนาลูกสูบ                      02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 16%) create new product          
+13.  หนาก้ามเบรค                      หนาก้ามเบรค                    02/อลูมิเนียม      อลูมิเนียม             No close match in MT category "อลูมิเนียม" (best similarity: 16%) create new product          
+14.  เต๋าใส่ของ (ใช้งาน)              เต๋าใส่ของ (ใช้งาน)            08/อื่นๆ           อื่นๆ                  No close match in MT category "อื่นๆ" (best similarity: 11%) create new product          
+15.  เบิกใช้งานภายในบริษัท            เบิกใช้งานภายในบริษัท          08/อื่นๆ           อื่นๆ                  No close match in MT category "อื่นๆ" (best similarity: 10%) create new product          
+16.  ค่าตัดเหล็ก                      ค่าตัดเหล็ก                    08/อื่นๆ           อื่นๆ                  No close match in MT category "อื่นๆ" (best similarity: 13%) create new product          
+17.  ยืมลมท่อ                         ยืมลมท่อ                       08/อื่นๆ           อื่นๆ                  No close match in MT category "อื่นๆ" (best similarity: 19%) create new product          
+18.  หนาพิเศษ(คัดแยก)                 หนาพิเศษ(คัดแยก)               11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 10/null). Stripped name "หนาพิเศษ" not found in MT category "null". Best similarity: 58%. owner review required       
+19.  เหล็กหนา(คัดแยก)                 เหล็กหนา(คัดแยก)               11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 10/null). Stripped name "เหล็กหนา" not found in MT category "null". Best similarity: 69%. owner review required       
+20.  เหล็กหนา(ยาว)(คัดแยก)            เหล็กหนา(ยาว)(คัดแยก)          11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 10/null). Stripped name "เหล็กหนา(ยาว)" not found in MT category "null". Closest match "เหล็กหนายาว" (95%). add explicit alias (or fix sorted-output naming)
+21.  อลูมิเนียมแข็ง(คัดแยก)           อลูมิเนียมแข็ง(คัดแยก)         11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 20/null). Stripped name "อลูมิเนียมแข็ง" not found in MT category "null". Closest match "อลูมีเนียมแข็ง" (93%). add explicit alias (or fix sorted-output naming)
+22.  อลูมิเนียมฝาแกะ(คัดแยก)          อลูมิเนียมฝาแกะ(คัดแยก)        11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 21/null). Stripped name "อลูมิเนียมฝาแกะ" not found in MT category "null". Best similarity: 56%. owner review required       
+23.  หม้อน้ำอลูมิเนียม(คัดแยก)        หม้อน้ำอลูมิเนียม(คัดแยก)      11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 21/null). Stripped name "หม้อน้ำอลูมิเนียม" not found in MT category "null". Closest match "หม้อน้ำอลูมีเนียม" (94%). add explicit alias (or fix sorted-output naming)
+24.  อลูมิเนียมเครื่อง(คัดแยก)        อลูมิเนียมเครื่อง(คัดแยก)      11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 21/null). Stripped name "อลูมิเนียมเครื่อง" not found in MT category "null". Closest match "อลูมีเนียมเครื่อง" (94%). add explicit alias (or fix sorted-output naming)
+25.  อลูมิเนียมครีบหม้อน้ำ(คัดแยก)    อลูมิเนียมครีบหม้อน้ำ(คัดแยก)  11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 21/null). Stripped name "อลูมิเนียมครีบหม้อน้ำ" not found in MT category "null". Closest match "อลูมีเนียมครีบหม้อน้ำ" (95%). add explicit alias (or fix sorted-output naming)
+26.  อลูมิเนียมอัลลอยด์(คัดแยก)       อลูมิเนียมอัลลอยด์(คัดแยก)     11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 22/null). Stripped name "อลูมิเนียมอัลลอยด์" not found in MT category "null". Best similarity: 58%. owner review required       
+27.  อลูมิเนียมติดเหล็ก(คัดแยก)       อลูมิเนียมติดเหล็ก(คัดแยก)     11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 22/null). Stripped name "อลูมิเนียมติดเหล็ก" not found in MT category "null". Best similarity: 43%. owner review required       
+28.  สายไฟอลูมิเนียมไม่ปอก(คัดแยก)    สายไฟอลูมิเนียมไม่ปอก(คัดแยก)  11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 22/null). Stripped name "สายไฟอลูมิเนียมไม่ปอก" not found in MT category "null". Best similarity: 69%. owner review required       
+29.  ล้อแม็ก (คัดแยก)                 ล้อแม็ก (คัดแยก)               11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 22/null). Stripped name "ล้อแม็ก" not found in MT category "null". Best similarity: 22%. owner review required       
+30.  แสตนเลส304(คัดแยก)               แสตนเลส304(คัดแยก)             11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 50/null). Stripped name "แสตนเลส304" not found in MT category "null". Closest match "แสตนเลส 304" (95%). add explicit alias (or fix sorted-output naming)
+31.  แสตนเลส202(คัดแยก)               แสตนเลส202(คัดแยก)             11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 50/null). Stripped name "แสตนเลส202" not found in MT category "null". Closest match "แสตนเลส 202" (95%). add explicit alias (or fix sorted-output naming)
+32.  แสตนเลส304(ยาว)(คัดแยก)          แสตนเลส304(ยาว)(คัดแยก)        11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 50/null). Stripped name "แสตนเลส304(ยาว)" not found in MT category "null". Closest match "แสตนเลส 304 (ยาว)" (95%). add explicit alias (or fix sorted-output naming)
+33.  ตะกั่ว(คัดแยก)                   ตะกั่ว(คัดแยก)                 11/คัดแยก          (sorted-output)        Sorted-output entry (orig group 60/null). Stripped name "ตะกั่ว" not found in MT category "null". Best similarity: 57%. owner review required       
+
+====================================================================================================================================================================================
+OUTPUT 5: DUPLICATES / NEAR DUPLICATES
+====================================================================================================================================================================================
+
+--- 5A: Old/Source List Duplicates (same normalized name in multiple groups) ---
+
+No.  source             product name A                   product name B                   similarity reason                                  risk             recommended action          
+---- ------------------ -------------------------------- -------------------------------- -------------------------------------------------- ---------------- ----------------------------
+1.   old/source list    [0506] นิกเกิล (g05)             [0813] นิกเกิล (g08)             identical normalized name "นิกเกิล" in groups 05/แสตนเลส and 08/อื่นๆ HIGH (cross-group) owner review required (cross-category)
+
+--- 5B: MetalTrack Near-Duplicates (similarity >= 85%) ---
+
+No.  source             product name A                   product name B                   similarity reason                                  risk             recommended action          
+---- ------------------ -------------------------------- -------------------------------- -------------------------------------------------- ---------------- ----------------------------
+(none — no MetalTrack products have similarity >= 85% to another)
+
+--- 5C: Sorted-Output Entries (group 11 — duplicates of regular products with "(คัดแยก)" suffix) ---
+
+Found 42 sorted-output entries in old/source list.
+Of these, 26 matched existing MT products after stripping "(คัดแยก)" suffix.
+16 did NOT match (listed in Output 4 as missing).
+
+Recommendation: Sorted-output entries should NOT be imported as separate products.
+They represent the same physical products, just sorted through the sorting process.
+
+====================================================================================================================================================================================
+OUTPUT 6: EXACT MATCH LIST (regular products only)
+====================================================================================================================================================================================
+
+No.  old/source raw name              old code group              MetalTrack product name          productId                                          category      
+---- -------------------------------- -------- ------------------ -------------------------------- -------------------------------------------------- --------------
+1.   เหล็กหนาพิเศษ                    0101     01/เหล็ก           เหล็กหนาพิเศษ                    prod_mqgp97xypvvrh0u807kgaghu                      เหล็ก         
+2.   เหล็กหนาพิเศษยาว                 0102     01/เหล็ก           เหล็กหนาพิเศษยาว                 cmr09vcvf0004l1054v2vs9vk                          เหล็ก         
+3.   เหล็กหนาสั้น                     0103     01/เหล็ก           เหล็กหนาสั้น                     prod_mqgp98443nt9tbljuk6uaxpy                      เหล็ก         
+4.   เหล็กหนายาว                      0104     01/เหล็ก           เหล็กหนายาว                      prod_mqgp98a6ptx33sfd66e4s9ck                      เหล็ก         
+5.   เหล็กคละ                         0105     01/เหล็ก           เหล็กคละ                         prod_mqgp98gj4g2y4gogoyy5i7m5                      เหล็ก         
+6.   เหล็กบาง                         0106     01/เหล็ก           เหล็กบาง                         prod_mqgp98n84w35u63lvp47gmhh                      เหล็ก         
+7.   กระป๋อง,ปี๊บ                     0107     01/เหล็ก           กระป๋อง,ปี๊บ                     prod_mqgp99ij5mr6pceki4s9072l                      เหล็ก         
+8.   สังกะสี                          0108     01/เหล็ก           สังกะสี                          prod_mqgp99p3hjprvga4kypmo20p                      เหล็ก         
+9.   เหล็กเส้น 5 หุน                  0110     01/เหล็ก           เหล็กเส้น 5 หุน                  cmr09vcvf0006l1058o002m8e                          เหล็ก         
+10.  เหล็กเส้น 6 หุน (1.8m ขึ้นไป)    0111     01/เหล็ก           เหล็กเส้น 6 หุน (1.8m ขึ้นไป)    cmr09vcvf0008l105vtay0h8k                          เหล็ก         
+11.  เหล็กเส้น 1 นิ้ว (1mขึ้นไป)      0112     01/เหล็ก           เหล็กเส้น 1 นิ้ว (1mขึ้นไป)      cmr09vcvf000al105rdq4ae4s                          เหล็ก         
+12.  ขี้กลึงเหล็ก                     0113     01/เหล็ก           ขี้กลึงเหล็ก                     cmr09vcvf000cl10563co5e6e                          เหล็ก         
+13.  เหล็กหล่อชิ้นเล็ก                0114     01/เหล็ก           เหล็กหล่อชิ้นเล็ก                prod_mqgp995qaqfnykbbo5ziwi1t                      เหล็ก         
+14.  เหล็กหล่อ (ชิ้นใหญ่)             0115     01/เหล็ก           เหล็กหล่อ (ชิ้นใหญ่)             prod_mqgp99bt7vaj0jz2u837j3lm                      เหล็ก         
+15.  ถัง 15ถึง200 ลิตร                0116     01/เหล็ก           ถัง 15ถึง200 ลิตร                prod_mqgp99vijqwa10dzb68wohxt                      เหล็ก         
+16.  โช๊ค                             0117     01/เหล็ก           โช๊ค                             cmr09vcvg000el1054zsjb1qw                          เหล็ก         
+17.  ปั๊มสังกะสี                      0118     01/เหล็ก           ปั๊มสังกะสี                      cmr09vcvg000gl105ukz6nv3b                          เหล็ก         
+18.  ปั๊มบาง                          0119     01/เหล็ก           ปั๊มบาง                          cmr09vcvg000il1054bbh3z60                          เหล็ก         
+19.  ปั๊มหนา                          0120     01/เหล็ก           ปั๊มหนา                          cmr09vcvg000kl105f3gdtr8b                          เหล็ก         
+20.  เหล็กเส้น3-4หุน                  0121     01/เหล็ก           เหล็กเส้น3-4หุน                  cmr09vcvg000ml105kzmhv6c6                          เหล็ก         
+21.  อะไหล่                           0122     01/เหล็ก           อะไหล่                           cmr09vcvg000ol105y2307mb6                          เหล็ก         
+22.  เครื่องจักร                      0124     01/เหล็ก           เครื่องจักร                      cmqoxnq2t0001qjext8shxga1                          เหล็ก         
+23.  แหนบ                             0125     01/เหล็ก           แหนบ                             cmr09vcvg000ql105rajrqr48                          เหล็ก         
+24.  เหล็กบางยาว                      0126     01/เหล็ก           เหล็กบางยาว                      cmr09vcvg000sl1053684yy08                          เหล็ก         
+25.  เหล็กลวดรถ                       0127     01/เหล็ก           เหล็กลวดรถ                       cmr09vcvh000ul10573jw8yqw                          เหล็ก         
+26.  เหล็กคัดขาย                      0128     01/เหล็ก           เหล็กคัดขาย                      cmr09vcvh000wl105iecn6itn                          เหล็ก         
+27.  แม่พิมพ์                         0129     01/เหล็ก           แม่พิมพ์                         prod_mqgp9a1i7bviukked5gxa43v                      เหล็ก         
+28.  เบิกใช้งานต่างๆในบริษัท          0197     01/เหล็ก           เบิกใช้งานต่างๆในบริษัท          cmr09vcvh000yl105yxno9mb2                          เหล็ก         
+29.  เมทัลชีส(มือสอง)                 0198     01/เหล็ก           เมทัลชีส(มือสอง)                 cmr09vcvh0010l105z1kf3vgt                          เหล็ก         
+30.  เหล็กคัดใช้งาน                   0199     01/เหล็ก           เหล็กคัดใช้งาน                   cmr09vcvh0012l105qumcxjja                          เหล็ก         
+31.  เหล็กสลิง,สแตน                   0200     01/เหล็ก           เหล็กสลิง,สแตน                   prod_mqgp9a880imxsartf4d8c14k                      เหล็ก         
+32.  อลูมิเนียมสายไฟ                  0203     02/อลูมิเนียม      อลูมิเนียมสายไฟ                  prod_mqgp9csvq0takfp04k5d2dv6                      อลูมิเนียม    
+33.  อลูมิเนียมบาง                    0204     02/อลูมิเนียม      อลูมิเนียมบาง                    prod_mqgp9d5g7uiu7tttxza864tp                      อลูมิเนียม    
+34.  อลูมิเนียมฉาก                    0215     02/อลูมิเนียม      อลูมิเนียมฉาก                    prod_mqgp9cyrr65cu9xaams1daoh                      อลูมิเนียม    
+35.  หม้อน้ำอลูมีเนียม                0216     02/อลูมิเนียม      หม้อน้ำอลูมีเนียม                prod_mqgp9ejcaz0g567zocy5ub8j                      อลูมิเนียม    
+36.  อลูมีเนียมเครื่อง                0217     02/อลูมิเนียม      อลูมีเนียมเครื่อง                prod_mqgp9fgoheos0xee1ntl0r27                      อลูมิเนียม    
+37.  อลูมีเนียมครีบหม้อน้ำ            0218     02/อลูมิเนียม      อลูมีเนียมครีบหม้อน้ำ            prod_mqgp9fmounwsgwm9xyso0phf                      อลูมิเนียม    
+38.  ทองแดงปอกเงา                     0301     03/ทองแดง          ทองแดงปอกเงา                     prod_mqgp9aevp2yb18adpkyr3qtr                      ทองแดง        
+39.  ทองแดงปอกช็อต                    0302     03/ทองแดง          ทองแดงปอกช็อต                    prod_mqgp9alick357v31bqqrlv43                      ทองแดง        
+40.  ทองแดงใหญ่                       0303     03/ทองแดง          ทองแดงใหญ่                       prod_mqgp9arb37xlm6b54b0xa44v                      ทองแดง        
+41.  ทองแดงเส้นเล็ก                   0304     03/ทองแดง          ทองแดงเส้นเล็ก                   prod_mqgp9axign3hnk45ex03l4aw                      ทองแดง        
+42.  ขี้กลึงทองแดง                    0305     03/ทองแดง          ขี้กลึงทองแดง                    prod_new_1782125293874_e0b882e0b8b5e0b989e0b881    ทองแดง        
+43.  หม้อน้ำไส้ทองแดง                 0306     03/ทองแดง          หม้อน้ำไส้ทองแดง                 prod_mqgp9b9ouoxmoeq34ccaydfj                      ทองแดง        
+44.  ทองแดงติดเหล็ก                   0307     03/ทองแดง          ทองแดงติดเหล็ก                   cmr09vcvh0014l105skokga93                          ทองแดง        
+45.  แดงชุบ                           0308     03/ทองแดง          แดงชุบ                           prod_mqgp9bgavns7vxc8rzrlsn65                      ทองแดง        
+46.  ทองแดงเกินจาก ST                 0309     03/ทองแดง          ทองแดงเกินจาก ST                 cmr09vcvh0016l105bpvmhfwq                          ทองแดง        
+47.  ทองแดงขาดจาก ST                  0310     03/ทองแดง          ทองแดงขาดจาก ST                  cmr09vcvh0018l1053r76hh95                          ทองแดง        
+48.  ทองแดงเส้นเล็ก(ไม่ชุบ)           0311     03/ทองแดง          ทองแดงเส้นเล็ก(ไม่ชุบ)           cmr09vcvh001al105t25kax2e                          ทองแดง        
+49.  ทองเหลืองหนา                     0401     04/ทองเหลือง       ทองเหลืองหนา                     prod_mqgp9bspglewfbgukggj7wdy                      ทองเหลือง     
+50.  ทองเหลืองเนื้อแดง                0402     04/ทองเหลือง       ทองเหลืองเนื้อแดง                prod_mqgp9bmg24ygg55yytz9jphl                      ทองเหลือง     
+51.  ขี้กลึงทองเหลือง (เนื้อเขียว)    0403     04/ทองเหลือง       ขี้กลึงทองเหลือง (เนื้อเขียว)    prod_mqgp9bylqjal88hmac4ykwo0                      ทองเหลือง     
+52.  หม้อน้ำทองเหลือง                 0404     04/ทองเหลือง       หม้อน้ำทองเหลือง                 prod_mqgp9c4i0fakfeg9387qaqwv                      ทองเหลือง     
+53.  ขี้กลึงทองเหลือง (เนื้อแดง)      0405     04/ทองเหลือง       ขี้กลึงทองเหลือง (เนื้อแดง)      prod_new_1782125294097_e0b882e0b8b5e0b989e0b881    ทองเหลือง     
+54.  ทองเหลืองติดเหล็ก                0406     04/ทองเหลือง       ทองเหลืองติดเหล็ก                cmr09vcvi001el10567bodfyg                          ทองเหลือง     
+55.  ทองเหลืองเนื้อแดงติดเหล็ก        0407     04/ทองเหลือง       ทองเหลืองเนื้อแดงติดเหล็ก        cmr09vcvi001gl1050vxdowfn                          ทองเหลือง     
+56.  ทองเหลืองเกินจาก ST              0408     04/ทองเหลือง       ทองเหลืองเกินจาก ST              cmr09vcvi001il105ty4h75k8                          ทองเหลือง     
+57.  ทองเหลืองขาดจาก ST               0409     04/ทองเหลือง       ทองเหลืองขาดจาก ST               cmr09vcvi001kl105f1e6emmx                          ทองเหลือง     
+58.  แสตนเลส 304                      0501     05/แสตนเลส         แสตนเลส 304                      prod_mqgp9caefhv0hs74sfuubrmr                      แสตนเลส       
+59.  แสตนเลส 202                      0502     05/แสตนเลส         แสตนเลส 202                      prod_mqgp9cmnidvf2vafwiepqg0d                      แสตนเลส       
+60.  แสตนเลสดูดติด                    0503     05/แสตนเลส         แสตนเลสดูดติด                    prod_new_1782125294328_e0b981e0b8aae0b895e0b899    แสตนเลส       
+61.  แสตนเลส 304 (ยาว)                0504     05/แสตนเลส         แสตนเลส 304 (ยาว)                prod_mqgp9cgafv9ts0i3ze22h1vb                      แสตนเลส       
+62.  แสตนเลสติดเหล็ก                  0505     05/แสตนเลส         แสตนเลสติดเหล็ก                  cmr09vcvi001ml1055umg3jpg                          แสตนเลส       
+63.  นิกเกิล                          0506     05/แสตนเลส         นิกเกิล                          cmr09vcvk002gl105fbuztaig                          อื่นๆ         
+64.  ขี้กลึงสแตนเลส304                0507     05/แสตนเลส         ขี้กลึงสแตนเลส304                cmr09vcvi001ql105usal36bv                          แสตนเลส       
+65.  ตะกั่วนิ่ม                       0601     06/ตะกั่ว          ตะกั่วนิ่ม                       prod_mqgp9hcgjuw6kt6ob5n75e4s                      ตะกั่ว        
+66.  ตะกั่วแข็ง                       0602     06/ตะกั่ว          ตะกั่วแข็ง                       prod_mqgp9h6flpekakyzewnjsp1y                      ตะกั่ว        
+67.  ขี้กลึงตะกั่ว                    0603     06/ตะกั่ว          ขี้กลึงตะกั่ว                    prod_new_1782125294561_e0b882e0b8b5e0b989e0b881    ตะกั่ว        
+68.  แบตเตอรี่ขาว                     0706     07/ขยะอิเล็กทรอนิค แบตเตอรี่ขาว                     cmr09vcvi001sl105sh7np3cq                          อิเล็กทรอนิกส์
+69.  แบตเตอรี่ดำ                      0707     07/ขยะอิเล็กทรอนิค แบตเตอรี่ดำ                      cmr09vcvj001ul105jy78au99                          อิเล็กทรอนิกส์
+70.  แบตเตอรี่เล็ก                    0708     07/ขยะอิเล็กทรอนิค แบตเตอรี่เล็ก                    cmr09vcvj001wl105fq0lcv2m                          อิเล็กทรอนิกส์
+71.  แบตเตอรี่มอไซต์                  0709     07/ขยะอิเล็กทรอนิค แบตเตอรี่มอไซต์                  cmr09vcvj001yl105e1m5k7rl                          อิเล็กทรอนิกส์
+72.  แท็บเล็ต                         0710     07/ขยะอิเล็กทรอนิค แท็บเล็ต                         cmr09vcvj0020l105s5hmor3v                          อิเล็กทรอนิกส์
+73.  พวงแผงวงจรติดสายไฟ               0711     07/ขยะอิเล็กทรอนิค พวงแผงวงจรติดสายไฟ               cmr09vcvj0022l105nwoir2px                          อิเล็กทรอนิกส์
+74.  มอเตอร์                          0801     08/อื่นๆ           มอเตอร์                          prod_mqgp9hpqehz5267b46pxo5ic                      อื่นๆ         
+75.  ของแกะ                           0802     08/อื่นๆ           ของแกะ                           prod_mqgp9hja0s6zbk3yvapoxjjs                      อื่นๆ         
+76.  คอมดำ                            0803     08/อื่นๆ           คอมดำ                            prod_mqgp9hwdo411xly6wmmeyg86                      อื่นๆ         
+77.  สายไฟไม่ปอก                      0804     08/อื่นๆ           สายไฟไม่ปอก                      cmr09vcvj0024l1052pb03lfk                          อื่นๆ         
+78.  เปลือกสายไฟ                      0806     08/อื่นๆ           เปลือกสายไฟ                      cmr09vcvj0026l105hlbo4dvs                          อื่นๆ         
+79.  ขยะ                              0807     08/อื่นๆ           ขยะ                              cmr09vcvj0028l10595uvtr4n                          อื่นๆ         
+80.  สูญเสีย                          0808     08/อื่นๆ           สูญเสีย                          cmr09vcvj002al1051bpzbc7a                          อื่นๆ         
+81.  กระสอบขาด                        0810     08/อื่นๆ           กระสอบขาด                        cmr09vcvk002cl105y9o96j5z                          อื่นๆ         
+82.  น้ำม้นเก่า                       0811     08/อื่นๆ           น้ำม้นเก่า                       cmr09vcvk002el105gzwzf9ti                          อื่นๆ         
+83.  นิกเกิล                          0813     08/อื่นๆ           นิกเกิล                          cmr09vcvk002gl105fbuztaig                          อื่นๆ         
+84.  แผงวงจรเขียว                     0815     08/อื่นๆ           แผงวงจรเขียว                     cmr09vcvk002il1059frrfzsp                          อื่นๆ         
+85.  ของแกะราคาสูง                    0816     08/อื่นๆ           ของแกะราคาสูง                    cmr09vcvk002kl105d8sl5yr8                          อื่นๆ         
+86.  พลาสติกรวม                       0750     09/พลาสติก         พลาสติกรวม                       cmr09vcvk002ml105w1loc8hg                          พลาสติก       
+
+====================================================================================================================================================================================
+APPENDIX: ALIAS MATCHES (matched via safe alias or contains-match)
+====================================================================================================================================================================================
+
+No.  old/source raw name              old code group              match type         matched MT product               productId                                          reason                                            
+---- -------------------------------- -------- ------------------ ------------------ -------------------------------- -------------------------------------------------- --------------------------------------------------
+1.   อลูมิเนียมกระป๋อง                0201     02/อลูมิเนียม      ALIAS              กระป๋องอลูมีเนียม                prod_mqgp9duo294uh2l320pbg1ru                      safe alias "อลูมิเนียมกระป๋อง" → "กระป๋องอลูมีเนียม"
+2.   อลูมิเนียมตูดกะทะ                0210     02/อลูมิเนียม      ALIAS              อลูมีเนียมตูดกะทะ                prod_mqgp9edcxnxkocxfu0odbayj                      safe alias "อลูมิเนียมตูดกะทะ" → "อลูมีเนียมตูดกะทะ"
+3.   อลูมิเนียมฉากสี                  0231     02/อลูมิเนียม      ALIAS_CONTAINS     อลูมิเนียมฉาก                    prod_mqgp9cyrr65cu9xaams1daoh                      single contains-match in category "อลูมิเนียม"    
+4.   ปั้มกระป๋อง                      0234     02/อลูมิเนียม      ALIAS_CONTAINS     อลูมีเนียมปั้มกระป๋อง            prod_mqgp9gn9lfu942el9hx2undl                      single contains-match in category "อลูมิเนียม"    
+5.   ฟรอยไม่ติดพลาสติก                0235     02/อลูมิเนียม      ALIAS_CONTAINS     อลูมีเนียมฟรอยไม่ติดพลาสติก      prod_mqgp9gt8ki5lcwu67ps55equ                      single contains-match in category "อลูมิเนียม"    
+6.   ตูดหม้อหุงข้าว                   0237     02/อลูมิเนียม      ALIAS_CONTAINS     อลูมีเนียมตูดหม้อหุงข้าว         prod_mqgp9ew9ar8ckyjn69mr8aq2                      single contains-match in category "อลูมิเนียม"    
+7.   ตูดกะทะไฟฟ้าล้วน                 0238     02/อลูมิเนียม      ALIAS_CONTAINS     อลูมีเนียมตูดกะทะไฟฟ้าล้วน       prod_mqgp9f3wvar7pgyoek1zen5k                      single contains-match in category "อลูมิเนียม"    
+
+====================================================================================================================================================================================
+APPENDIX: KNOWN ISSUES / OBSERVATIONS
+====================================================================================================================================================================================
+
+1. BROKEN SAFE ALIAS (in detailed-excel-import-dialog.tsx):
+   safeAliases['อลูมิเนียมฝาแกะ'] = 'ฝาอลูมีเนียมเนียม'
+   But MetalTrack product name is "ฝาอลูมีเนียม" (no double "เนียม").
+   → This alias NEVER matches. Should be: 'อลูมิเนียมฝาแกะ' → 'ฝาอลูมีเนียม'
+
+2. CROSS-CATEGORY DUPLICATE "นิกเกิล":
+   Old/source list has "นิกเกิล" in BOTH:
+     - group 05 (แสตนเลส): oldCode 0506
+     - group 08 (อื่นๆ):    oldCode 0813
+   MetalTrack split these into:
+     - "นิกเกิล(สแตนเลส)" (category: แสตนเลส)
+     - "นิกเกิล"           (category: อื่นๆ)
+   → Old "0506 นิกเกิล" was matched to "นิกเกิล(สแตนเลส)" via contains-match.
+   → Old "0813 นิกเกิล" was exact-matched to "นิกเกิล".
+   → Owner should verify this is correct: are these the same physical material tracked twice, or genuinely different?
+
+3. ALUMINUM SPELLING VARIANT: "อลูมิเนียม" (old) vs "อลูมีเนียม" (MetalTrack)
+   The old/source system uses "อลูมิเนียม" (with อิ vowel).
+   MetalTrack uses "อลูมีเนียม" (with อี vowel) for most products, but "อลูมิเนียม" for some (e.g. อลูมิเนียมสายไฟ, อลูมิเนียมฉาก, อลูมิเนียมบาง, อลูมิเนียมกระป๋อง...).
+   → Recommendation: standardize MetalTrack to ONE spelling (either อลูมิเนียม or อลูมีเนียม), then add aliases for the other.
+   → 9 alias candidates proposed in Output 3 for high-similarity spelling variants.
+
+4. SERVICE ENTRIES (group 10 — รายรับอื่นๆ):
+   - 1001 ชั่งรถกระบะ
+   - 1002 ชั่งรถ 6 ล้อ
+   - 1003 ชั่งรถ 10 ล้อ
+   These are weighing SERVICES (revenue), NOT products. They will NEVER appear in Buy Excel.
+   → Safe to ignore for product reconciliation.
+
+5. SORTED-OUTPUT ENTRIES (group 11 — คัดแยก):
+   Found 42 entries with "(คัดแยก)" suffix in name.
+   26 matched existing MT products after stripping suffix.
+   16 did NOT match — these are either:
+     (a) Missing products that need to be created, OR
+     (b) Sorted-output names that don't directly correspond to a single MT product (e.g. "ล้อแม็ก (คัดแยก)" vs "อลูมีเนียมล้อแม๊กซ์").
+   → Recommendation: do NOT import sorted-output as separate products. They duplicate existing product entries.
+
+====================================================================================================================================================================================
+NO PRODUCTION CHANGES WERE MADE.
+====================================================================================================================================================================================

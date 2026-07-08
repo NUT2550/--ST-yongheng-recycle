@@ -1,0 +1,19 @@
+{
+  "label": "pre-fix",
+  "timestamp": "2026-07-05T08:47:09.930Z",
+  "counts": {
+    "product": 114,
+    "buyBill": 15,
+    "sellBill": 9,
+    "sortingBill": 141,
+    "stockTransfer": 3,
+    "stockLot": 854,
+    "buyBillItem": 233,
+    "sellBillItem": 21,
+    "sortingBillItem": 634,
+    "stockTransferItem": 6,
+    "customer": 0,
+    "employee": 8
+  },
+  "totalStockWeight": 547540.3000000002
+}
