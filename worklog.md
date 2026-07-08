@@ -1792,3 +1792,34 @@ After push + Vercel auto-deploy (~1-2 minutes), verify:
 - ✅ No stock reset
 - ✅ FIFO not bypassed
 - ✅ No negative stock allowed
+
+---
+
+## Task ID: 57
+## Agent: Main
+## Task: Test Physical Count Page With Real Copper/Brass Data
+
+### Test Results
+- ✅ Page loads on production
+- ✅ Copper products: 12 loaded
+- ✅ Brass products: 9 loaded
+- ✅ Copper draft saved (5 items, DRAFT status)
+- ✅ Brass draft saved (3 items, DRAFT status)
+- ✅ Preview calculation correct (difference, value, direction)
+- ✅ Validation: empty items, missing group, negative weight, invalid productId — all return 400
+- ✅ History shows 2 saved sessions
+- ✅ Apply Adjustment button disabled
+- ✅ No stock quantities changed (StockLot count unchanged, total stock weight unchanged)
+
+### Bug Found + Fixed
+- **Bug**: Invalid productId caused HTTP 500 (FK constraint violation) instead of 400
+- **Fix**: Added pre-validation loop checking productId existence before creating session
+- **Deployed**: Fix pushed to production, verified returns 400 with Thai error message
+
+### Safety Verification
+| Metric | Before | After | Changed? |
+|---|---:|---:|---|
+| StockLots | 872 | 872 | NO ✅ |
+| Total stock weight | 548,537.70 | 548,537.70 | NO ✅ |
+| PhysicalCountSessions | 0 | 2 | YES (+2, expected) |
+| PhysicalCountItems | 0 | 8 | YES (+8, expected) |
