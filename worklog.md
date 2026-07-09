@@ -2518,3 +2518,98 @@ All in `debug/fix-sorting-dismantle-classification-2026-07-08/`:
 - `reconciliation/fix-classification-step2-report.mjs` — report generation + safety check
 
 **Business classification fixed. Stock quantities were not changed.**
+
+---
+
+## Task ID: 69
+## Agent: Main
+## Task: Debug Task 68 Classification Fix Not Visible on Production UI
+
+### Root Cause
+**Vercel production deployment is STALE** — running a ~26.3-hour-old deployment from before Task 68. The production serverless functions do not know about the `businessType` field (Prisma client not regenerated) and do not include the `businessType` query filter (API route code is pre-Task-68).
+
+### Verification Results
+| Layer | Status | Details |
+|---|---|---|
+| Production DB | ✅ CORRECT | businessType column exists; 00006=แกะของ, 00008=คัดแยก, 00009=คัดแยก |
+| GitHub main code | ✅ CORRECT | Commit `139139f` includes all Task 68 changes (5 files) |
+| Local code | ✅ CORRECT | All 4 files verified to have businessType logic |
+| Vercel production | ❌ STALE | Deployment age ~26.3h; businessType MISSING from API; filter ignored |
+
+### Production API Test Results (STALE)
+| Endpoint | Total Returned | businessType in response | Status |
+|---|---:|---|---|
+| `?businessType=คัดแยก` | 6 (should be 2) | MISSING | ❌ Filter ignored |
+| `?businessType=แกะของ` | 6 (should be 4) | MISSING | ❌ Filter ignored |
+| No filter | 6 | MISSING | ⚠️ Returns all (UI should not use unfiltered) |
+| `/api/sorting-bills` | 135 | n/a | ✅ Unchanged |
+
+### Fix Applied
+1. **DB**: No changes needed — already correct from Task 68
+2. **Code**: No changes needed — already correct from Task 68
+3. **Deployment trigger**: Pushed trigger commit `139139f` (comment-only change in `src/app/api/stock-transfers/route.ts`) to force Vercel to rebuild. The build script (`prisma generate && next build`) will regenerate the Prisma client with the `businessType` field.
+
+### Deployment Status
+- ✅ Trigger commit `139139f` pushed to GitHub main
+- ⏳ **Vercel auto-deploy: PENDING** — Vercel has NOT yet deployed the new commit (deployment age unchanged at ~26.3 hours)
+- ❌ Production API still stale (businessType missing, filter ignored)
+
+### Owner Action Required
+If Vercel does not auto-deploy within 15 minutes of the push:
+1. Go to https://vercel.com/dashboard → select the `--ST-yongheng-recycle` project
+2. Check "Deployments" tab for build status
+3. If failed/stuck, click "Redeploy" with "Use existing build cache" turned OFF
+4. Wait 2-5 minutes for build, then refresh production History page
+
+### Expected After Vercel Deploys commit 139139f
+| Endpoint | Expected Total | businessType in response |
+|---|---:|---|
+| `?businessType=คัดแยก` | 2 (00008, 00009) | present (= คัดแยก) |
+| `?businessType=แกะของ` | 4 (00010, 00006, 00005, 00002) | present (null or แกะของ) |
+| `/api/sorting-bills` | 135 | n/a (unchanged) |
+
+### Safety Check — ALL PASS ✅
+| Metric | Value | Status |
+|---|---:|---|
+| Total stock weight | 552,312.3 kg | ✅ unchanged |
+| StockLot count | 1,115 | ✅ unchanged |
+| StockTransfer count | 10 | ✅ unchanged |
+| SortingBill count | 144 | ✅ unchanged |
+| BuyBill count | 158 | ✅ unchanged |
+| SellBill count | 18 | ✅ unchanged |
+| Product count | 113 | ✅ unchanged |
+| Duplicates (all 3) | 1 each | ✅ no duplicates |
+| DB businessType values | all correct | ✅ PASS |
+
+### Confirmations
+- ✅ No stock changed (552,312.3 kg unchanged)
+- ✅ No duplicate records created
+- ✅ No records recreated
+- ✅ No BuyBills/SellBills modified
+- ✅ No StockLots created/modified/deleted
+- ✅ No SortingBills created/modified
+- ✅ No products changed
+- ✅ DB businessType values correct
+- ✅ GitHub code correct
+- ⏳ Vercel production deployment PENDING (owner needs to verify/redeploy)
+
+### Output Files (7)
+All in `debug/task68-production-visibility-fix/`:
+1. `PRODUCTION_DEPLOYMENT_CHECK.md` — Vercel deployment status + GitHub state
+2. `PRODUCTION_DB_BUSINESS_TYPE_CHECK.csv` — DB values (all correct)
+3. `PRODUCTION_API_CHECK.csv` — API responses (stale)
+4. `UI_CODE_CHECK.md` — Local code verification (correct)
+5. `FIX_APPLIED.md` — Root cause + fix details
+6. `SAFETY_CHECK.csv` — All invariants PASS
+7. `FINAL_REPORT.md` — Comprehensive summary
+
+### Scripts
+- `reconciliation/task69-step2-db-check.mjs` — production DB verification
+- `reconciliation/task69-step3-report.mjs` — report generation
+
+### Commits Pushed
+- `139139f` — Task 69: Rebuild trigger for Vercel
+- `82d8b97` — Task 69: Report files (debug/task68-production-visibility-fix/)
+
+**Production classification display fix in progress. Stock quantities were not changed.**
+**Owner needs to verify Vercel deployment of commit `139139f` and manually redeploy if auto-deploy is not working.**
