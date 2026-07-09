@@ -2033,3 +2033,35 @@ The old parser only handled Format A. When owner uploaded Format B, the parser c
 - `reconciliation/import-buy-round-1-2026-07-02-to-04/UNMATCHED_PRODUCTS_ROUND_1.csv`
 - `reconciliation/import-buy-round-1-2026-07-02-to-04/DUPLICATE_BILLS_ROUND_1.csv`
 - `reconciliation/import-buy-round-1-2026-07-02-to-04/FINAL_REPORT.md`
+
+---
+
+## Task ID: 63
+## Agent: Main
+## Task: Cleanup Purchase Import Round 1 After Owner Mapping Confirmation
+
+### Summary
+- **Bills imported**: 2 (A1051345 with 2 items, A1051350 with 1 item)
+- **Bills skipped**: 71 (all duplicates — already imported in Task 62 or previous imports)
+- **Stock lots created**: 3
+- **Stock weight change**: +36.3 kg (600,145.6 → 600,181.9 kg)
+- **Total bills imported across Round 1** (Task 62 + Task 63): 18
+
+### Owner-Confirmed Aliases Added
+1. `ทองแดงช็อต` → `ทองแดงปอกช็อต` ✅
+2. `แสตนเลส 304 (ยาว)` → `สแตนเลส 304 ยาว` ✅
+
+### Format B Repeated Bill Grouping Fix
+- **Before fix** (Task 62): Same bill number appeared multiple times under different product sections → created multiple BuyBills → unique constraint errors
+- **After fix** (Task 63): Uses Map to group all rows with same bill number into one BuyBill with multiple items
+- Result: ซื้อ 3-7-2569 went from 39 bills → 29 unique bills, ซื้อ 4-7-2569 went from 53 → 31 unique bills
+
+### Remaining Unmatched Product (1)
+- **แสตนเลส 202** (1 occurrence in ซื้อ 3-7-2569) — system has "สแตนเลส 202" (spelling: แส vs ส)
+
+### Safety
+- ✅ No SellBills modified (9 → 9)
+- ✅ No product master modified (113 → 113)
+- ✅ No duplicate BuyBills created
+- ✅ No stock adjusted manually
+- ✅ pgbouncer-safe sequential DB operations
