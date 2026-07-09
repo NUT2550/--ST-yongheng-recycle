@@ -1928,3 +1928,65 @@ The old parser only handled Format A. When owner uploaded Format B, the parser c
 - ✅ No historical bills modified
 - ✅ Only safe record (Record 3) created
 - ✅ Ambiguous records not created
+
+---
+
+## Task ID: 61
+## Agent: Main
+## Task: Create Manual Sorting Records 1 and 2 After Owner Mapping Confirmation
+
+### Part A: Product Rename
+- ✅ `แสตนเลส 304` renamed to `สแตนเลส 304` (productId: prod_mqgp9caefhv0hs74sfuubrmr)
+- Stock unchanged: 6,230.20 kg before → 6,230.20 kg after
+
+### Owner-Confirmed Mappings Applied
+| Raw name | Confirmed mapping | Product ID |
+|---|---|---|
+| ทองเหลืองหน้าแดง | ทองเหลืองเนื้อแดง | prod_mqgp9bmg24ygg55yytz9jphl |
+| ทองเหลือง | ทองเหลืองหนา | prod_mqgp9bspglewfbgukggj7wdy |
+| ตะกั่วแข่ง | ตะกั่วแข็ง | prod_mqgp9h6flpekakyzewnjsp1y |
+| สแตนเลส 304 | สแตนเลส 304 | prod_mqgp9caefhv0hs74sfuubrmr |
+| อลูมิเนียมแข็ง | อลูมิเนียมแข็ง (หล่อ/หนา) | prod_mqgp9do7ui6p53xv2tbjq7tb |
+| สายไฟ (3.1kg @30) | สายไฟทองแดง | cmr7up02q000hmzw7wkn7huiq |
+| สายไฟ (9.4kg @50) | สายไฟทองแดง | cmr7up02q000hmzw7wkn7huiq |
+
+### Records Created
+
+| Record | Type | Room | Source | Source wt | Bill number | ID | Items | Loss |
+|---|---|---|---|---:|---|---|---:|---:|
+| 1 | คัดแยก | 21 | เหล็กหนาสั้น | 62.6 kg | TRN-2569-00008 | cmrd404o80001i8046f99gnjm | 12 | 0.1 kg |
+| 2 | คัดแยก | 22 | เครื่องจักร | 20.6 kg | TRN-2569-00009 | cmrd40ti70013i804ymlbxjur | 6 | 0.2 kg |
+
+### Stock Changes — Record 1
+| Product | Role | Before (kg) | After (kg) | Change |
+|---|---|---:|---:|---:|
+| เหล็กหนาสั้น | SOURCE | 104,218.4 | 104,159.7 | -58.7 |
+| อลูมิเนียมฉาก | OUTPUT | 709.4 | 711.6 | +2.2 |
+| อลูมิเนียมบาง | OUTPUT | 2,036.1 | 2,036.4 | +0.3 |
+| ทองแดงใหญ่ | OUTPUT | 2.4 | 2.8 | +0.4 |
+| ทองเหลืองเนื้อแดง | OUTPUT | 0 | 0.8 | +0.8 |
+| ทองเหลืองหนา | OUTPUT | 2.2 | 6.3 | +4.1 |
+| หม้อน้ำอลูมิเนียม | OUTPUT | 73.9 | 75.2 | +1.3 |
+| หม้อน้ำทองแดง | OUTPUT | 0 | 1.2 | +1.2 |
+| ตะกั่วแข็ง | OUTPUT | 207.6 | 207.9 | +0.3 |
+| สแตนเลส 304 | OUTPUT | 6,230.2 | 6,234.9 | +4.7 |
+| อลูมิเนียมแข็ง (หล่อ/หนา) | OUTPUT | 1,156.4 | 1,197.8 | +41.4 |
+
+### Stock Changes — Record 2
+| Product | Role | Before (kg) | After (kg) | Change |
+|---|---|---:|---:|---:|
+| เครื่องจักร | SOURCE | 65,254.6 | 65,234.0 | -20.6 |
+| ทองเหลืองหนา | OUTPUT | 6.3 | 8.2 | +1.9 |
+| เปลือกสายไฟ | OUTPUT | 1.8 | 3.1 | +1.3 |
+| เหล็กบาง | OUTPUT | 60,163.4 | 60,167.5 | +4.1 |
+| สายไฟทองแดง | OUTPUT | 986.3 | 998.8 | +12.5 |
+
+### Duplicate Check
+- ✅ Record 3 (TRN-2569-00006) exists — NOT recreated
+- ✅ No duplicates for Record 1 or Record 2
+
+### Safety
+- ✅ FIFO not bypassed
+- ✅ No negative stock
+- ✅ No BuyBills/SellBills modified
+- ✅ Record 3 not recreated
