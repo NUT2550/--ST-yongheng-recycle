@@ -2613,3 +2613,112 @@ All in `debug/task68-production-visibility-fix/`:
 
 **Production classification display fix in progress. Stock quantities were not changed.**
 **Owner needs to verify Vercel deployment of commit `139139f` and manually redeploy if auto-deploy is not working.**
+
+---
+
+## Task ID: 70
+## Agent: Main
+## Task: Fix Vercel Deployment Blocked by Git Author Email
+
+### Root Cause
+Vercel blocked deployment of commits 303bbf6 (Task 68), 139139f, and 82d8b97 (Task 69) because they were authored with `noreply@zai.dev`, which Vercel could not match to a GitHub account.
+
+### Old Git Author
+- **user.name**: NUT2550 (git config) / Z.ai Code (commits)
+- **user.email**: 207142776+NUT2550@users.noreply.github.com (git config) / noreply@zai.dev (Task 68/69 commits)
+- Blocking commits: 303bbf6, 139139f, 82d8b97 all authored with `noreply@zai.dev`
+
+### New Git Author
+Attempted `nutnun456@gmail.com` per task instructions, but GitHub rejected with GH007 (private email protection). Switched to GitHub's official noreply email:
+- **user.name**: NUT2550
+- **user.email**: 207142776+NUT2550@users.noreply.github.com
+- This is the same email the owner's own commits already use (verified on GitHub)
+
+### New Commit
+- **Hash**: `00a88744d184c874a9c20602e89766bc30b09985` (short: `00a8874`)
+- **Author**: NUT2550 <207142776+NUT2550@users.noreply.github.com>
+- **Message**: `chore: trigger Vercel deploy with verified Git author`
+- **Files**: 1 new doc file (deployment-triggers/DEPLOY_TRIGGER_2026-07-09.md)
+- **Pushed**: `82d8b97..00a8874 main -> main` ✅
+
+### Vercel Deployment Status
+- **Before**: Deployment age ~94,648s (~26.3 hours), STALE (pre-Task-68)
+- **After push**: Vercel auto-deployed commit 00a8874 ✅
+- **Deployment age after**: 4 seconds (fresh deployment)
+- **Status**: READY ✅ (not Blocked)
+
+### Production API Verification — ALL PASS ✅
+
+**Test 1: `/api/stock-transfers?businessType=คัดแยก`**
+- Total returned: 2 ✅ (was 6 before fix)
+- businessType field present: ✅ YES (was MISSING)
+- TRN-2569-00008: ✅ Present
+- TRN-2569-00009: ✅ Present
+- TRN-2569-00006: ✅ Excluded (correct)
+
+**Test 2: `/api/stock-transfers?businessType=แกะของ`**
+- Total returned: 4 ✅ (was 6 before fix)
+- businessType field present: ✅ YES
+- TRN-2569-00006: ✅ Present
+- TRN-2569-00008: ✅ Excluded (correct)
+- TRN-2569-00009: ✅ Excluded (correct)
+- Records: TRN-2569-00010, TRN-2569-00006, TRN-2569-00005, TRN-2569-00002
+
+**Test 3: `/api/sorting-bills` (unchanged)**
+- Total returned: 135 ✅ (unchanged)
+- Latest: SORT-2569-00152 dated 07/07/2569
+
+### Production UI Verification (Agent Browser) — ALL PASS ✅
+
+**คัดแยก tab:**
+- Total displayed: **137 รายการ** ✅ (135 SortingBills + 2 StockTransfers with businessType=คัดแยก)
+- TRN-2569-00008 (เหล็กหนาสั้น, room 21, 62.60 kg): ✅ VISIBLE at top
+- TRN-2569-00009 (เครื่องจักร, room 22, 20.60 kg): ✅ VISIBLE at top
+- Screenshot: `/tmp/prod-sort-tab.png`
+
+**แกะของ tab:**
+- Total displayed: **4 รายการ** ✅ (was 6 before fix — excludes 2 คัดแยก records)
+- TRN-2569-00006 (ของแกะราคาสูง, room 24, 2.10 kg): ✅ VISIBLE
+- TRN-2569-00008: ✅ EXCLUDED (correct)
+- TRN-2569-00009: ✅ EXCLUDED (correct)
+- Screenshot: `/tmp/prod-transfer-tab.png`
+
+### Safety Check — ALL PASS ✅
+| Metric | Value | Expected | Status |
+|---|---:|---|---|
+| Total stock weight | 552,312.3 kg | unchanged | ✅ PASS |
+| StockLot count | 1,115 | unchanged | ✅ PASS |
+| StockTransfer count | 10 | unchanged | ✅ PASS |
+| SortingBill count | 144 | unchanged | ✅ PASS |
+| BuyBill count | 158 | unchanged | ✅ PASS |
+| SellBill count | 18 | unchanged | ✅ PASS |
+| Product count | 113 | unchanged | ✅ PASS |
+| TRN-2569-00006 businessType | แกะของ | แกะของ | ✅ PASS |
+| TRN-2569-00008 businessType | คัดแยก | คัดแยก | ✅ PASS |
+| TRN-2569-00009 businessType | คัดแยก | คัดแยก | ✅ PASS |
+
+### Confirmations
+- ✅ No DB changes (all counts unchanged)
+- ✅ No stock changes (552,312.3 kg unchanged)
+- ✅ No application logic changes (only 1 doc file added)
+- ✅ No business data changes
+- ✅ Vercel deployment unblocked (status READY)
+- ✅ Production API works correctly (businessType filter applied)
+- ✅ Production UI displays correctly (00008/00009 in คัดแยก, 00006 in แกะของ)
+
+### Why nutnun456@gmail.com Was Not Used
+GitHub blocked the push with error GH007 because `nutnun456@gmail.com` is configured as a private email on the owner's GitHub account. Used GitHub's official noreply email (`207142776+NUT2550@users.noreply.github.com`) instead, which:
+- Is GitHub-verified (owner's own commits already use it)
+- Will not be blocked by Vercel
+- Does not expose the owner's private email
+- Does not require changing GitHub email settings
+
+### Commits Pushed
+- `00a8874` — Task 70: trigger Vercel deploy with verified Git author
+- `3e7f2ba` — Task 70: report files (debug/task70-vercel-deploy-fix/)
+
+### Output Files
+- `debug/task70-vercel-deploy-fix/FINAL_REPORT.md`
+- `debug/task70-vercel-deploy-fix/SAFETY_CHECK.csv`
+
+**Vercel deployment unblocked with verified Git author.**
