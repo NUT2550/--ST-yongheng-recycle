@@ -364,7 +364,9 @@ function BillList({
             // Use duck-typing: StockTransfer has 'sourceTotalCost' field, SortingBill does not.
             const isStockTransfer = 'sourceTotalCost' in bill;
             if (isStockTransfer) {
-              return <TransferBillCard key={bill.id} bill={bill as StockTransfer} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+              // Render StockTransfer with sort-style (purple/RefreshCw) so it visually matches
+              // normal SortingBill records in the คัดแยก tab. See Task 71.
+              return <TransferBillCard key={bill.id} bill={bill as StockTransfer} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} displayMode="sort" />;
             }
             return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
           }
@@ -839,18 +841,29 @@ function SortBillCard({
 }
 
 /* ---- Transfer (แกะของ/ย้ายสต็อก) Bill Card ---- */
+// displayMode: 'transfer' (default, cyan/PackageOpen) | 'sort' (purple/RefreshCw, used when
+// a StockTransfer with businessType=คัดแยก is rendered in the คัดแยก tab — Task 71).
 function TransferBillCard({
   bill,
   isExpanded,
   toggleExpand,
   onRefresh,
+  displayMode = 'transfer',
 }: {
   bill: StockTransfer;
   isExpanded: boolean;
   toggleExpand: (id: string) => void;
   onRefresh: () => void;
+  displayMode?: 'transfer' | 'sort';
 }) {
   const cancelled = bill.isCancelled === true;
+  // Sort-style: purple + RefreshCw icon (matches SortBillCard). Transfer-style: cyan + PackageOpen.
+  const isSortStyle = displayMode === 'sort';
+  const Icon = isSortStyle ? RefreshCw : PackageOpen;
+  const iconColor = isSortStyle ? 'text-purple-600' : 'text-cyan-600';
+  const badgeClass = isSortStyle
+    ? 'bg-purple-100 text-purple-700 hover:bg-purple-100 text-[10px] px-1.5 py-0 shrink-0'
+    : 'bg-cyan-100 text-cyan-700 hover:bg-cyan-100 text-[10px] px-1.5 py-0 shrink-0';
   return (
     <Card className={cancelled ? 'border-red-200 bg-red-50/30' : ''}>
       <Collapsible open={isExpanded} onOpenChange={() => toggleExpand(bill.id)}>
@@ -860,12 +873,12 @@ function TransferBillCard({
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <PackageOpen className="h-4 w-4 text-cyan-600 shrink-0" />
+                    <Icon className={`h-4 w-4 ${iconColor} shrink-0`} />
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
                       {formatDate(bill.date)}
                     </span>
                     {bill.roomNumber && (
-                      <Badge variant="secondary" className="bg-cyan-100 text-cyan-700 hover:bg-cyan-100 text-[10px] px-1.5 py-0 shrink-0">
+                      <Badge variant="secondary" className={badgeClass}>
                         เลขห้อง {bill.roomNumber}
                       </Badge>
                     )}
