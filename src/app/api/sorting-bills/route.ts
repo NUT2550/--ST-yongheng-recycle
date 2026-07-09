@@ -310,7 +310,7 @@ export async function GET(request: NextRequest) {
             },
           },
         },
-        orderBy: { date: 'desc' },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         skip,
         take: limit,
       }),

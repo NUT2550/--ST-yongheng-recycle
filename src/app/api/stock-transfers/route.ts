@@ -377,7 +377,7 @@ export async function GET(request: NextRequest) {
           sourceProduct: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, name: true } } } },
         },
-        orderBy: { date: 'desc' },
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         skip,
         take: limit,
       }),

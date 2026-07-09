@@ -2330,3 +2330,105 @@ All in `reconciliation/physical-count-draft-2026-07-08/`:
 - `reconciliation/physical-count-draft-2026-07-08.mjs`
 
 **Physical count draft saved only. No stock quantities were adjusted.**
+
+---
+
+## Task ID: 67
+## Agent: Main
+## Task: Debug Missing 08/07/2569 Sorting Records in History Page
+
+### Root Cause
+**No UI/API bug exists.** All 3 records exist and display correctly — they are in the **แกะของ tab** (StockTransfer), not the **คัดแยก tab** (SortingBill). The owner was looking at the คัดแยก tab.
+
+### Record Search Results
+| Bill Number | Exists | Model | Type | ID | Date | Room | Source | Source Weight | Outputs | Cancelled |
+|---|---|---|---|---|---|---|---|---:|---:|---|
+| TRN-2569-00006 | ✅ YES | StockTransfer | แกะของ | cmrc3nnjh0001jy04yu8s3cat | 2026-07-08 | 24 | ของแกะราคาสูง | 2.1 kg | 2 | false |
+| TRN-2569-00008 | ✅ YES | StockTransfer | แกะของ | cmrd404o80001i8046f99gnjm | 2026-07-08 | 21 | เหล็กหนาสั้น | 62.6 kg | 12 | false |
+| TRN-2569-00009 | ✅ YES | StockTransfer | แกะของ | cmrd40ti70013i804ymlbxjur | 2026-07-08 | 22 | เครื่องจักร | 20.6 kg | 6 | false |
+
+**All 3 records are in `StockTransfer` (แกะของ), not `SortingBill` (คัดแยก).**
+
+### History Page Tab Architecture
+| Tab | Label | API Endpoint | DB Table |
+|---|---|---|---|
+| sort | คัดแยก | GET /api/sorting-bills | SortingBill only |
+| transfer | แกะของ | GET /api/stock-transfers | StockTransfer only |
+
+The คัดแยก tab queries `SortingBill` ONLY. The แกะของ tab queries `StockTransfer` ONLY. They are separate tables.
+
+### Why Records Don't Show in คัดแยก Tab
+- Latest SortingBill: SORT-2569-00152 dated 2026-07-07
+- This matches what owner reported: "Latest visible records show 07/07/2569, 06/07/2569, 04/07/2569, 02/07/2569"
+- **There are NO SortingBills for 08/07/2569** — the 08/07 records are all StockTransfers
+
+### Records DO Show in แกะของ Tab (Verified via Live API)
+All 3 target records appear on page 1 of แกะของ tab (6 total non-cancelled StockTransfers):
+1. TRN-2569-00010 | 2026-07-09 | room 28
+2. **TRN-2569-00009** | 2026-07-08 | room 22 ✅
+3. **TRN-2569-00008** | 2026-07-08 | room 21 ✅
+4. **TRN-2569-00006** | 2026-07-08 | room 24 ✅
+5. TRN-2569-00005 | 2026-07-08 | room 24
+6. TRN-2569-00002 | 2026-07-01 | room null
+
+### Origin of the Confusion
+Task 61 created TRN-2569-00008 and TRN-2569-00009 via `POST /api/stock-transfers` (StockTransfer = แกะของ), but the Task 61 worklog incorrectly labeled them as "คัดแยก". Evidence:
+- `reconciliation/create-records-1-2.mjs` line 267: `fetch('.../api/stock-transfers', { method: 'POST' })`
+- Bill number prefix "TRN-" = Transfer (SortingBills use "SORT-" prefix)
+
+### Fix Applied (Safe, Non-Breaking)
+Added secondary sort by `createdAt desc` to both History page APIs:
+- `src/app/api/sorting-bills/route.ts` line 313: `orderBy: [{ date: 'desc' }, { createdAt: 'desc' }]`
+- `src/app/api/stock-transfers/route.ts` line 380: `orderBy: [{ date: 'desc' }, { createdAt: 'desc' }]`
+
+**Why:** When multiple records share the same date (e.g., 4 records on 2026-07-08), the previous single-column sort produced non-deterministic ordering. The secondary sort makes display predictable (most recently created first within same date).
+
+**This change does NOT create/modify records, change stock, or move records between tables.**
+
+### What Was NOT Done
+- ❌ Did NOT recreate records
+- ❌ Did NOT move records from StockTransfer to SortingBill
+- ❌ Did NOT modify stock quantities
+- ❌ Did NOT create duplicate StockTransfers/SortingBills
+- ❌ Did NOT modify BuyBills/SellBills
+
+### Invariant Check — ALL PASS ✅
+| Metric | Value | Status |
+|---|---:|---|
+| SortingBill count | 144 | ✅ unchanged |
+| StockTransfer count | 10 | ✅ unchanged |
+| BuyBill count | 158 | ✅ unchanged |
+| SellBill count | 18 | ✅ unchanged |
+| Product count | 113 | ✅ unchanged |
+| StockLot count | 1,115 | ✅ unchanged |
+| Total stock weight | 552,312.3 kg | ✅ unchanged |
+| TRN-2569-00006 duplicates | 1 | ✅ no duplicate |
+| TRN-2569-00008 duplicates | 1 | ✅ no duplicate |
+| TRN-2569-00009 duplicates | 1 | ✅ no duplicate |
+
+### Recommendation for Owner
+The 3 records for 08/07/2569 are **not missing** — they are in the **แกะของ tab**, not the คัดแยก tab.
+
+| Bill Number | Tab where it appears | Tab where owner expected | Match? |
+|---|---|---|---|
+| TRN-2569-00006 | แกะของ ✅ | แกะของ | ✅ YES |
+| TRN-2569-00008 | แกะของ ✅ | คัดแยก | ❌ MISMATCH |
+| TRN-2569-00009 | แกะของ ✅ | คัดแยก | ❌ MISMATCH |
+
+If the owner wants TRN-2569-00008 and TRN-2569-00009 in the คัดแยก tab, they would need to be recreated as SortingBill records (separate task requiring stock reversal + re-application).
+
+**For now, the owner can see all 3 records by switching to the แกะของ tab.**
+
+### Output Files (4)
+All in `debug/history-missing-sorting-2026-07-08/`:
+1. `RECORD_SEARCH_RESULTS.csv` — details of all 3 records
+2. `HISTORY_TAB_SIMULATION.csv` — what each tab shows
+3. `INVARIANT_CHECK.csv` — all invariants PASS
+4. `FINAL_REPORT.md` — full 12-section report
+
+### Scripts
+- `reconciliation/debug-history-step1b-search.mjs` — DB search for 3 records
+- `reconciliation/debug-history-step2-simulate.mjs` — API query simulation
+- `reconciliation/debug-history-step3-report.mjs` — invariant check + report generation
+
+**History display checked. No duplicate sorting records were created.**
