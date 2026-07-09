@@ -1990,3 +1990,46 @@ The old parser only handled Format A. When owner uploaded Format B, the parser c
 - ✅ No negative stock
 - ✅ No BuyBills/SellBills modified
 - ✅ Record 3 not recreated
+
+---
+
+## Task ID: 62
+## Agent: Main
+## Task: Import Purchase Excel Files Round 1 — 2-4 July 2569
+
+### Summary
+- **Files parsed**: 3 (ซื้อ 2-7-2569, 3-7-2569, 4-7-2569 แบบละเอียด.xls)
+- **Bills found**: 105
+- **Bills imported**: 16 (all from 4-7-2569 file)
+- **Bills skipped**: 89 (79 duplicates + 4 unmatched + 6 DB errors from duplicate externalBillNumber during import)
+- **Stock lots created**: 16
+- **Stock weight change**: +12,199.4 kg (587,946.2 → 600,145.6 kg)
+
+### Files Detail
+| File | Format | Bills found | Imported | Duplicates | Unmatched |
+|---|---|---:|---:|---:|---:|
+| ซื้อ 2-7-2569 | B (per-product) | 13 | 0 | 13 | 0 |
+| ซื้อ 3-7-2569 | B (per-product) | 39 | 0 | 37 | 2 |
+| ซื้อ 4-7-2569 | B (per-product) | 53 | 16 | 29 | 4 |
+
+### Unmatched Products (2)
+1. **ทองแดงช็อต** (3 occurrences) — system has "ทองแดงปอกช็อต" not "ทองแดงช็อต"
+2. **แสตนเลส 304 (ยาว)** (2 occurrences) — system has "สแตนเลส 304 ยาว" (spelling + parentheses difference)
+
+### Import Method
+- Direct DB insert (bypass API to avoid pgbouncer transaction timeout)
+- Sequential `db.buyBill.create()` + `db.stockLot.create()` (pgbouncer-safe)
+- 3 bills failed with "Unique constraint failed on externalBillNumber" — these were same bill numbers appearing multiple times in the same file (Format B per-product layout repeats bill numbers for different products)
+
+### Owner Review Needed
+- **ทองแดงช็อต**: Should this map to "ทองแดงปอกช็อต"?
+- **แสตนเลส 304 (ยาว)**: Should this map to "สแตนเลส 304 ยาว"? (note: "แสตนเลส" vs "สแตนเลส" + "(ยาว)" vs "ยาว")
+- **Duplicate bill numbers in same file**: Format B repeats the same bill number for each product line — the parser should deduplicate these into single bills with multiple items
+
+### Output Files
+- `reconciliation/import-buy-round-1-2026-07-02-to-04/DRY_RUN_BUY_ROUND_1.csv`
+- `reconciliation/import-buy-round-1-2026-07-02-to-04/IMPORTED_BUY_BILLS_ROUND_1.csv`
+- `reconciliation/import-buy-round-1-2026-07-02-to-04/SKIPPED_BUY_BILLS_ROUND_1.csv`
+- `reconciliation/import-buy-round-1-2026-07-02-to-04/UNMATCHED_PRODUCTS_ROUND_1.csv`
+- `reconciliation/import-buy-round-1-2026-07-02-to-04/DUPLICATE_BILLS_ROUND_1.csv`
+- `reconciliation/import-buy-round-1-2026-07-02-to-04/FINAL_REPORT.md`
