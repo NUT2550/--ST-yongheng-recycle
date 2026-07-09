@@ -2065,3 +2065,84 @@ The old parser only handled Format A. When owner uploaded Format B, the parser c
 - ✅ No duplicate BuyBills created
 - ✅ No stock adjusted manually
 - ✅ pgbouncer-safe sequential DB operations
+
+---
+
+## Task ID: 64
+## Agent: Main
+## Task: Import Purchase Excel Files Round 2 — 6-8 July 2569 With Confirmed Aliases
+
+### Summary
+- **Files parsed**: 3 (ซื้อ 6-7-2569, 7-7-2569, 8-7-2569 แบบละเอียด.xls) — all Format B (per-product)
+- **Bills found**: 70 unique (after Format B grouping fix)
+- **Bills imported**: 70 (BUY-2569-00086 … BUY-2569-00155)
+- **Bills skipped**: 0 (no pre-existing duplicates, no unmatched products)
+- **Items imported**: 147
+- **Stock lots created**: 147 (one per BuyBillItem, source='BUY', FIFO preserved)
+- **Stock weight change**: +38,977.0 kg (600,181.9 → 639,158.9 kg)
+- **Total import amount**: 486,437.65 THB
+
+### Per-File Detail
+| File | Format | Bill-header rows | Unique bills (grouped) | Repeated bill numbers |
+|---|---|---:|---:|---:|
+| ซื้อ 6-7-2569 แบบละเอียด.xls | B (per-product) | 74 | 27 | 13 |
+| ซื้อ 7-7-2569 แบบละเอียด.xls | B (per-product) | 43 | 25 | 10 |
+| ซื้อ 8-7-2569 แบบละเอียด.xls | B (per-product) | 30 | 18 | 6 |
+
+### Aliases Used (import matching only — no new products created)
+| Alias | Target | Source |
+|---|---|---|
+| ทองแดงช็อต | ทองแดงปอกช็อต | Owner-confirmed (Round 1 cleanup) |
+| แสตนเลส 304 (ยาว) | สแตนเลส 304 ยาว | Owner-confirmed (Round 1 cleanup) |
+| แสตนเลส 202 | สแตนเลส 202 | Owner-confirmed (Round 2) — auto-normalized by แสตนเลส→สแตนเลส |
+| อลูมิเนียมแข็ง (หล่อ/หนา) | อลูมิเนียมแข็ง | Task 35 |
+| อลูมิเนียมฝาแกะ | ฝาอลูมิเนียม | Task 35 |
+| อลูมิเนียมกระป๋อง | กระป๋องอลูมิเนียม | Task 35 |
+| อลูมิเนียมตูดกะทะ | อลูมิเนียมตูดกะทะ | Task 35 |
+
+Auto spelling normalization: อลูมีเนียม→อลูมิเนียม, แสตนเลส→สแตนเลส
+
+### Format B Grouping Fix (carried over from Task 63)
+- 29 bill numbers appeared multiple times within the same file (under different product sections)
+- All grouped into single BuyBills with multiple BuyBillItems via Map-based parser
+- 0 DB duplicate errors (unique constraint on externalBillNumber)
+
+### Safety Checks
+| Metric | Before | After | Change | Status |
+|---|---:|---:|---:|---|
+| BuyBills | 88 | 158 | +70 | ✅ increased (expected) |
+| StockLots | 966 | 1113 | +147 | ✅ increased (expected) |
+| Total stock weight (kg) | 600,181.9 | 639,158.9 | +38,977.0 | ✅ increased (expected) |
+| SellBills | 9 | 9 | 0 | ✅ UNCHANGED |
+| Products | 113 | 113 | 0 | ✅ UNCHANGED |
+| SortingBills | 144 | 144 | 0 | ✅ UNCHANGED |
+
+### Confirmations
+- ✅ No SellBills modified (9 → 9)
+- ✅ No product master modified (113 → 113)
+- ✅ No manual sorting records recreated (144 → 144; TRN-2569-00006/00008/00009 preserved)
+- ✅ No duplicate BuyBills created
+- ✅ No stock adjusted manually
+- ✅ pgbouncer-safe sequential DB operations (no $transaction)
+- ✅ FIFO stock lot logic preserved
+- ✅ Owner review needed: NO
+
+### Import Method
+- Direct DB insert via Prisma Client (bypass API to avoid pgbouncer interactive transaction timeout)
+- Sequential `db.buyBill.create()` (nested items write) + sequential `db.stockLot.create()` per item
+- No `db.$transaction()` used
+
+### Output Files
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/DRY_RUN_BUY_ROUND_2.csv`
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/IMPORTED_BUY_BILLS_ROUND_2.csv`
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/SKIPPED_BUY_BILLS_ROUND_2.csv` (header only — 0 skipped)
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/UNMATCHED_PRODUCTS_ROUND_2.csv` (header only — 0 unmatched)
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/DUPLICATE_BILLS_ROUND_2.csv` (29 rows — all repeated-in-file groupings, no DB duplicates)
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/STOCK_BEFORE_AFTER_ROUND_2.csv`
+- `reconciliation/import-buy-round-2-2026-07-06-to-08/FINAL_REPORT.md`
+
+### Scripts
+- `reconciliation/import-buy-round-2.mjs` — main import script (parses + imports + reports)
+- `reconciliation/import-buy-round-2-rebuild-reports.mjs` — report reconstruction from DB (used after a duplicate re-run overwrote reports)
+
+**Purchase import round 2 completed. Only clean non-duplicate bills were imported.**
