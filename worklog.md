@@ -2260,3 +2260,73 @@ All in `reconciliation/import-sell-2026-07-02-to-08/`:
 - `reconciliation/inspect-sell-excel.mjs` — format inspection helper
 
 **Sales import completed. Only clean non-duplicate bills with sufficient stock were imported.**
+
+---
+
+## Task ID: 66
+## Agent: Main
+## Task: Save Copper/Brass Physical Count Draft for 08/07/2569
+
+### Summary
+- **Session ID**: `cmrdae0vh0000sgmjvb5aiu0n`
+- **Count date**: 08/07/2569 (2026-07-08 CE)
+- **Group**: ทองแดง/ทองเหลือง
+- **Status**: DRAFT (not applied)
+- **Items created**: 3
+- **Total difference weight**: -82.92 kg
+- **Total value difference**: -25,739.00 THB
+- **All safety checks**: PASS ✅
+
+### Products & Physical Counts
+| # | Product | Product ID | System (kg) | Physical (kg) | Diff (kg) | Avg Cost | Value Diff | Direction |
+|---|---|---|---:|---:|---:|---:|---:|---|
+| 1 | ทองแดงใหญ่ | prod_mqgp9arb37xlm6b54b0xa44v | 56.30 | 6.00 | -50.30 | 377.24 | -18,975.17 | ลดสต็อก |
+| 2 | ทองเหลืองหนา | prod_mqgp9bspglewfbgukggj7wdy | 39.00 | 6.34 | -32.66 | 207.11 | -6,764.21 | ลดสต็อก |
+| 3 | ทองเหลืองเนื้อแดง | prod_mqgp9bmg24ygg55yytz9jphl | 0.80 | 0.84 | +0.04 | 9.42 | +0.38 | เพิ่มสต็อก |
+| **TOTAL** | | | **96.10** | **13.18** | **-82.92** | | **-25,739.00** | |
+
+**Mapping applied**: Owner wrote "ทองเหลือง" → mapped to "ทองเหลืองหนา" (established mapping from Task 61).
+
+### System Stock Snapshot (as of 2026-07-08, after all prior tasks)
+- ทองแดงใหญ่: 56.30 kg across 74 lots, avg cost 377.24 THB/kg, value 21,238.57 THB
+- ทองเหลืองหนา: 39.00 kg across 19 lots, avg cost 207.11 THB/kg, value 8,077.40 THB
+- ทองเหลืองเนื้อแดง: 0.80 kg across 69 lots, avg cost 9.42 THB/kg, value 7.54 THB
+
+### Safety Checks
+| Metric | Before | After | Change | Expected | Status |
+|---|---:|---:|---:|---|---|
+| PhysicalCountSession | 2 | 3 | +1 | +1 | ✅ PASS |
+| PhysicalCountItem | 8 | 11 | +3 | +3 | ✅ PASS |
+| TotalStockWeight | 552,312.3 | 552,312.3 | 0 | unchanged | ✅ PASS |
+| StockLot | 1,115 | 1,115 | 0 | unchanged | ✅ PASS |
+| BuyBill | 158 | 158 | 0 | unchanged | ✅ PASS |
+| SellBill | 18 | 18 | 0 | unchanged | ✅ PASS |
+| SortingBill | 144 | 144 | 0 | unchanged | ✅ PASS |
+| Product | 113 | 113 | 0 | unchanged | ✅ PASS |
+
+### Confirmations
+- ✅ No stock quantities changed (552,312.3 → 552,312.3 kg)
+- ✅ No StockLots created (1,115 → 1,115)
+- ✅ No BuyBills modified (158 → 158)
+- ✅ No SellBills modified (18 → 18)
+- ✅ No SortingBills modified (144 → 144)
+- ✅ No adjustment applied (status=DRAFT)
+
+### Method
+- Direct DB insert via Prisma Client (pgbouncer-safe sequential ops, no `$transaction`)
+- Single `db.physicalCountSession.create()` with nested `items.create[]` (one round-trip)
+- Status set to DRAFT — no apply step executed
+- No StockLot rows touched
+- Average cost computed from live StockLot data at draft-creation time (snapshot stored on each item)
+
+### Output Files (4)
+All in `reconciliation/physical-count-draft-2026-07-08/`:
+1. `PHYSICAL_COUNT_DRAFT_PREVIEW.csv` (3 items + TOTAL row)
+2. `PHYSICAL_COUNT_DRAFT_CREATED.csv` (3 items with session_id, item_id, all fields)
+3. `STOCK_SAFETY_CHECK.csv` (8 metrics, all PASS)
+4. `FINAL_REPORT.md` (all 12 required sections)
+
+### Script
+- `reconciliation/physical-count-draft-2026-07-08.mjs`
+
+**Physical count draft saved only. No stock quantities were adjusted.**
