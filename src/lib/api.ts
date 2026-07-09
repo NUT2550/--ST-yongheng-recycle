@@ -131,12 +131,14 @@ export async function fetchSortingBills(
 export async function fetchStockTransfers(
   page?: number,
   limit?: number,
-  includeCancelled?: boolean
+  includeCancelled?: boolean,
+  businessType?: 'คัดแยก' | 'แกะของ' | 'ALL'
 ): Promise<{ bills: StockTransfer[]; total: number }> {
   const params = new URLSearchParams();
   if (page) params.set('page', String(page));
   if (limit) params.set('limit', String(limit));
   if (includeCancelled) params.set('includeCancelled', 'true');
+  if (businessType) params.set('businessType', businessType);
   const query = params.toString() ? `?${params.toString()}` : '';
   return fetchJSON<{ bills: StockTransfer[]; total: number }>(
     `/stock-transfers${query}`

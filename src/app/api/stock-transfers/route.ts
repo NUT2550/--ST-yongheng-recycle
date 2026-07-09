@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
       weighedTotalExpression,
       note,
       items,
+      businessType,
     } = body as {
       date: string;
       sourceProductId: string;
@@ -86,6 +87,7 @@ export async function POST(request: NextRequest) {
       weighedTotal?: number;
       weighedTotalExpression?: string;
       note?: string;
+      businessType?: string; // คัดแยก | แกะของ | undefined (default = แกะของ)
       items: Array<{
         productId: string;
         weight: number;
@@ -230,6 +232,7 @@ export async function POST(request: NextRequest) {
         billNumber,
         date: new Date(date),
         roomNumber: roomNumber?.trim() || null,
+        businessType: businessType?.trim() || null,
         sourceProductId,
         sourceWeight,
         sourceWeightExpression: isRealFormula(sourceWeightExpression)
@@ -368,7 +371,26 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
     // By default hide cancelled bills. Pass ?includeCancelled=true to include them.
     const includeCancelled = searchParams.get('includeCancelled') === 'true';
-    const where = includeCancelled ? {} : { isCancelled: false };
+    // Optional businessType filter:
+    //   ?businessType=คัดแยก   → only StockTransfers classified as คัดแยก
+    //   ?businessType=แกะของ   → StockTransfers classified as แกะของ OR null (default business type)
+    //   ?businessType=ALL      → no filter (all StockTransfers, default behavior)
+    const businessTypeFilter = searchParams.get('businessType');
+
+    const where: any = includeCancelled ? {} : { isCancelled: false };
+    if (businessTypeFilter && businessTypeFilter !== 'ALL') {
+      if (businessTypeFilter === 'แกะของ') {
+        // แกะของ tab: show StockTransfers where businessType is null/empty OR explicitly 'แกะของ'
+        where.OR = [
+          { businessType: null },
+          { businessType: '' },
+          { businessType: 'แกะของ' },
+        ];
+      } else {
+        // คัดแยก tab: show StockTransfers where businessType === 'คัดแยก'
+        where.businessType = businessTypeFilter;
+      }
+    }
 
     const [bills, total] = await Promise.all([
       db.stockTransfer.findMany({

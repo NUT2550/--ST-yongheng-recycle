@@ -1,0 +1,5 @@
+﻿tab,source_table,filter,total_count,records
+คัดแยก,SortingBill,all non-cancelled,135,SORT-2569-00152(2026-07-07) | SORT-2569-00151(2026-07-06) | SORT-2569-00150(2026-07-06) | SORT-2569-00149(2026-07-04) | SORT-2569-00147(2026-07-02)
+คัดแยก,StockTransfer,businessType=คัดแยก,2,TRN-2569-00009(2026-07-08) | TRN-2569-00008(2026-07-08)
+คัดแยก,MERGED TOTAL,SortingBill + StockTransfer(คัดแยก),137,
+แกะของ,StockTransfer,businessType IS NULL OR empty OR แกะของ,4,TRN-2569-00010(2026-07-09) | TRN-2569-00006(2026-07-08) | TRN-2569-00005(2026-07-08) | TRN-2569-00002(2026-07-01)

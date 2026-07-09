@@ -159,6 +159,7 @@ model StockTransfer {
   billNumber             String?              @unique
   date                   DateTime             @default(now())
   roomNumber             String?              // เลขห้อง (dedicated field; do not use note for room)
+  businessType           String?              // คัดแยก | แกะของ | null — business classification for History tab display (null/empty = แกะของ default)
   // Source (consumed via FIFO)
   sourceProductId        String
   sourceProduct          Product              @relation("TransferSource", fields: [sourceProductId], references: [id])

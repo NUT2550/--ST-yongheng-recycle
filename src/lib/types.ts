@@ -160,6 +160,7 @@ export interface StockTransfer {
   sourceTotalCost: number;
   // Profitability analysis
   roomNumber: string | null;
+  businessType: string | null; // คัดแยก | แกะของ | null — business classification for History tab display
   sourcePricePerKg: number;
   laborCost: number;
   outputTotalValue: number;

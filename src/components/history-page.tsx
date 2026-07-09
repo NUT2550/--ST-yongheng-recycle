@@ -75,10 +75,10 @@ export function HistoryPage() {
   // Sell
   const [sellBills, setSellBills] = useState<SellBill[]>([]);
   const [sellTotal, setSellTotal] = useState(0);
-  // Sort
-  const [sortBills, setSortBills] = useState<SortingBill[]>([]);
+  // Sort (SortingBills + StockTransfers classified as คัดแยก, merged)
+  const [sortBills, setSortBills] = useState<SortingBill[] | StockTransfer[]>([]);
   const [sortTotal, setSortTotal] = useState(0);
-  // Transfer
+  // Transfer (StockTransfers where businessType is แกะของ or null/empty)
   const [transferBills, setTransferBills] = useState<StockTransfer[]>([]);
   const [transferTotal, setTransferTotal] = useState(0);
 
@@ -125,9 +125,30 @@ export function HistoryPage() {
   const loadSortBills = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchSortingBills(page, PAGE_SIZE, showCancelled);
-      setSortBills(res.bills);
-      setSortTotal(res.total);
+      // คัดแยก tab shows: real SortingBills + StockTransfers classified as businessType=คัดแยก
+      // Fetch both in parallel, then merge by date desc.
+      // Note: pagination is applied per-source; for simplicity we fetch PAGE_SIZE from each
+      // and merge the top PAGE_SIZE. This is acceptable because the number of StockTransfers
+      // classified as คัดแยก is small (currently 2).
+      const [sortRes, transferSortRes] = await Promise.all([
+        fetchSortingBills(page, PAGE_SIZE, showCancelled),
+        fetchStockTransfers(1, PAGE_SIZE, showCancelled, 'คัดแยก'),
+      ]);
+      // Merge: interleave by date desc, take top PAGE_SIZE
+      const merged: Array<SortingBill | StockTransfer> = [
+        ...sortRes.bills,
+        ...transferSortRes.bills,
+      ].sort((a, b) => {
+        const da = new Date(a.date).getTime();
+        const db = new Date(b.date).getTime();
+        if (db !== da) return db - da;
+        // secondary: createdAt desc (both interfaces have createdAt)
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      });
+      const topMerged = merged.slice(0, PAGE_SIZE);
+      setSortBills(topMerged);
+      // Total = SortingBills total + StockTransfers(คัดแยก) total
+      setSortTotal(sortRes.total + transferSortRes.total);
     } catch {
       // handle
     } finally {
@@ -138,7 +159,9 @@ export function HistoryPage() {
   const loadTransferBills = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetchStockTransfers(page, PAGE_SIZE, showCancelled);
+      // แกะของ tab shows: StockTransfers where businessType is แกะของ or null/empty
+      // (excludes StockTransfers classified as คัดแยก)
+      const res = await fetchStockTransfers(page, PAGE_SIZE, showCancelled, 'แกะของ');
       setTransferBills(res.bills);
       setTransferTotal(res.total);
     } catch {
@@ -334,7 +357,17 @@ function BillList({
           const isExpanded = expandedIds.has(bill.id);
           if (type === 'buy') return <BuyBillCard key={bill.id} bill={bill as BuyBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
           if (type === 'sell') return <SellBillCard key={bill.id} bill={bill as SellBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
-          if (type === 'sort') return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+          if (type === 'sort') {
+            // Merged list: SortingBills + StockTransfers(businessType=คัดแยก).
+            // Detect type by presence of SortingBill-only fields (sourcePricePerKg exists on both,
+            // but SortingBill has no sourceCostPerKg/sourceTotalCost/laborCost fields).
+            // Use duck-typing: StockTransfer has 'sourceTotalCost' field, SortingBill does not.
+            const isStockTransfer = 'sourceTotalCost' in bill;
+            if (isStockTransfer) {
+              return <TransferBillCard key={bill.id} bill={bill as StockTransfer} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+            }
+            return <SortBillCard key={bill.id} bill={bill as SortingBill} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
+          }
           return <TransferBillCard key={bill.id} bill={bill as StockTransfer} isExpanded={isExpanded} toggleExpand={toggleExpand} onRefresh={onRefresh} />;
         })}
       </div>
