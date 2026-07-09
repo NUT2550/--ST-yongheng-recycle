@@ -1,0 +1,6 @@
+﻿bill_number,id,businessType,expected_businessType,date,room,source_product_id,source_weight,isCancelled,db_status
+TRN-2569-00006,cmrc3nnjh0001jy04yu8s3cat,แกะของ,แกะของ,2026-07-08,24,cmr09vcvk002kl105d8sl5yr8,2.1,false,✅ MATCH
+TRN-2569-00008,cmrd404o80001i8046f99gnjm,คัดแยก,คัดแยก,2026-07-08,21,prod_mqgp98443nt9tbljuk6uaxpy,62.6,false,✅ MATCH
+TRN-2569-00009,cmrd40ti70013i804ymlbxjur,คัดแยก,คัดแยก,2026-07-08,22,cmqoxnq2t0001qjext8shxga1,20.6,false,✅ MATCH
+,,,,,,,,,
+SUMMARY,,,,,,,,,All 3 records have correct businessType in production DB ✅
