@@ -2146,3 +2146,117 @@ Auto spelling normalization: อลูมีเนียม→อลูมิเ
 - `reconciliation/import-buy-round-2-rebuild-reports.mjs` — report reconstruction from DB (used after a duplicate re-run overwrote reports)
 
 **Purchase import round 2 completed. Only clean non-duplicate bills were imported.**
+
+---
+
+## Task ID: 65
+## Agent: Main
+## Task: Import Sales Excel ZIP — 2-8 July 2569
+
+### Summary
+- **ZIP extracted**: YES ✅ (`ขาย 2-8 7-2569 แบบละเอียด.zip` → 5 sales .xls files)
+- **Sales files processed**: 5 (ขาย 2/4/6/7/8-7-2569 แบบละเอียด.xls)
+- **Ignored files**: 0 (all extracted files start with "ขาย")
+- **Bills found**: 12 unique (after Format B grouping fix)
+- **Bills imported**: 9 (SELL-2569-00003 … SELL-2569-00011)
+- **Bills skipped**: 3 (all insufficient stock — copper/brass/cast-iron products with low current stock)
+- **Total weight sold**: 86,846.5 kg
+- **Total revenue**: 911,891.60 THB
+- **Total FIFO cost**: 444,091.52 THB
+- **Stock weight change**: -86,846.5 kg (639,158.8 → 552,312.3 kg)
+
+### Schema Change (Required for Duplicate Detection)
+- **Added `externalBillNumber String? @unique` to `SellBill` model** (prisma/schema.prisma)
+- Previously `SellBill` had no external bill number field (unlike `BuyBill` which had it since Task 35)
+- Applied to Supabase DB via direct SQL (pgbouncer can't run `prisma db push` DDL):
+  - `ALTER TABLE "SellBill" ADD COLUMN "externalBillNumber" TEXT`
+  - `ALTER TABLE "SellBill" ADD CONSTRAINT "SellBill_externalBillNumber_key" UNIQUE ("externalBillNumber")`
+- Prisma client regenerated
+- Schema-only change — no app UI changes, backward compatible (nullable column)
+- Script: `reconciliation/add-sell-external-bill-number.mjs`
+
+### Per-File Detail
+| File | Transaction rows | Unique bills (grouped) | Repeated bill numbers |
+|---|---:|---:|---:|
+| ขาย 2-7-2569 แบบละเอียด.xls | 1 | 1 | 0 |
+| ขาย 4-7-2569 แบบละเอียด.xls | 11 | 3 | 2 |
+| ขาย 6-7-2569 แบบละเอียด.xls | 3 | 3 | 0 |
+| ขาย 7-7-2569 แบบละเอียด.xls | 4 | 4 | 0 |
+| ขาย 8-7-2569 แบบละเอียด.xls | 1 | 1 | 0 |
+
+### Imported Bills (9)
+| Bill no | File | Date | Buyer | Items | Weight (kg) | Revenue | FIFO Cost |
+|---|---|---|---|---:|---:|---:|---:|
+| A2007623 | ขาย 4-7-2569 | 4/7/2569 | ลูกค้าทั่วไป | 1 | 0.8 | 20 | 7.54 |
+| A2007620 | ขาย 2-7-2569 | 2/7/2569 | เหล็กสยามยามาโตะ | 1 | 28,795 | 291,102 | 254,966.13 |
+| A2007624 | ขาย 6-7-2569 | 6/7/2569 | ลูกค้าทั่วไป | 1 | 6 | 132 | 0 |
+| A2007626 | ขาย 6-7-2569 | 6/7/2569 | ลูกค้าทั่วไป | 1 | 1.5 | 30 | 0 |
+| A2007627 | ขาย 7-7-2569 | 7/7/2569 | ลูกค้าทั่วไป | 1 | 280 | 2,049.6 | 1,696.80 |
+| A2007628 | ขาย 7-7-2569 | 7/7/2569 | ลูกค้าทั่วไป | 1 | 42 | 924 | 380.10 |
+| A2007629 | ขาย 7-7-2569 | 7/7/2569 | ลูกค้าทั่วไป | 1 | 1.2 | 30 | 10.62 |
+| A2007630 | ขาย 7-7-2569 | 7/7/2569 | ซิงเคอหยวน | 1 | 28,830 | 308,481 | 0 |
+| A2007631 | ขาย 8-7-2569 | 8/7/2569 | ซิงเคอหยวน | 1 | 28,890 | 309,123 | 187,030.33 |
+
+### Skipped Bills (3 — all insufficient stock, whole bill skipped, no partial import)
+| Bill no | File | Reason |
+|---|---|---|
+| A2007621 | ขาย 4-7-2569 | 5 items insufficient: ทองแดงใหญ่(208>56.3), ทองแดงเล็ก(98.2>17.7), หม้อน้ำทองแดง(347.2>1.2), ทองแดงท่อ Candy(22.6>0), ทองเหลืองเนื้อแดง(82>0.8) |
+| A2007622 | ขาย 4-7-2569 | 3 items insufficient: ทองแดงชุบ(4.2>2.3), ทองเหลืองหนา(280.6>39), หม้อน้ำทองเหลือง(86.4>0) |
+| A2007625 | ขาย 6-7-2569 | 1 item insufficient: เหล็กหล่อเล็ก(12235>1354) |
+
+### Aliases Used (matching only — no new products created)
+Same as purchase Round 2: ทองแดงช็อต→ทองแดงปอกช็อต, แสตนเลส 304 (ยาว)→สแตนเลส 304 ยาว, แสตนเลส 202→สแตนเลส 202, plus 4 aluminum aliases. Auto-normalization: อลูมีเนียม→อลูมิเนียม, แสตนเลส→สแตนเลส.
+
+### Format B Grouping Fix (carried over from purchase Task 63)
+- 2 bill numbers appeared multiple times within ขาย 4-7-2569 (A2007621: 6 items across 6 product sections; A2007622: 4 items across 4 product sections)
+- All grouped into single SellBills with multiple SellBillItems via Map-based parser
+- 0 DB duplicate errors
+
+### FIFO Stock Deduction
+- StockLots ordered by `dateAdded ASC` (oldest first)
+- Each lot's `remainingWeight` decreased by `min(remaining, needed)`
+- Sequential `db.stockLot.update()` per lot (pgbouncer-safe, no `$transaction`)
+- Pre-validation: fresh stock re-check per item BEFORE any deduction → skip whole bill on any insufficient item (no partial import)
+- `costPerKg` = weighted average = `Σ(deducted_k × lot_k.costPerKg) / weight`
+- `totalCost` = `Σ(deducted_k × lot_k.costPerKg)`
+- AuditLog written per imported bill (action=CREATE, entityType=SELL_BILL)
+
+### Safety Checks
+| Metric | Before | After | Change | Status |
+|---|---:|---:|---:|---|
+| SellBills | 9 | 18 | +9 | ✅ increased (expected) |
+| BuyBills | 158 | 158 | 0 | ✅ UNCHANGED |
+| StockLots | 1,115 | 1,115 | 0 | ✅ unchanged (FIFO only updates remainingWeight) |
+| Total stock weight (kg) | 639,158.8 | 552,312.3 | -86,846.5 | ✅ decreased (expected) |
+| Products | 113 | 113 | 0 | ✅ UNCHANGED |
+| SortingBills | 144 | 144 | 0 | ✅ UNCHANGED |
+| Negative stock lots | - | 0 | - | ✅ NO NEGATIVE STOCK |
+
+### Confirmations
+- ✅ No BuyBills modified (158 → 158)
+- ✅ No product master modified (113 → 113)
+- ✅ No manual sorting records recreated (144 → 144; TRN-2569-00006/00008/00009 preserved)
+- ✅ No negative stock allowed (0 negative lots)
+- ✅ FIFO was used (oldest StockLot.dateAdded first)
+- ✅ pgbouncer-safe sequential DB operations (no `$transaction`)
+- ✅ No partial bill imports (whole bill skipped on any insufficient item)
+- ⚠️  Owner review needed: YES — 9 insufficient stock items across 3 skipped bills (copper/brass/cast-iron products with low current stock; likely need earlier purchase imports to replenish)
+
+### Output Files (9)
+All in `reconciliation/import-sell-2026-07-02-to-08/`:
+1. `EXTRACTED_FILES.csv`
+2. `DRY_RUN_SELL_2026_07_02_TO_08.csv`
+3. `IMPORTED_SELL_BILLS.csv`
+4. `SKIPPED_SELL_BILLS.csv`
+5. `UNMATCHED_PRODUCTS_SELL.csv` (header only — 0 unmatched)
+6. `DUPLICATE_SELL_BILLS.csv` (2 rows — repeated-in-file groupings, no DB duplicates)
+7. `INSUFFICIENT_STOCK_SELL.csv` (9 rows across 3 bills)
+8. `STOCK_BEFORE_AFTER_SELL.csv`
+9. `FINAL_REPORT.md` (all 15 required sections)
+
+### Scripts
+- `reconciliation/import-sell-round.mjs` — main sales import script (parse + dry-run + import + FIFO + reports)
+- `reconciliation/add-sell-external-bill-number.mjs` — adds externalBillNumber column to SellBill via direct SQL
+- `reconciliation/inspect-sell-excel.mjs` — format inspection helper
+
+**Sales import completed. Only clean non-duplicate bills with sufficient stock were imported.**

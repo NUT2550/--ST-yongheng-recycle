@@ -78,22 +78,23 @@ model BuyBillItem {
 }
 
 model SellBill {
-  id            String         @id @default(cuid())
-  billNumber    String?        @unique
-  date          DateTime       @default(now())
-  customerId    String?
-  customer      Customer?      @relation(fields: [customerId], references: [id])
-  isCredit      Boolean        @default(false)
-  note          String?
-  items         SellBillItem[]
-  totalAmount   Float          @default(0)
-  totalCost     Float          @default(0)
-  isCancelled   Boolean        @default(false)
-  cancelledAt   DateTime?
-  cancelledBy   String?
-  cancelReason  String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                 String         @id @default(cuid())
+  billNumber         String?        @unique
+  externalBillNumber String?        @unique // เลขบิลจากระบบเดิม (Excel import) — used for duplicate detection
+  date               DateTime       @default(now())
+  customerId         String?
+  customer           Customer?      @relation(fields: [customerId], references: [id])
+  isCredit           Boolean        @default(false)
+  note               String?
+  items              SellBillItem[]
+  totalAmount        Float          @default(0)
+  totalCost          Float          @default(0)
+  isCancelled        Boolean        @default(false)
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancelReason       String?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 }
 
 model SellBillItem {
