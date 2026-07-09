@@ -5,6 +5,7 @@ import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
 import { isRealFormula } from '@/lib/safe-math';
 
+// Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
 // Helper: Deduct stock using FIFO and return weighted average cost.
 // Uses sequential db queries (NOT interactive transaction) for pgbouncer compatibility.
 async function deductStockFIFO(
