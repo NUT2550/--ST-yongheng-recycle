@@ -2432,3 +2432,89 @@ All in `debug/history-missing-sorting-2026-07-08/`:
 - `reconciliation/debug-history-step3-report.mjs` — invariant check + report generation
 
 **History display checked. No duplicate sorting records were created.**
+
+---
+
+## Task ID: 68
+## Agent: Main
+## Task: Fix Business Classification for 08/07/2569 Sorting Records Without Changing Stock
+
+### Root Cause
+In Task 61, records TRN-2569-00008 and TRN-2569-00009 were created via `POST /api/stock-transfers` (StockTransfer table = แกะของ), but by business meaning they are คัดแยก records. The History page's คัดแยก tab queries `SortingBill` only, so these StockTransfer records appeared in the แกะของ tab instead.
+
+### Solution: Added `businessType` field to StockTransfer
+Added nullable `businessType String?` field to `StockTransfer` model (schema + DB). Field semantics:
+- `null` or `''` → default แกะของ (shows in แกะของ tab)
+- `'แกะของ'` → explicitly แกะของ (shows in แกะของ tab)
+- `'คัดแยก'` → business classification คัดแยก (shows in คัดแยก tab)
+
+### Records Updated (3)
+| Bill Number | businessType Before | businessType After | Effect |
+|---|---|---|---|
+| TRN-2569-00006 | null | แกะของ | Stays in แกะของ tab |
+| TRN-2569-00008 | null | คัดแยก | Moves to คัดแยก tab display |
+| TRN-2569-00009 | null | คัดแยก | Moves to คัดแยก tab display |
+
+Method: Sequential `db.stockTransfer.updateMany()` (pgbouncer-safe, no `$transaction`). No stock movement, no FIFO reversal, no record recreation.
+
+### Display Logic After Fix
+- **คัดแยก tab**: merges SortingBills (all non-cancelled) + StockTransfers(businessType=คัดแยก), sorted by date DESC, createdAt DESC. Total = 135 + 2 = 137.
+- **แกะของ tab**: StockTransfers where businessType IS NULL OR '' OR 'แกะของ'. Excludes 'คัดแยก'. Total = 4.
+
+### Live API Verification (PASSED)
+- คัดแยก tab (StockTransfers businessType=คัดแยก): found TRN-2569-00008, TRN-2569-00009 ✅
+- แกะของ tab (businessType=แกะของ or null): found TRN-2569-00006 ✅, excluded 00008/00009 ✅
+- No double-counting across tabs ✅
+- SortingBills unchanged (latest: SORT-2569-00152 on 07/07/2569) ✅
+
+### Files Changed (5)
+| File | Change |
+|---|---|
+| prisma/schema.prisma | Added `businessType String?` to StockTransfer model |
+| src/lib/types.ts | Added `businessType: string \| null` to StockTransfer interface |
+| src/lib/api.ts | Added `businessType` param to `fetchStockTransfers()` |
+| src/app/api/stock-transfers/route.ts | GET: businessType query filter; POST: accept businessType in body |
+| src/components/history-page.tsx | loadSortBills merges SortingBills + StockTransfers(คัดแยก); loadTransferBills filters businessType=แกะของ; BillList duck-types merged sort tab |
+
+### Safety Check — ALL PASS ✅
+| Metric | Value | Expected | Status |
+|---|---:|---|---|
+| Total stock weight | 552,312.3 kg | unchanged | ✅ PASS |
+| StockLot count | 1,115 | unchanged | ✅ PASS |
+| StockTransfer count | 10 | unchanged (only businessType updated) | ✅ PASS |
+| SortingBill count | 144 | unchanged | ✅ PASS |
+| BuyBill count | 158 | unchanged | ✅ PASS |
+| SellBill count | 18 | unchanged | ✅ PASS |
+| Product count | 113 | unchanged | ✅ PASS |
+| Duplicates (all 3) | 1 each | no duplicates | ✅ PASS |
+
+### Confirmations
+- ✅ No stock changed (552,312.3 kg before = after)
+- ✅ No duplicate records created (each target appears exactly once)
+- ✅ No records recreated (only businessType field updated on existing rows)
+- ✅ No BuyBills/SellBills modified
+- ✅ No StockLots created/modified/deleted
+- ✅ No SortingBills created/modified
+- ✅ No products changed
+- ✅ No FIFO reversal
+
+### Deployment
+- ✅ Schema applied to Supabase DB (column `StockTransfer.businessType` added via direct SQL)
+- ✅ Prisma client regenerated
+- ✅ Code changes complete, ESLint passes
+- ✅ Live API verification passed
+- ✅ Pushed to GitHub: `c5bdfd1..303bbf6 main -> main`
+
+### Output Files (5)
+All in `debug/fix-sorting-dismantle-classification-2026-07-08/`:
+1. `BEFORE_RECORD_CLASSIFICATION.csv`
+2. `CLASSIFICATION_FIX_APPLIED.csv`
+3. `HISTORY_DISPLAY_AFTER_FIX.csv`
+4. `SAFETY_CHECK.csv`
+5. `FINAL_REPORT.md`
+
+### Scripts
+- `reconciliation/fix-classification-step1-schema.mjs` — add column + set classification
+- `reconciliation/fix-classification-step2-report.mjs` — report generation + safety check
+
+**Business classification fixed. Stock quantities were not changed.**
