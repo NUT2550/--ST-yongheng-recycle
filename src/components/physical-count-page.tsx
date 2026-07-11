@@ -16,7 +16,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Scale, Loader2, Save, Eye, Lock, History, RefreshCw } from 'lucide-react';
+import { Scale, Loader2, Save, Eye, Lock, History, RefreshCw, CheckCircle2 } from 'lucide-react';
 import { getAuthToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatWeight, formatBaht } from '@/lib/helpers';
@@ -68,6 +68,21 @@ export default function PhysicalCountPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [detailSession, setDetailSession] = useState<Session | null>(null);
+  const [applying, setApplying] = useState(false);
+  // ST-9: Confirm-preview dialog state (2-step confirmation before Apply)
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmItems, setConfirmItems] = useState<Array<{
+    productId: string;
+    productName: string;
+    currentStock: number;
+    physical: number;
+    difference: number;
+    avgCost: number;
+    valueDiff: number;
+    afterWeight: number;
+  }>>([]);
+  const [confirmNote, setConfirmNote] = useState('');
+  const [confirmSessionId, setConfirmSessionId] = useState('');
 
   const token = getAuthToken();
 
@@ -113,6 +128,93 @@ export default function PhysicalCountPage() {
         setSessions(data.sessions || []);
       }
     } catch { /* non-fatal */ }
+  }
+
+  // ST-9: Apply a DRAFT physical count session — adjusts stock to match physical count.
+  async function handleApply(sessionId: string, applyNote: string) {
+    setApplying(true);
+    try {
+      const res = await fetch(`/api/physical-counts/${sessionId}/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ note: applyNote || undefined }),
+      });
+      const data = await res.json().catch(() => ({ error: 'Apply ไม่สำเร็จ' }));
+      if (res.ok) {
+        toast.success(`Apply สำเร็จ — ${data.adjustmentsApplied || 0} รายการปรับสต็อก`);
+        setDetailSession(null);
+        setConfirmOpen(false);
+        loadHistory();
+      } else {
+        toast.error(data.error || 'Apply ไม่สำเร็จ');
+      }
+    } catch {
+      toast.error('Apply ไม่สำเร็จ — ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์');
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  // ST-9: Step 1 of 2-step confirmation — fetch live stock + open confirm dialog.
+  // Re-reads CURRENT stock (not the draft snapshot) so the preview is accurate at apply time.
+  async function handleConfirmApply(session: Session) {
+    try {
+      // Fetch current stock for all products in the session
+      const previewItems: Array<{
+        productId: string;
+        productName: string;
+        currentStock: number;
+        physical: number;
+        difference: number;
+        avgCost: number;
+        valueDiff: number;
+        afterWeight: number;
+      }> = [];
+      for (const item of session.items) {
+        // Use the products endpoint to get current stock for this product's category
+        // (or we could add a dedicated endpoint — for now, use the existing stock API)
+        const stockRes = await fetch('/api/stock', {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!stockRes.ok) {
+          toast.error('ไม่สามารถโหลดสต็อกปัจจุบันได้');
+          return;
+        }
+        const stockData = await stockRes.json();
+        // Find this product across all categories
+        let currentStock = 0;
+        let avgCost = item.averageCost;
+        for (const cat of stockData) {
+          const prod = cat.products?.find((p: { id: string }) => p.id === item.productId);
+          if (prod) {
+            currentStock = prod.totalWeight || 0;
+            avgCost = prod.avgCostPerKg || item.averageCost;
+            break;
+          }
+        }
+        const difference = Math.round((item.physicalWeight - currentStock) * 100) / 100;
+        const afterWeight = Math.round((currentStock + difference) * 100) / 100;
+        const valueDiff = Math.round(difference * avgCost * 100) / 100;
+        if (difference !== 0) {
+          previewItems.push({
+            productId: item.productId,
+            productName: item.product.name,
+            currentStock,
+            physical: item.physicalWeight,
+            difference,
+            avgCost,
+            valueDiff,
+            afterWeight,
+          });
+        }
+      }
+      setConfirmItems(previewItems);
+      setConfirmSessionId(session.id);
+      setConfirmNote('');
+      setConfirmOpen(true);
+    } catch {
+      toast.error('ไม่สามารถเตรียมข้อมูล Preview ได้');
+    }
   }
 
   useEffect(() => { loadHistory(); }, []);
@@ -328,10 +430,10 @@ export default function PhysicalCountPage() {
             <Eye className="h-4 w-4 mr-1" />
             Preview Adjustment ({previewItems.length})
           </Button>
-          <Button disabled className="bg-gray-300 text-gray-500 cursor-not-allowed">
-            <Lock className="h-4 w-4 mr-1" />
-            ยังไม่เปิดใช้ — ต้องยืนยัน owner ก่อน
-          </Button>
+          <span className="text-xs text-gray-400 flex items-center gap-1">
+            <Lock className="h-3 w-3" />
+            บันทึกก่อน แล้ว Apply ได้จากประวัติด้านล่าง
+          </span>
         </div>
       )}
 
@@ -467,8 +569,82 @@ export default function PhysicalCountPage() {
               </TableBody>
             </Table>
           )}
-          <DialogFooter>
+          <DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            {detailSession?.status === 'DRAFT' && (
+              <Button
+                onClick={() => detailSession && handleConfirmApply(detailSession)}
+                disabled={applying}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                {applying ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+                ดู Preview และ Apply
+              </Button>
+            )}
             <DialogClose asChild><Button variant="outline">ปิด</Button></DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ST-9: Confirm-preview dialog (2-step confirmation before Apply) */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">⚠️ ยืนยันการ Apply — จะปรับสต็อกจริง</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">
+              ตรวจสอบรายการด้านล่างให้ถูกต้อง ก่อนกด "ยืนยัน Apply" — ระบบจะสร้าง STOCK_ADJUSTMENT และเปลี่ยนสถานะเป็น APPLIED ทันที
+            </p>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>สินค้า</TableHead>
+                  <TableHead className="text-right">สต็อกในระบบ</TableHead>
+                  <TableHead className="text-right">ชั่งจริง</TableHead>
+                  <TableHead className="text-right">ส่วนต่าง</TableHead>
+                  <TableHead className="text-right">ต้นทุน/กก.</TableHead>
+                  <TableHead className="text-right">มูลค่าส่วนต่าง</TableHead>
+                  <TableHead className="text-right">ยอดหลัง Apply</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {confirmItems.map((item) => (
+                  <TableRow key={item.productId}>
+                    <TableCell className="text-sm font-medium">{item.productName}</TableCell>
+                    <TableCell className="text-right text-sm">{formatWeight(item.currentStock)}</TableCell>
+                    <TableCell className="text-right text-sm">{formatWeight(item.physical)}</TableCell>
+                    <TableCell className={`text-right text-sm ${item.difference > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {item.difference > 0 ? '+' : ''}{formatWeight(item.difference)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm">{formatBaht(item.avgCost)}</TableCell>
+                    <TableCell className={`text-right text-sm ${item.valueDiff > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {item.valueDiff > 0 ? '+' : ''}{formatBaht(item.valueDiff)}
+                    </TableCell>
+                    <TableCell className="text-right text-sm font-medium">{formatWeight(item.afterWeight)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="space-y-1.5">
+              <Label className="text-xs">หมายเหตุ (ไม่บังคับ)</Label>
+              <Input
+                value={confirmNote}
+                onChange={(e) => setConfirmNote(e.target.value)}
+                placeholder="เช่น ชั่งท้ายวัน วันที่ X"
+                className="text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+            <Button
+              onClick={() => handleApply(confirmSessionId, confirmNote)}
+              disabled={applying}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {applying ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
+              ยืนยัน Apply (ปรับสต็อกจริง)
+            </Button>
+            <DialogClose asChild><Button variant="outline">ยกเลิก</Button></DialogClose>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -268,21 +268,22 @@ model SortingBonus {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  username  String   @unique
-  password  String
-  name      String
-  role      String   @default("staff") // admin, staff
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  username    String   @unique
+  password    String
+  name        String
+  role        String   @default("staff") // admin, staff
+  permissions String?  // JSON array of permission strings e.g. ["customer.create","buy.create"]; null = no extra permissions (admin gets all implicitly via role)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
 // Audit log for tracking create/edit/delete/cancel actions on bills
 model AuditLog {
   id         String   @id @default(cuid())
   action     String   // CREATE, UPDATE, DELETE, CANCEL
-  entityType String   // BUY_BILL, SELL_BILL, SORTING_BILL
+  entityType String   // BUY_BILL, SELL_BILL, SORTING_BILL, STOCK_TRANSFER, PHYSICAL_COUNT, USER_PERMISSION
   entityId   String
   userId     String?
   userName   String?
@@ -293,19 +294,65 @@ model AuditLog {
   @@index([createdAt])
 }
 
+// ST-14: Compensation Operation Ledger — persistent operation tracking for
+// crash-safe, retry-safe rollback. An Operation has multiple Items (one per lot).
+// Retry with same requestId resumes the existing Operation, skipping COMPLETED items.
+model CompensationOperation {
+  id              String    @id @default(cuid())
+  requestId       String    @unique // client/server request ID — one operation per request
+  operationType   String    // STOCK_TRANSFER_CREATE, PHYSICAL_COUNT_APPLY, etc.
+  sourceEntityId  String?   // optional: the bill/session ID that failed
+  status          String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  error           String?   // error message if FAILED
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  completedAt     DateTime? // set when status = COMPLETED
+
+  items           CompensationItem[]
+
+  @@index([requestId])
+  @@index([status])
+}
+
+// ST-14: Compensation Item — one per StockLot to restore. Tracks per-lot status.
+model CompensationItem {
+  id            String    @id @default(cuid())
+  operationId   String    // FK to CompensationOperation
+  operation     CompensationOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  lotId         String    // StockLot.id to restore
+  amount        Float     // weight to restore
+  beforeWeight  Float     // lot.remainingWeight before compensation (for audit)
+  afterWeight   Float?    // lot.remainingWeight after compensation (set when COMPLETED)
+  status        String    @default("PENDING") // PENDING, COMPLETED, FAILED
+  error         String?   // error message if FAILED
+  completedAt   DateTime? // set when status = COMPLETED
+
+  @@unique([operationId, lotId]) // one item per lot per operation
+  @@index([operationId])
+  @@index([lotId])
+  @@index([status])
+}
+
 // Physical count session for end-of-day stock verification
 model PhysicalCountSession {
-  id        String   @id @default(cuid())
-  countDate DateTime
-  group     String   // ทองแดง, ทองเหลือง
-  status    String   @default("DRAFT") // DRAFT, PREVIEWED, APPLIED
-  note      String?
-  items     PhysicalCountItem[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(cuid())
+  countDate     DateTime
+  group         String   // ทองแดง, ทองเหลือง
+  status        String   @default("DRAFT") // DRAFT, APPLIED
+  note          String?
+  // ST-9: Structured apply metadata (replaces note-based tracking)
+  appliedById   String?  // null = not applied; userId of who applied
+  appliedAt     DateTime? // null = not applied; timestamp of apply
+  appliedNote   String?  // optional note entered at apply time (separate from draft note)
+  // ST-9: Reversal reference (for future reversal-adjustment feature)
+  reversalOfId  String?  // if this session is a reversal, points to original session ID
+  items         PhysicalCountItem[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([countDate])
   @@index([group])
+  @@index([appliedById])
 }
 
 model PhysicalCountItem {

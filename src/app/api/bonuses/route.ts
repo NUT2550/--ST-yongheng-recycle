@@ -68,7 +68,14 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/bonuses - Create a sorting bonus
+// ST-10: Admin only
 export async function POST(request: NextRequest) {
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: "ไม่ได้เข้าสู่ระบบ" }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: "token ไม่ถูกต้อง" }, { status: 401 });
+  if (payload.role !== 'admin') return NextResponse.json({ error: 'ต้องเป็นผู้ดูแลระบบ' }, { status: 403 });
+
   try {
     const body = await request.json();
     const { date, employeeId, sortingBillId, totalWeight, ratePerKg, note } =

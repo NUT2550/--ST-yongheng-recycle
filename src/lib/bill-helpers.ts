@@ -75,7 +75,7 @@ export async function writeAuditLog(
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0] | typeof db,
   params: {
     action: 'CREATE' | 'UPDATE' | 'DELETE' | 'CANCEL'
-    entityType: 'BUY_BILL' | 'SELL_BILL' | 'SORTING_BILL' | 'STOCK_TRANSFER'
+    entityType: 'BUY_BILL' | 'SELL_BILL' | 'SORTING_BILL' | 'STOCK_TRANSFER' | 'PHYSICAL_COUNT' | 'USER_PERMISSION'
     entityId: string
     userId?: string
     userName?: string

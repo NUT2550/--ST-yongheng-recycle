@@ -37,6 +37,19 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "examples/**",
+    "skills/**",
+    "test-*.ts",
+    "final_import.ts",
+    "reconciliation/**",
+    "batch1.ts",
+    "test-debug*.mjs",
+    "test-parse.mjs",
+    "test-pdf.mjs",
+    "test-pdf2.mjs",
+    "test-connection.ts",
+    "test-products.ts",
+    "download/**"
   ]
 }

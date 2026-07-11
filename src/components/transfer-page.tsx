@@ -331,7 +331,9 @@ export function TransferPage() {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
-      toast.error(`บันทึกไม่สำเร็จ: ${message}`);
+      // ST-13: Show error with longer duration for complex messages (includes request ID + guidance).
+      // toast.error with 8s duration so user can read the full guidance + request ID.
+      toast.error(`บันทึกไม่สำเร็จ: ${message}`, { duration: 8000 });
     } finally {
       setSubmitting(false);
     }

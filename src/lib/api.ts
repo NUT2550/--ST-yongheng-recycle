@@ -52,22 +52,54 @@ export function setAuthToken(token: string | null): void {
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getAuthToken();
+  // ST-13: Generate a client-side request ID for traceability in error reports.
+  const requestId = `req-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    'X-Request-ID': requestId,
     ...((options?.headers as Record<string, string>) || {}),
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-  const res = await fetch(`${API_BASE}${url}`, {
-    ...options,
-    headers,
-  });
+  // ST-13: Add 30s client-side timeout to prevent indefinite hangs (Vercel function
+  // timeout is 10s Hobby / 60s Pro; 30s is a safe middle ground that catches cold
+  // starts and network issues without false-positive timeouts on valid requests).
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${url}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+  } catch (fetchErr) {
+    clearTimeout(timeoutId);
+    // ST-13: Distinguish timeout/abort from network error for better user guidance.
+    if (fetchErr instanceof DOMException && fetchErr.name === 'AbortError') {
+      throw new Error('ระบบใช้เวลาตอบสนองนานเกินไป (timeout 30 วินาที) กรุณาลองอีกครั้ง หากยังไม่สำเร็จให้ Refresh หน้าแล้วลองใหม่');
+    }
+    throw new Error(`ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองอีกครั้ง (request: ${requestId})`);
+  }
+  clearTimeout(timeoutId);
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: 'Unknown error' }));
     // Include details if the backend provides them (e.g. prisma validation errors)
     const msg = error.error || `HTTP ${res.status}`
     const detail = error.details ? ` (${error.details})` : ''
+    // ST-13: For 401, append re-login guidance so user knows to refresh.
+    if (res.status === 401) {
+      throw new Error(`${msg} — กรุณาเข้าสู่ระบบใหม่ (Refresh หน้า หรือ ออกจากระบบแล้ว Login ใหม่) [${requestId}]`);
+    }
+    // ST-13: For 403, clarify permission issue.
+    if (res.status === 403) {
+      throw new Error(`${msg} — คุณไม่มีสิทธิ์ทำรายการนี้ กรุณาติดต่อผู้ดูแล [${requestId}]`);
+    }
+    // ST-13: For 5xx, include request ID for support traceability.
+    if (res.status >= 500) {
+      throw new Error(`${msg}${detail} — เซิร์ฟเวอร์ขัดข้อง กรุณาลองอีกครั้ง หากยังไม่สำเร็จแจ้งผู้ดูแลพร้อมรหัส [${requestId}]`);
+    }
     throw new Error(msg + detail);
   }
   return res.json();

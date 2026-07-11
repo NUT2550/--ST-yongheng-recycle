@@ -76,7 +76,7 @@ export function HistoryPage() {
   const [sellBills, setSellBills] = useState<SellBill[]>([]);
   const [sellTotal, setSellTotal] = useState(0);
   // Sort (SortingBills + StockTransfers classified as คัดแยก, merged)
-  const [sortBills, setSortBills] = useState<SortingBill[] | StockTransfer[]>([]);
+  const [sortBills, setSortBills] = useState<Array<SortingBill | StockTransfer>>([]);
   const [sortTotal, setSortTotal] = useState(0);
   // Transfer (StockTransfers where businessType is แกะของ or null/empty)
   const [transferBills, setTransferBills] = useState<StockTransfer[]>([]);
@@ -328,7 +328,7 @@ function BillList({
   type,
   onRefresh,
 }: {
-  bills: BuyBill[] | SellBill[] | SortingBill[] | StockTransfer[];
+  bills: BuyBill[] | SellBill[] | SortingBill[] | StockTransfer[] | Array<SortingBill | StockTransfer>;
   total: number;
   expandedIds: Set<string>;
   toggleExpand: (id: string) => void;

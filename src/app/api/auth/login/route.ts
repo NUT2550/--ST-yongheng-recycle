@@ -32,11 +32,43 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // ST-14: Load permissions from DB and include in JWT.
+    // Admin role gets all permissions implicitly (no need to store them).
+    // Staff role gets only the permissions stored in user.permissions (JSON array).
+    let permissions: Record<string, boolean> = {}
+    if (user.role === 'admin') {
+      // Admin has all permissions — build a complete map
+      permissions = {
+        'customer.create': true,
+        'buy.create': true,
+        'sell.create': true,
+        'sort.create': true,
+        'transfer.create': true,
+        'history.edit': true,
+        'physical-count.apply': true,
+        'user.manage': true,
+        'product.manage': true,
+      }
+    } else if (user.permissions) {
+      // Staff: parse stored JSON array into a permissions map
+      try {
+        const permArray = JSON.parse(user.permissions) as string[]
+        if (Array.isArray(permArray)) {
+          for (const p of permArray) {
+            if (typeof p === 'string') permissions[p] = true
+          }
+        }
+      } catch {
+        // Invalid JSON in permissions field — treat as no permissions
+      }
+    }
+
     const token = await createToken({
       userId: user.id,
       username: user.username,
       name: user.name,
       role: user.role as 'admin' | 'staff',
+      permissions,
     })
 
     // Build response — include the token in the body so the client can
@@ -51,6 +83,7 @@ export async function POST(request: NextRequest) {
         username: user.username,
         name: user.name,
         role: user.role,
+        permissions,
       },
     })
 

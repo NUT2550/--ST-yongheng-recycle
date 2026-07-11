@@ -2,12 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Loader2, UserPlus, Trash2, Edit, Shield, User, Power } from 'lucide-react'
+import { Loader2, UserPlus, Trash2, Edit, Shield, User, Power, KeyRound } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,19 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toast } from 'sonner'
+import { getAuthToken } from '@/lib/api'
+
+// ST-14: Canonical permission keys (must match server-side VALID_PERMISSIONS)
+const PERMISSION_KEYS = [
+  { key: 'customer.create', label: 'สร้างลูกค้า' },
+  { key: 'buy.create', label: 'สร้างใบรับซื้อ' },
+  { key: 'sell.create', label: 'สร้างใบขาย' },
+  { key: 'sort.create', label: 'สร้างใบคัดแยก' },
+  { key: 'transfer.create', label: 'สร้างใบย้ายสต็อก' },
+  { key: 'history.edit', label: 'แก้ไข/ยกเลิกบิลในประวัติ' },
+  { key: 'physical-count.apply', label: 'Apply การชั่งสต็อกจริง' },
+  { key: 'product.manage', label: 'จัดการสินค้า' },
+] as const
 
 interface User {
   id: string
@@ -32,6 +46,7 @@ interface User {
   name: string
   role: string
   isActive: boolean
+  permissions: string[]
   createdAt: string
 }
 
@@ -40,6 +55,11 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [editUser, setEditUser] = useState<User | null>(null)
+  // ST-14: Permission management state
+  const [permUser, setPermUser] = useState<User | null>(null)
+  const [permDraft, setPermDraft] = useState<string[]>([])
+  const [permSaving, setPermSaving] = useState(false)
+  const [permOriginal, setPermOriginal] = useState<string[]>([])
 
   // Form state
   const [username, setUsername] = useState('')
@@ -50,7 +70,18 @@ export default function UsersPage() {
   async function fetchUsers() {
     setLoading(true)
     try {
-      const res = await fetch('/api/users')
+      const token = getAuthToken()
+      const res = await fetch('/api/users', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (res.status === 401) {
+        toast.error('ไม่ได้เข้าสู่ระบบ — กรุณาเข้าสู่ระบบใหม่')
+        return
+      }
+      if (res.status === 403) {
+        toast.error('ไม่มีสิทธิ์เข้าถึง — ต้องเป็นผู้ดูแล')
+        return
+      }
       if (!res.ok) throw new Error('ไม่สามารถโหลดข้อมูลได้')
       const data = await res.json()
       setUsers(data.users || [])
@@ -67,22 +98,19 @@ export default function UsersPage() {
 
   async function handleAdd() {
     try {
+      const token = getAuthToken()
       const res = await fetch('/api/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ username, password, name, role }),
       })
       const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error || 'เพิ่มผู้ใช้ไม่สำเร็จ')
-        return
-      }
+      if (res.status === 401) { toast.error('ไม่ได้เข้าสู่ระบบ — กรุณาเข้าสู่ระบบใหม่'); return }
+      if (res.status === 403) { toast.error('ไม่มีสิทธิ์ — ต้องเป็นผู้ดูแล'); return }
+      if (!res.ok) { toast.error(data.error || 'เพิ่มผู้ใช้ไม่สำเร็จ'); return }
       toast.success('เพิ่มผู้ใช้สำเร็จ')
       setAddOpen(false)
-      setUsername('')
-      setPassword('')
-      setName('')
-      setRole('staff')
+      setUsername(''); setPassword(''); setName(''); setRole('staff')
       fetchUsers()
     } catch {
       toast.error('เกิดข้อผิดพลาด')
@@ -92,19 +120,18 @@ export default function UsersPage() {
   async function handleEdit() {
     if (!editUser) return
     try {
+      const token = getAuthToken()
       const body: any = { name, role }
       if (password) body.password = password
-
       const res = await fetch(`/api/users/${editUser.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify(body),
       })
       const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error || 'แก้ไขไม่สำเร็จ')
-        return
-      }
+      if (res.status === 401) { toast.error('ไม่ได้เข้าสู่ระบบ — กรุณาเข้าสู่ระบบใหม่'); return }
+      if (res.status === 403) { toast.error('ไม่มีสิทธิ์ — ต้องเป็นผู้ดูแล'); return }
+      if (!res.ok) { toast.error(data.error || 'แก้ไขไม่สำเร็จ'); return }
       toast.success('แก้ไขสำเร็จ')
       setEditUser(null)
       setPassword('')
@@ -116,16 +143,16 @@ export default function UsersPage() {
 
   async function handleToggleActive(user: User) {
     try {
+      const token = getAuthToken()
       const res = await fetch(`/api/users/${user.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ isActive: !user.isActive }),
       })
       const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error || 'แก้ไขไม่สำเร็จ')
-        return
-      }
+      if (res.status === 401) { toast.error('ไม่ได้เข้าสู่ระบบ — กรุณาเข้าสู่ระบบใหม่'); return }
+      if (res.status === 403) { toast.error('ไม่มีสิทธิ์ — ต้องเป็นผู้ดูแล'); return }
+      if (!res.ok) { toast.error(data.error || 'แก้ไขไม่สำเร็จ'); return }
       toast.success(user.isActive ? 'ปิดการใช้งานแล้ว' : 'เปิดการใช้งานแล้ว')
       fetchUsers()
     } catch {
@@ -136,17 +163,57 @@ export default function UsersPage() {
   async function handleDelete(user: User) {
     if (!confirm(`ต้องการลบผู้ใช้ "${user.name}" ใช่ไหม?`)) return
     try {
-      const res = await fetch(`/api/users/${user.id}`, { method: 'DELETE' })
+      const token = getAuthToken()
+      const res = await fetch(`/api/users/${user.id}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
       const data = await res.json()
-      if (!res.ok) {
-        toast.error(data.error || 'ลบไม่สำเร็จ')
-        return
-      }
+      if (res.status === 401) { toast.error('ไม่ได้เข้าสู่ระบบ — กรุณาเข้าสู่ระบบใหม่'); return }
+      if (res.status === 403) { toast.error('ไม่มีสิทธิ์ — ต้องเป็นผู้ดูแล'); return }
+      if (!res.ok) { toast.error(data.error || 'ลบไม่สำเร็จ'); return }
       toast.success('ลบผู้ใช้สำเร็จ')
       fetchUsers()
     } catch {
       toast.error('เกิดข้อผิดพลาด')
     }
+  }
+
+  // ST-14: Permission management — open dialog with current permissions
+  function openPermissions(user: User) {
+    setPermUser(user)
+    setPermDraft(user.permissions || [])
+    setPermOriginal(user.permissions || [])
+  }
+
+  // ST-14: Save permission changes via PATCH /api/users/[id] with permissions field
+  async function handleSavePermissions() {
+    if (!permUser) return
+    setPermSaving(true)
+    try {
+      const token = getAuthToken()
+      const res = await fetch(`/api/users/${permUser.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ permissions: permDraft }),
+      })
+      const data = await res.json()
+      if (res.status === 401) { toast.error('ไม่ได้เข้าสู่ระบบ — กรุณาเข้าสู่ระบบใหม่'); return }
+      if (res.status === 403) { toast.error('ไม่มีสิทธิ์ — ต้องเป็นผู้ดูแล'); return }
+      if (res.status === 400) { toast.error(data.error || 'ข้อมูลไม่ถูกต้อง'); return }
+      if (!res.ok) { toast.error(data.error || 'บันทึกสิทธิ์ไม่สำเร็จ'); return }
+      toast.success(`บันทึกสิทธิ์ของ ${permUser.username} สำเร็จ — ผู้ใช้ต้อง Login ใหม่เพื่อให้สิทธิ์ใหม่มีผล`, { duration: 8000 })
+      setPermUser(null)
+      fetchUsers()
+    } catch {
+      toast.error('เกิดข้อผิดพลาด')
+    } finally {
+      setPermSaving(false)
+    }
+  }
+
+  function togglePermission(key: string) {
+    setPermDraft(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key])
   }
 
   function openEdit(user: User) {
@@ -260,6 +327,15 @@ export default function UsersPage() {
                             พนักงาน
                           </Badge>
                         )}
+                        {user.role === 'staff' && user.permissions && user.permissions.length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {user.permissions.map(p => (
+                              <Badge key={p} variant="outline" className="text-[9px] px-1 py-0">
+                                {PERMISSION_KEYS.find(pk => pk.key === p)?.label || p}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         {user.isActive ? (
@@ -270,6 +346,16 @@ export default function UsersPage() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
+                          {user.role === 'staff' && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openPermissions(user)}
+                              title="จัดการสิทธิ์"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                          )}
                           <Button
                             size="sm"
                             variant="ghost"
@@ -342,6 +428,56 @@ export default function UsersPage() {
               ยกเลิก
             </Button>
             <Button onClick={handleEdit}>บันทึก</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ST-14: Permission Management Dialog */}
+      <Dialog open={!!permUser} onOpenChange={(o) => !o && setPermUser(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5" />
+              จัดการสิทธิ์: {permUser?.username}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+              ⚠️ หลังเปลี่ยนสิทธิ์ ผู้ใช้ต้อง <strong>Logout และ Login ใหม่</strong> เพื่อให้สิทธิ์ใหม่มีผล
+            </p>
+            <div className="space-y-2">
+              {PERMISSION_KEYS.map(pk => (
+                <div key={pk.key} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={`perm-${pk.key}`}
+                    checked={permDraft.includes(pk.key)}
+                    onCheckedChange={() => togglePermission(pk.key)}
+                  />
+                  <Label htmlFor={`perm-${pk.key}`} className="text-sm cursor-pointer flex-1">
+                    {pk.label}
+                    <span className="text-xs text-gray-400 ml-1">({pk.key})</span>
+                  </Label>
+                  {permOriginal.includes(pk.key) !== permDraft.includes(pk.key) && (
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 text-blue-600 border-blue-300">
+                      {permDraft.includes(pk.key) ? 'เพิ่ม' : 'ลบ'}
+                    </Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="text-xs text-gray-500 border-t pt-2">
+              <p>สิทธิ์ปัจจุบัน: {permOriginal.length > 0 ? permOriginal.join(', ') : 'ไม่มี'}</p>
+              <p>สิทธิ์ใหม่: {permDraft.length > 0 ? permDraft.join(', ') : 'ไม่มี'}</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPermUser(null)}>
+              ยกเลิก
+            </Button>
+            <Button onClick={handleSavePermissions} disabled={permSaving}>
+              {permSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+              บันทึกสิทธิ์
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

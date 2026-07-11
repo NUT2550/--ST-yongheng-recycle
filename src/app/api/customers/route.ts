@@ -29,7 +29,15 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/customers - Create a customer
+// ST-10: Requires login + customer.create permission (admin always allowed)
 export async function POST(request: NextRequest) {
+  const token = getTokenFromRequest(request);
+  if (!token) return NextResponse.json({ error: "ไม่ได้เข้าสู่ระบบ" }, { status: 401 });
+  const payload = await verifyToken(token);
+  if (!payload) return NextResponse.json({ error: "token ไม่ถูกต้อง" }, { status: 401 });
+  const hasPermission = payload.role === 'admin' || payload.permissions?.['customer.create'] === true;
+  if (!hasPermission) return NextResponse.json({ error: 'ไม่มีสิทธิ์สร้างลูกค้า' }, { status: 403 });
+
   try {
     const body = await request.json();
     const { name, phone } = body as { name: string; phone?: string };

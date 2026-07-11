@@ -26,11 +26,18 @@ export async function GET(request: NextRequest) {
       name: true,
       role: true,
       isActive: true,
+      permissions: true,
       createdAt: true,
     },
   })
 
-  return NextResponse.json({ users })
+  // ST-14: Parse permissions JSON for response
+  const usersWithPermissions = users.map(u => ({
+    ...u,
+    permissions: u.permissions ? JSON.parse(u.permissions) : [],
+  }))
+
+  return NextResponse.json({ users: usersWithPermissions })
 }
 
 // POST /api/users - create new user (admin only)
