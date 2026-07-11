@@ -155,54 +155,69 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as any[][];
 
-      // Detect file format by checking row 3 (headers) and row 4 structure
-      // Format A (per-seller): Row 3 = "ผู้ขาย | · | วัสดุ | ...", Row 4 = seller code + name
-      // Format B (per-product): Row 3 = "วัสดุ | ผู้ขาย | ...", Row 4 = product code + name + weight
+      // ST-16: Detect file format — report03 (per-product) vs report04 (per-seller/person)
+      // report03: Row 3 col 1 = "วัสดุ", col 2 = "ผู้ขาย" → per-product layout
+      // report04: Row 3 col 0 = "ผู้ขาย", col 2 = "วัสดุ", col 3 = "ทะเบียนรถ" → per-seller layout
+      // Also check last rows for marker [report03.rpt] or [report04.rpt]
       const row3 = rows[3] || [];
-      const isFormatA = String(row3[0] || '').includes('ผู้ขาย') || String(row3[1] || '').includes('วัสดุ');
-      // Format B: col 0 = "วัสดุ" (product header), col 1 = "ผู้ขาย" (seller header)
-      // In Format B, row 4 has col 0 = product code (4-digit), col 1 = product name, col 9 = weight, col 12 = amount
-      // In Format B, row 5+ has col 0 = date, col 1 = bill number (A...), col 2 = seller code, col 3 = seller name
+      const lastRows = rows.slice(-5).map(r => (r || []).map(c => c == null ? '' : fixThaiText(String(c))).join(' ')).join(' ');
+      const isReport04 = lastRows.includes('report04') || String(row3[0] || '').includes('ผู้ขาย');
+      const isReport03 = lastRows.includes('report03') || (!isReport04 && (String(row3[1] || '').includes('วัสดุ') || String(row3[0] || '').includes('วัสดุ')));
+      const detectedFormat = isReport04 ? 'report04' : 'report03';
 
       const bills: PlannedBill[] = [];
       let currentBill: PlannedBill | null = null;
       let currentSeller = '';
       let currentProductName = '';
 
-      if (isFormatA) {
-        // Format A: per-seller layout (ซื้อ 1-7-2569 แบบละเอียด.xls)
-        // Row 4: seller summary (col 0=code, col 1=name)
-        // Row 5: bill header (col 1=date, col 2=bill number, col 12=total)
-        // Row 6: item (col 2=product code, col 3=product name, col 9=weight)
+      if (isReport04) {
+        // ST-16: report04 — per-seller (per-person) layout
+        // Structure:
+        //   Row 4: seller summary (col 0=code, col 1=name, col 12=total for this seller)
+        //   Row 5: bill header (col 1=date, col 2=bill number A..., col 3=license plate, col 4=note, col 12=bill total)
+        //   Row 6+: item rows (col 2=product code (4-digit), col 3=product name, col 9=weight, col 10=unit, col 11=price, col 12=amount)
+        //   Blank row separates bills
+        //   Blank row separates sellers
         for (let i = 4; i < rows.length; i++) {
           const r = rows[i];
-          if (!r || r.every(c => c === null || c === undefined)) continue;
+          if (!r || r.every(c => c === null || c === undefined || String(c).trim() === '')) continue;
 
-          // Seller summary row: col 0 has code, col 1 has name, no col 2
-          if (r[0] && r[1] && !r[2] && r[9] == null) {
-            currentSeller = fixThaiText(String(r[1]));
+          // Skip grand total row
+          if (fixThaiText(String(r[1] || '')).includes('ยอดรวมท้ายรายงาน')) continue;
+          // Skip footer marker row
+          if (fixThaiText(String(r[12] || '')).includes('report04') || fixThaiText(String(r[0] || '')).match(/^หน้าที่/)) continue;
+
+          // Seller summary row: col 0 = seller code (4-digit), col 1 = seller name, col 12 = seller total
+          if (r[0] && r[1] && !r[2] && r[12] != null && /^\d{4}$/.test(String(r[0]).trim())) {
+            currentSeller = fixThaiText(String(r[1])).trim();
             continue;
           }
 
-          // Bill header row: col 1 has date, col 2 has bill number (starts with A), col 12 has total
-          if (r[1] && r[2] && String(r[2]).trim().match(/^A\d+/i) && r[12] != null) {
+          // Bill header row: col 1 = date (dd/m/yyyy), col 2 = bill number (A...), col 3 = license plate, col 4 = note
+          // col 12 = bill total
+          if (r[1] && r[2] && String(r[2]).trim().match(/^A\d+/i)) {
             if (currentBill) bills.push(currentBill);
+            const dateStr = fixThaiText(String(r[1])).trim();
+            const billNo = String(r[2]).trim();
+            const licensePlate = r[3] ? fixThaiText(String(r[3])).trim() : '';
+            const note = r[4] ? fixThaiText(String(r[4])).trim() : '';
+            const excelTotal = parseFloat(String(r[12])) || 0;
             currentBill = {
-              externalBillNumber: String(r[2]).trim(),
+              externalBillNumber: billNo,
               seller: currentSeller,
-              date: fixThaiText(String(r[1])).trim(),
-              note: r[4] ? fixThaiText(String(r[4])).trim() : '',
+              date: dateStr,
+              note: note + (licensePlate ? ` | ทะเบียน: ${licensePlate}` : ''),
               items: [],
               totalWeight: 0,
               totalAmount: 0,
-              excelTotalAmount: parseFloat(String(r[12])) || 0,
+              excelTotalAmount: excelTotal,
               amountDiff: 0,
               isDuplicate: false,
             };
             continue;
           }
 
-          // Item row: col 2 has product code, col 3 has product name, col 9 has weight
+          // Item row: col 2 = product code (4-digit), col 3 = product name, col 9 = weight, col 11 = price, col 12 = amount
           if (r[2] && r[3] && r[9] != null && currentBill) {
             const productName = fixThaiText(String(r[3])).trim();
             const weight = parseFloat(String(r[9])) || 0;
@@ -224,12 +239,17 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
           }
         }
       } else {
-        // Format B: per-product layout (รวมซื้อสิ้นค้า 1-1-69 ถึง 6-7-69 แบบละเอียด.xls)
+        // report03: per-product layout (ซื้อ 3-7-2569 แบบละเอียด.xls)
         // Row 4: product summary (col 0=4-digit product code, col 1=product name, col 9=total weight, col 12=total amount)
         // Row 5+: transaction rows (col 0=date, col 1=bill number A..., col 2=seller code, col 3=seller name, col 9=weight, col 11=price, col 12=amount)
         for (let i = 4; i < rows.length; i++) {
           const r = rows[i];
           if (!r || r.every(c => c === null || c === undefined)) continue;
+
+          // Skip grand total row
+          if (fixThaiText(String(r[1] || '')).includes('ยอดรวมท้ายรายงาน')) continue;
+          // Skip footer marker row
+          if (fixThaiText(String(r[12] || '')).includes('report03') || fixThaiText(String(r[0] || '')).match(/^หน้าที่/)) continue;
 
           // Product summary row: col 0 = 4-digit code, col 1 = product name, col 9 = total weight
           if (r[0] && /^\d{4}$/.test(String(r[0]).trim()) && r[1] && typeof r[1] === 'string' && r[9] != null) {
@@ -241,7 +261,6 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
           if (r[0] && r[1] && r[9] != null) {
             const dateStr = fixThaiText(String(r[0])).trim();
             const billNo = String(r[1]).trim();
-            // Check if col 0 looks like a date (dd/m/yyyy or similar)
             if (dateStr.match(/^\d{1,2}\/\d{1,2}\/\d{2,4}$/)) {
               const sellerCode = String(r[2] ?? '').trim();
               const sellerName = String(r[3] ?? '').trim();
@@ -250,7 +269,6 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
               const amount = parseFloat(String(r[12])) || 0;
               const note = r[6] ? fixThaiText(String(r[6])).trim() : '';
 
-              // Find or create bill for this bill number
               if (!currentBill || currentBill.externalBillNumber !== billNo) {
                 if (currentBill) bills.push(currentBill);
                 currentBill = {
@@ -295,7 +313,7 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
       }
 
       setPlannedBills(bills);
-      toast.success(`พาร์สไฟล์สำเร็จ: ${bills.length} บิล, ${bills.reduce((s, b) => s + b.items.length, 0)} รายการ`);
+      toast.success(`พาร์สไฟล์สำเร็จ (${detectedFormat}): ${bills.length} บิล, ${bills.reduce((s, b) => s + b.items.length, 0)} รายการ`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
       toast.error(`พาร์สไฟล์ไม่สำเร็จ: ${message}`);
