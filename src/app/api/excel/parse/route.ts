@@ -30,8 +30,13 @@ function parseThaiDate(s: string): string | null {
 }
 
 const COLUMN_LAYOUTS = {
-  buy: { code: 0, name: 2, weight: 6, total: 8, avg: 9 },
-  sell: { code: 1, name: 2, weight: 7, total: 9, avg: 10 },
+  // ST-17: Buy and sell Excel files (report03/report09) use the SAME column layout.
+  // The parser matches PRODUCT SUMMARY rows (col 0=4-digit code, col 1=product name)
+  // which contain aggregate weight/price/total for each product across all bills.
+  // This is correct for the single-bill import flow (original dialog).
+  //   Product summary row: col 0=code(4-digit), col 1=name, col 9=weight, col 11=price/kg, col 12=total
+  buy: { code: 0, name: 1, weight: 9, total: 12, avg: 11 },
+  sell: { code: 0, name: 1, weight: 9, total: 12, avg: 11 },
 } as const;
 
 export async function POST(request: NextRequest) {
