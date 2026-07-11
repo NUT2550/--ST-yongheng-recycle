@@ -2982,3 +2982,82 @@ Created PhysicalCountSession DRAFT in production with 10 items matching Owner-co
 - **Value impact**: +34,362.97 THB (8 items will get STOCK_ADJUSTMENT lots, 2 items diff=0 skipped)
 - **Method**: 8 positive adjustments → create STOCK_ADJUSTMENT lots, 0 FIFO deductions needed
 - **Ready for Owner Apply approval**: ✅ YES
+
+---
+
+## Task ID: 76 (ST-19 Phase 3 — Cost investigation)
+## Agent: Main
+## Task: Investigate appropriate cost for products before Apply (read-only)
+
+### Summary
+Investigated cost basis for 8 products in DRAFT session cmrgli52j0000oslknzwk9gah. Found 6/8 items have problematic cost (5 zero-cost, 1 abnormally low at 40). Verified Apply endpoint uses stored averageCost (does NOT recompute) — so zero-cost lots WILL be created if Apply proceeds. No PATCH/PUT endpoint exists to edit Draft items. NO DB writes performed.
+
+### Step 1: Cost sources per product (read-only)
+For each of 8 products, pulled:
+- Current active-lot average cost (and lot count)
+- Latest valid BuyBill unit price
+- Latest 5 valid BuyBill prices
+- Weighted average purchase cost last 30/90 days
+- Latest historical StockLot cost
+- Pre-09/07 audit log "before" avgCost (from session cmrdqgfru0000sn8fdmtjjnla audit logs)
+- Cancellations, adjustments, zero-cost lots flags
+
+### Step 2: Anomaly checks
+- **ทองแดงช็อต AvgCost=40**: anomaly — comes from TRANSFER lot (cmrbj73bo000fjp04lo5esj6v, costPerKg=40, source=TRANSFER). Real buy price ~412 THB/kg.
+- **ทองแดงใหญ่ AvgCost=275.86**: anomaly — 3 of 6 active lots have low cost (40, 9.42, 40) from TRANSFER, dragging avg down from true market price ~400 THB/kg.
+- **ทองแดงเล็ก AvgCost=383.58**: mostly normal (BUY lots 390, 401), but 1 lot has cost=0 (SORTING) and 1 lot has cost=40 (TRANSFER).
+- **5 products with AvgCost=0**: 4 had historical buy records (ทองเหลืองหนา, ทองแดงปอกเงา, ทองแดงชุบ); 2 had NO buy records (ทองเหลืองเนื้อแดง, ทองแดงท่อ Candy).
+- **Depleted lots usable as reference**: found for 7/8 products (all except ทองแดงท่อ Candy).
+
+### Step 3: Recommended Cost Basis
+| # | Product | Recommended | Source | Confidence |
+|---:|---|---:|---|---|
+| 1 | ทองเหลืองหนา | 196.05 | 09/07 audit log "before" avgCost | High |
+| 2 | ทองเหลืองเนื้อแดง | 3.59 | 09/07 audit log "before" avgCost | Medium |
+| 3 | ทองแดงปอกเงา | 418.37 | 09/07 audit log "before" avgCost | High |
+| 4 | ทองแดงช็อต | 399.09 | 09/07 audit log "before" avgCost | High |
+| 5 | ทองแดงท่อ Candy | OWNER MUST DEFINE | (no data) | N/A |
+| 6 | ทองแดงใหญ่ | 377.24 | 09/07 audit log "before" avgCost | High |
+| 7 | ทองแดงเล็ก | 392.78 | 09/07 audit log "before" avgCost | High |
+| 8 | ทองแดงชุบ | 185.17 | 09/07 audit log "before" avgCost | Medium |
+
+### Step 4: Revised Preview (Draft vs Recommended)
+
+| # | Product | Diff (kg) | Draft Cost | Rec Cost | Draft ValDiff | Rec ValDiff | Delta |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | ทองเหลืองหนา | +89.40 | 0 | 196.05 | 0 | 17,526.87 | +17,526.87 |
+| 2 | ทองเหลืองเนื้อแดง | +3.08 | 0 | 3.59 | 0 | 11.06 | +11.06 |
+| 3 | ทองแดงปอกเงา | +182.75 | 0 | 418.37 | 0 | 76,457.12 | +76,457.12 |
+| 4 | ทองแดงช็อต | +149.94 | 40 | 399.09 | 5,997.60 | 59,839.55 | +53,841.95 |
+| 5 | ทองแดงท่อ Candy | +0.90 | 0 | TBD | 0 | TBD | TBD |
+| 6 | ทองแดงใหญ่ | +67.34 | 275.86 | 377.24 | 18,576.41 | 25,403.34 | +6,826.93 |
+| 7 | ทองแดงเล็ก | +25.52 | 383.58 | 392.78 | 9,788.96 | 10,023.75 | +234.79 |
+| 8 | ทองแดงชุบ | +2.40 | 0 | 185.17 | 0 | 444.41 | +444.41 |
+| **TOTAL** | | **+521.33** | | | **34,362.97** | **189,706.10** | **+155,343.13** |
+
+### Step 5: Apply endpoint behavior (code review)
+- File: `/api/physical-counts/[id]/apply/route.ts`
+- Line 94: `avgCost: item.averageCost` — uses STORED averageCost from PhysicalCountItem (snapshot)
+- Line 153: `costPerKg: adj.avgCost` — new STOCK_ADJUSTMENT lot uses this stored value
+- ❌ No validation blocks zero-cost → Apply WILL create zero-cost lots if averageCost=0
+- ❌ No PATCH/PUT endpoint exists for editing Draft items (only GET in [id]/route.ts)
+- **Conclusion**: Cannot fix Draft cost without delete + recreate
+
+### Recommended approach
+**แนวทาง A (RECOMMENDED)**: Delete + Recreate Draft
+1. Check if `DELETE /api/physical-counts/{id}` exists — if not, must add (small change)
+2. Delete Draft `cmrgli52j0000oslknzwk9gah`
+3. Create new Draft with corrected averageCost values
+4. Live Preview again
+5. Await Owner Apply approval
+
+### Stage Summary
+- **Status**: NOT READY for Apply — Draft has wrong costs
+- **No DB writes** (read-only per Owner instruction)
+- **6/8 items have wrong cost** (5 zero-cost, 1 abnormally low at 40)
+- **Apply endpoint uses stored cost** (does NOT recompute) → zero-cost lots WILL be created
+- **No PATCH endpoint** to fix Draft items → must delete + recreate
+- **Recommended cost basis**: 09/07 audit log "before" avgCost for 7 products (High confidence)
+- **ทองแดงท่อ Candy**: Owner must define (no data in DB)
+- **Value impact**: Draft = 34,363 THB (understated) → Revised = 189,706 THB (delta +155,343 THB)
+- **Awaiting Owner approval**: (1) cost recommendations, (2) ทองแดงท่อ Candy cost, (3) correction approach (A/B/C)

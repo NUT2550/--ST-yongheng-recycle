@@ -1,0 +1,640 @@
+{
+  "generatedAt": "2026-07-11T17:25:02.757Z",
+  "session": {
+    "id": "cmrgli52j0000oslknzwk9gah",
+    "status": "DRAFT",
+    "countDate": "2026-07-11T10:00:00.000Z",
+    "appliedAt": null,
+    "appliedById": null
+  },
+  "applyTimestamp09Jul": "2026-07-11T06:37:35.914Z",
+  "costProfiles": [
+    {
+      "productName": "ทองเหลืองหนา",
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "group": "ทองเหลือง",
+      "draftAvgCost": 0,
+      "draftDiff": 89.4,
+      "draftValueDiff": 0,
+      "currentActiveLotCount": 0,
+      "currentActiveLotAvgCost": 0,
+      "currentTotalStock": 0,
+      "latestBuyBillUnitPrice": 253,
+      "latest5BuyBillPrices": [
+        {
+          "date": "2026-07-08",
+          "billNumber": "BUY-2569-00155",
+          "weight": 0.2,
+          "pricePerKg": 253
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00109",
+          "weight": 13,
+          "pricePerKg": 263
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00087",
+          "weight": 0.8,
+          "pricePerKg": 250
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00102",
+          "weight": 0.8,
+          "pricePerKg": 258
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00107",
+          "weight": 7.8,
+          "pricePerKg": 263
+        }
+      ],
+      "weightedAvg30d": 260.73,
+      "weightedAvg90d": 260.73,
+      "historicalStockLotCostLatest": 0,
+      "pre09JulStockLotCost": 196.05,
+      "pre09JulStockWeight": 41.2,
+      "pre09JulStockValue": 8077.26,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": true,
+      "hasStockAdjustmentLots": false,
+      "hasHistoricalValidBills": true,
+      "recommendedCost": 196.05,
+      "costSource": "09/07 audit log \"before\" avgCost (was 41.2 kg @ 196.05 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "High",
+      "alternatives": [
+        {
+          "cost": 260.73,
+          "source": "Weighted avg purchase last 30 days"
+        },
+        {
+          "cost": 260.73,
+          "source": "Weighted avg purchase last 90 days"
+        },
+        {
+          "cost": 253,
+          "source": "Latest valid purchase price"
+        }
+      ]
+    },
+    {
+      "productName": "ทองเหลืองเนื้อแดง",
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "group": "ทองเหลือง",
+      "draftAvgCost": 0,
+      "draftDiff": 3.08,
+      "draftValueDiff": 0,
+      "currentActiveLotCount": 1,
+      "currentActiveLotAvgCost": 0,
+      "currentTotalStock": 0.58,
+      "latestBuyBillUnitPrice": null,
+      "latest5BuyBillPrices": [],
+      "weightedAvg30d": null,
+      "weightedAvg90d": null,
+      "historicalStockLotCostLatest": 9,
+      "pre09JulStockLotCost": 3.59,
+      "pre09JulStockWeight": 2.1,
+      "pre09JulStockValue": 7.54,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": false,
+      "hasStockAdjustmentLots": false,
+      "hasHistoricalValidBills": false,
+      "recommendedCost": 3.59,
+      "costSource": "09/07 audit log \"before\" avgCost (was 2.1 kg @ 3.59 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "Medium",
+      "alternatives": []
+    },
+    {
+      "productName": "ทองแดงปอกเงา",
+      "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+      "group": "ทองแดง",
+      "draftAvgCost": 0,
+      "draftDiff": 182.75,
+      "draftValueDiff": 0,
+      "currentActiveLotCount": 0,
+      "currentActiveLotAvgCost": 0,
+      "currentTotalStock": 0,
+      "latestBuyBillUnitPrice": 422,
+      "latest5BuyBillPrices": [
+        {
+          "date": "2026-07-07",
+          "billNumber": "BUY-2569-00124",
+          "weight": 38.8,
+          "pricePerKg": 422
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00102",
+          "weight": 29.8,
+          "pricePerKg": 427
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00109",
+          "weight": 7.8,
+          "pricePerKg": 432
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00107",
+          "weight": 0.6,
+          "pricePerKg": 432
+        },
+        {
+          "date": "2026-07-04",
+          "billNumber": "BUY-2569-00084",
+          "weight": 15.2,
+          "pricePerKg": 422
+        }
+      ],
+      "weightedAvg30d": 425.22,
+      "weightedAvg90d": 425.22,
+      "historicalStockLotCostLatest": 40,
+      "pre09JulStockLotCost": 418.37,
+      "pre09JulStockWeight": 93.7,
+      "pre09JulStockValue": 39201.27,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": true,
+      "hasStockAdjustmentLots": false,
+      "hasHistoricalValidBills": true,
+      "recommendedCost": 418.37,
+      "costSource": "09/07 audit log \"before\" avgCost (was 93.7 kg @ 418.37 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "High",
+      "alternatives": [
+        {
+          "cost": 425.22,
+          "source": "Weighted avg purchase last 30 days"
+        },
+        {
+          "cost": 425.22,
+          "source": "Weighted avg purchase last 90 days"
+        },
+        {
+          "cost": 422,
+          "source": "Latest valid purchase price"
+        }
+      ]
+    },
+    {
+      "productName": "ทองแดงช็อต",
+      "productId": "prod_mqgp9alick357v31bqqrlv43",
+      "group": "ทองแดง",
+      "draftAvgCost": 40,
+      "draftDiff": 149.94,
+      "draftValueDiff": 5997.6,
+      "currentActiveLotCount": 2,
+      "currentActiveLotAvgCost": 40,
+      "currentTotalStock": 3.8,
+      "latestBuyBillUnitPrice": 412,
+      "latest5BuyBillPrices": [
+        {
+          "date": "2026-07-07",
+          "billNumber": "BUY-2569-00122",
+          "weight": 6.4,
+          "pricePerKg": 412
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00087",
+          "weight": 0.2,
+          "pricePerKg": 410
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00102",
+          "weight": 3.2,
+          "pricePerKg": 417
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00107",
+          "weight": 0.6,
+          "pricePerKg": 422
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00109",
+          "weight": 15,
+          "pricePerKg": 422
+        }
+      ],
+      "weightedAvg30d": 415.22,
+      "weightedAvg90d": 415.22,
+      "historicalStockLotCostLatest": 40,
+      "pre09JulStockLotCost": 399.09,
+      "pre09JulStockWeight": 120.2,
+      "pre09JulStockValue": 47970.62,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": true,
+      "hasStockAdjustmentLots": true,
+      "hasHistoricalValidBills": true,
+      "recommendedCost": 399.09,
+      "costSource": "09/07 audit log \"before\" avgCost (was 120.2 kg @ 399.09 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "High",
+      "alternatives": [
+        {
+          "cost": 40,
+          "source": "Current active lot weighted avg"
+        },
+        {
+          "cost": 415.22,
+          "source": "Weighted avg purchase last 30 days"
+        },
+        {
+          "cost": 415.22,
+          "source": "Weighted avg purchase last 90 days"
+        },
+        {
+          "cost": 412,
+          "source": "Latest valid purchase price"
+        }
+      ]
+    },
+    {
+      "productName": "ทองแดงท่อ Candy",
+      "productId": "cmr09vcvi001cl105spng6d2h",
+      "group": "ทองแดง",
+      "draftAvgCost": 0,
+      "draftDiff": 0.9,
+      "draftValueDiff": 0,
+      "currentActiveLotCount": 0,
+      "currentActiveLotAvgCost": 0,
+      "currentTotalStock": 0,
+      "latestBuyBillUnitPrice": null,
+      "latest5BuyBillPrices": [],
+      "weightedAvg30d": null,
+      "weightedAvg90d": null,
+      "historicalStockLotCostLatest": 0,
+      "pre09JulStockLotCost": null,
+      "pre09JulStockWeight": null,
+      "pre09JulStockValue": null,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": false,
+      "hasStockAdjustmentLots": true,
+      "hasHistoricalValidBills": false,
+      "recommendedCost": null,
+      "costSource": "OWNER_MUST_DEFINE",
+      "reason": "No valid cost data found in DB. Owner must specify cost manually.",
+      "confidence": "N/A",
+      "alternatives": []
+    },
+    {
+      "productName": "ทองแดงใหญ่",
+      "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+      "group": "ทองแดง",
+      "draftAvgCost": 275.86,
+      "draftDiff": 67.34,
+      "draftValueDiff": 18576.41,
+      "currentActiveLotCount": 6,
+      "currentActiveLotAvgCost": 275.86,
+      "currentTotalStock": 8.08,
+      "latestBuyBillUnitPrice": 396,
+      "latest5BuyBillPrices": [
+        {
+          "date": "2026-07-08",
+          "billNumber": "BUY-2569-00155",
+          "weight": 0.6,
+          "pricePerKg": 396
+        },
+        {
+          "date": "2026-07-08",
+          "billNumber": "BUY-2569-00153",
+          "weight": 4,
+          "pricePerKg": 386
+        },
+        {
+          "date": "2026-07-08",
+          "billNumber": "BUY-2569-00139",
+          "weight": 0.9,
+          "pricePerKg": 396
+        },
+        {
+          "date": "2026-07-07",
+          "billNumber": "BUY-2569-00115",
+          "weight": 0.5,
+          "pricePerKg": 395
+        },
+        {
+          "date": "2026-07-07",
+          "billNumber": "BUY-2569-00122",
+          "weight": 2.7,
+          "pricePerKg": 396
+        }
+      ],
+      "weightedAvg30d": 400.1,
+      "weightedAvg90d": 400.1,
+      "historicalStockLotCostLatest": 9,
+      "pre09JulStockLotCost": 377.24,
+      "pre09JulStockWeight": 56.3,
+      "pre09JulStockValue": 21238.61,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": true,
+      "hasStockAdjustmentLots": false,
+      "hasHistoricalValidBills": true,
+      "recommendedCost": 377.24,
+      "costSource": "09/07 audit log \"before\" avgCost (was 56.3 kg @ 377.24 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "High",
+      "alternatives": [
+        {
+          "cost": 275.86,
+          "source": "Current active lot weighted avg"
+        },
+        {
+          "cost": 400.1,
+          "source": "Weighted avg purchase last 30 days"
+        },
+        {
+          "cost": 400.1,
+          "source": "Weighted avg purchase last 90 days"
+        },
+        {
+          "cost": 396,
+          "source": "Latest valid purchase price"
+        }
+      ]
+    },
+    {
+      "productName": "ทองแดงเล็ก",
+      "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+      "group": "ทองแดง",
+      "draftAvgCost": 383.58,
+      "draftDiff": 25.52,
+      "draftValueDiff": 9788.96,
+      "currentActiveLotCount": 4,
+      "currentActiveLotAvgCost": 383.58,
+      "currentTotalStock": 7.18,
+      "latestBuyBillUnitPrice": 390,
+      "latest5BuyBillPrices": [
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00111",
+          "weight": 0.8,
+          "pricePerKg": 390
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00093",
+          "weight": 1.6,
+          "pricePerKg": 390
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00102",
+          "weight": 0.9,
+          "pricePerKg": 396
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00107",
+          "weight": 7.9,
+          "pricePerKg": 401
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00109",
+          "weight": 6.4,
+          "pricePerKg": 401
+        }
+      ],
+      "weightedAvg30d": 397.45,
+      "weightedAvg90d": 397.45,
+      "historicalStockLotCostLatest": 9,
+      "pre09JulStockLotCost": 392.78,
+      "pre09JulStockWeight": 17.9,
+      "pre09JulStockValue": 7030.76,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": true,
+      "hasStockAdjustmentLots": false,
+      "hasHistoricalValidBills": true,
+      "recommendedCost": 392.78,
+      "costSource": "09/07 audit log \"before\" avgCost (was 17.9 kg @ 392.78 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "High",
+      "alternatives": [
+        {
+          "cost": 383.58,
+          "source": "Current active lot weighted avg"
+        },
+        {
+          "cost": 397.45,
+          "source": "Weighted avg purchase last 30 days"
+        },
+        {
+          "cost": 397.45,
+          "source": "Weighted avg purchase last 90 days"
+        },
+        {
+          "cost": 390,
+          "source": "Latest valid purchase price"
+        }
+      ]
+    },
+    {
+      "productName": "ทองแดงชุบ",
+      "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+      "group": "ทองแดง",
+      "draftAvgCost": 0,
+      "draftDiff": 2.4,
+      "draftValueDiff": 0,
+      "currentActiveLotCount": 0,
+      "currentActiveLotAvgCost": 0,
+      "currentTotalStock": 0,
+      "latestBuyBillUnitPrice": 373,
+      "latest5BuyBillPrices": [
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00102",
+          "weight": 0.6,
+          "pricePerKg": 373
+        },
+        {
+          "date": "2026-07-06",
+          "billNumber": "BUY-2569-00107",
+          "weight": 0.4,
+          "pricePerKg": 383
+        },
+        {
+          "date": "2026-07-01",
+          "billNumber": "BUY-2569-00002",
+          "weight": 0.1,
+          "pricePerKg": 368
+        },
+        {
+          "date": "2026-06-30",
+          "billNumber": "BUY-2569-00007",
+          "weight": 0.6,
+          "pricePerKg": 369
+        },
+        {
+          "date": "2026-06-20",
+          "billNumber": "—",
+          "weight": 1.8,
+          "pricePerKg": 374
+        }
+      ],
+      "weightedAvg30d": 373.83,
+      "weightedAvg90d": 373.83,
+      "historicalStockLotCostLatest": 40,
+      "pre09JulStockLotCost": 185.17,
+      "pre09JulStockWeight": 2.3,
+      "pre09JulStockValue": 425.89,
+      "hasZeroCostLots": true,
+      "hasCancelledBills": true,
+      "hasStockAdjustmentLots": false,
+      "hasHistoricalValidBills": true,
+      "recommendedCost": 185.17,
+      "costSource": "09/07 audit log \"before\" avgCost (was 2.3 kg @ 185.17 THB/kg)",
+      "reason": "This is the weighted-average cost of the lots that existed BEFORE the 09/07 apply error occurred. Using this restores the cost basis that should have been on the stock we are now correcting.",
+      "confidence": "Medium",
+      "alternatives": [
+        {
+          "cost": 373.83,
+          "source": "Weighted avg purchase last 30 days"
+        },
+        {
+          "cost": 373.83,
+          "source": "Weighted avg purchase last 90 days"
+        },
+        {
+          "cost": 373,
+          "source": "Latest valid purchase price"
+        }
+      ]
+    }
+  ],
+  "revisedPreview": [
+    {
+      "productName": "ทองเหลืองหนา",
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "currentStock": 0,
+      "physicalTarget": 89.4,
+      "difference": 89.4,
+      "draftAvgCost": 0,
+      "recommendedAvgCost": 196.05,
+      "costSource": "09/07 audit log \"before\" avgCost (was 41.2 kg @ 196.05 THB/kg)",
+      "confidence": "High",
+      "draftValueDiff": 0,
+      "revisedValueDiff": 17526.87,
+      "valueDiffDelta": 17526.87,
+      "expectedAfter": 89.4
+    },
+    {
+      "productName": "ทองเหลืองเนื้อแดง",
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "currentStock": 0.58,
+      "physicalTarget": 3.66,
+      "difference": 3.08,
+      "draftAvgCost": 0,
+      "recommendedAvgCost": 3.59,
+      "costSource": "09/07 audit log \"before\" avgCost (was 2.1 kg @ 3.59 THB/kg)",
+      "confidence": "Medium",
+      "draftValueDiff": 0,
+      "revisedValueDiff": 11.06,
+      "valueDiffDelta": 11.06,
+      "expectedAfter": 3.66
+    },
+    {
+      "productName": "ทองแดงปอกเงา",
+      "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+      "currentStock": 0,
+      "physicalTarget": 182.75,
+      "difference": 182.75,
+      "draftAvgCost": 0,
+      "recommendedAvgCost": 418.37,
+      "costSource": "09/07 audit log \"before\" avgCost (was 93.7 kg @ 418.37 THB/kg)",
+      "confidence": "High",
+      "draftValueDiff": 0,
+      "revisedValueDiff": 76457.12,
+      "valueDiffDelta": 76457.12,
+      "expectedAfter": 182.75
+    },
+    {
+      "productName": "ทองแดงช็อต",
+      "productId": "prod_mqgp9alick357v31bqqrlv43",
+      "currentStock": 3.8,
+      "physicalTarget": 153.74,
+      "difference": 149.94,
+      "draftAvgCost": 40,
+      "recommendedAvgCost": 399.09,
+      "costSource": "09/07 audit log \"before\" avgCost (was 120.2 kg @ 399.09 THB/kg)",
+      "confidence": "High",
+      "draftValueDiff": 5997.6,
+      "revisedValueDiff": 59839.55,
+      "valueDiffDelta": 53841.95,
+      "expectedAfter": 153.74
+    },
+    {
+      "productName": "ทองแดงท่อ Candy",
+      "productId": "cmr09vcvi001cl105spng6d2h",
+      "currentStock": 0,
+      "physicalTarget": 0.9,
+      "difference": 0.9,
+      "draftAvgCost": 0,
+      "recommendedAvgCost": 0,
+      "costSource": "OWNER_MUST_DEFINE",
+      "confidence": "N/A",
+      "draftValueDiff": 0,
+      "revisedValueDiff": 0,
+      "valueDiffDelta": 0,
+      "expectedAfter": 0.9
+    },
+    {
+      "productName": "ทองแดงใหญ่",
+      "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+      "currentStock": 8.08,
+      "physicalTarget": 75.42,
+      "difference": 67.34,
+      "draftAvgCost": 275.86,
+      "recommendedAvgCost": 377.24,
+      "costSource": "09/07 audit log \"before\" avgCost (was 56.3 kg @ 377.24 THB/kg)",
+      "confidence": "High",
+      "draftValueDiff": 18576.41,
+      "revisedValueDiff": 25403.34,
+      "valueDiffDelta": 6826.93,
+      "expectedAfter": 75.42
+    },
+    {
+      "productName": "ทองแดงเล็ก",
+      "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+      "currentStock": 7.18,
+      "physicalTarget": 32.7,
+      "difference": 25.52,
+      "draftAvgCost": 383.58,
+      "recommendedAvgCost": 392.78,
+      "costSource": "09/07 audit log \"before\" avgCost (was 17.9 kg @ 392.78 THB/kg)",
+      "confidence": "High",
+      "draftValueDiff": 9788.96,
+      "revisedValueDiff": 10023.75,
+      "valueDiffDelta": 234.79,
+      "expectedAfter": 32.7
+    },
+    {
+      "productName": "ทองแดงชุบ",
+      "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+      "currentStock": 0,
+      "physicalTarget": 2.4,
+      "difference": 2.4,
+      "draftAvgCost": 0,
+      "recommendedAvgCost": 185.17,
+      "costSource": "09/07 audit log \"before\" avgCost (was 2.3 kg @ 185.17 THB/kg)",
+      "confidence": "Medium",
+      "draftValueDiff": 0,
+      "revisedValueDiff": 444.41,
+      "valueDiffDelta": 444.41,
+      "expectedAfter": 2.4
+    }
+  ],
+  "totals": {
+    "totalDraftValueDiff": 34362.97,
+    "totalRevisedValueDiff": 189706.1,
+    "delta": 155343.13
+  }
+}

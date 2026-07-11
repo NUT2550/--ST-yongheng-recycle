@@ -1,0 +1,10 @@
+﻿#,product_name,product_id,current_stock,physical_target,difference,draft_avg_cost,recommended_avg_cost,cost_source,confidence,draft_value_diff,revised_value_diff,value_diff_delta,expected_after
+1,ทองเหลืองหนา,prod_mqgp9bspglewfbgukggj7wdy,0,89.4,89.4,0,196.05,"09/07 audit log ""before"" avgCost (was 41.2 kg @ 196.05 THB/kg)",High,0,17526.87,17526.87,89.4
+2,ทองเหลืองเนื้อแดง,prod_mqgp9bmg24ygg55yytz9jphl,0.58,3.66,3.08,0,3.59,"09/07 audit log ""before"" avgCost (was 2.1 kg @ 3.59 THB/kg)",Medium,0,11.06,11.06,3.66
+3,ทองแดงปอกเงา,prod_mqgp9aevp2yb18adpkyr3qtr,0,182.75,182.75,0,418.37,"09/07 audit log ""before"" avgCost (was 93.7 kg @ 418.37 THB/kg)",High,0,76457.12,76457.12,182.75
+4,ทองแดงช็อต,prod_mqgp9alick357v31bqqrlv43,3.8,153.74,149.94,40,399.09,"09/07 audit log ""before"" avgCost (was 120.2 kg @ 399.09 THB/kg)",High,5997.6,59839.55,53841.95,153.74
+5,ทองแดงท่อ Candy,cmr09vcvi001cl105spng6d2h,0,0.9,0.9,0,0,OWNER_MUST_DEFINE,N/A,0,0,0,0.9
+6,ทองแดงใหญ่,prod_mqgp9arb37xlm6b54b0xa44v,8.08,75.42,67.34,275.86,377.24,"09/07 audit log ""before"" avgCost (was 56.3 kg @ 377.24 THB/kg)",High,18576.41,25403.34,6826.93,75.42
+7,ทองแดงเล็ก,prod_mqgp9axign3hnk45ex03l4aw,7.18,32.7,25.52,383.58,392.78,"09/07 audit log ""before"" avgCost (was 17.9 kg @ 392.78 THB/kg)",High,9788.96,10023.75,234.79,32.7
+8,ทองแดงชุบ,prod_mqgp9bgavns7vxc8rzrlsn65,0,2.4,2.4,0,185.17,"09/07 audit log ""before"" avgCost (was 2.3 kg @ 185.17 THB/kg)",Medium,0,444.41,444.41,2.4
+TOTAL,,,,,,,,,,34362.97,189706.1,155343.13,
