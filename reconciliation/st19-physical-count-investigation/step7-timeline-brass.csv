@@ -1,0 +1,3 @@
+﻿product_name,product_id,snapshot_system_weight,audit1_before,audit1_after,audit2_before,audit2_after,physical_target,receipts_10jul_onward,consumption_10jul_onward,current_stock,expected_current,delta
+ทองเหลืองหนา,prod_mqgp9bspglewfbgukggj7wdy,41.2,41.2,7.92,41.2,7.92,7.92,0,0,0,7.92,-7.92
+ทองเหลืองเนื้อแดง,prod_mqgp9bmg24ygg55yytz9jphl,2.1,2.1,1.34,2.1,1.34,1.34,0,0,0.58,1.34,-0.76

@@ -1,0 +1,11 @@
+﻿group,product_name,product_id,system_weight_kg,physical_weight_kg,difference_weight_kg,average_cost_per_kg,value_difference_thb,active_lots,note
+ทองเหลือง,ทองเหลืองเนื้อแดง,prod_mqgp9bmg24ygg55yytz9jphl,0.58,3.66,3.08,0,0,70,OK
+ทองเหลือง,ทองเหลืองหนา,prod_mqgp9bspglewfbgukggj7wdy,0,89.4,89.4,0,0,20,OK
+ทองแดง,ทองแดงปอกเงา,prod_mqgp9aevp2yb18adpkyr3qtr,0,182.75,182.75,0,0,16,OK
+ทองแดง,ทองแดงปอกช็อต,NOT_FOUND,,153.74,,,,0,NOT FOUND in DB
+ทองแดง,ทองแดงท่อ Candy,cmr09vcvi001cl105spng6d2h,0,0.9,0.9,0,0,1,OK
+ทองแดง,ทองแดงใหญ่,prod_mqgp9arb37xlm6b54b0xa44v,8.08,75.42,67.34,275.86,18576.57,74,OK
+ทองแดง,ทองแดงเล็ก,prod_mqgp9axign3hnk45ex03l4aw,7.18,32.7,25.52,383.58,9788.87,46,OK
+ทองแดง,ทองแดงชุบ,prod_mqgp9bgavns7vxc8rzrlsn65,0,2.4,2.4,0,0,33,OK
+ทองแดง,ขี้กลึงทองแดง,prod_new_1782125293874_e0b882e0b8b5e0b989e0b881,0,0,0,0,0,0,OK
+ทองแดง,ทองแดงติดเหล็ก,cmr09vcvh0014l105skokga93,0,0,0,0,0,0,OK

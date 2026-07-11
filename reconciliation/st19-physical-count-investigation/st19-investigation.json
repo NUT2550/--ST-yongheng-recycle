@@ -1,0 +1,466 @@
+{
+  "generatedAt": "2026-07-11T16:15:44.951Z",
+  "ownerPhysical": [
+    {
+      "name": "ทองเหลืองเนื้อแดง",
+      "physical": 3.66,
+      "group": "ทองเหลือง"
+    },
+    {
+      "name": "ทองเหลืองหนา",
+      "physical": 89.4,
+      "group": "ทองเหลือง"
+    },
+    {
+      "name": "ทองแดงปอกเงา",
+      "physical": 182.75,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงปอกช็อต",
+      "physical": 153.74,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงท่อ Candy",
+      "physical": 0.9,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงใหญ่",
+      "physical": 75.42,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงเล็ก",
+      "physical": 32.7,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงชุบ",
+      "physical": 2.4,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ขี้กลึงทองแดง",
+      "physical": 0,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงติดเหล็ก",
+      "physical": 0,
+      "group": "ทองแดง"
+    }
+  ],
+  "productRows": [
+    {
+      "productName": "ทองเหลืองเนื้อแดง",
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "group": "ทองเหลือง",
+      "systemWeight": 0.58,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 70,
+      "physicalWeight": 3.66,
+      "differenceWeight": 3.08,
+      "valueDifference": 0,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองเหลืองหนา",
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "group": "ทองเหลือง",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 20,
+      "physicalWeight": 89.4,
+      "differenceWeight": 89.4,
+      "valueDifference": 0,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองแดงปอกเงา",
+      "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+      "group": "ทองแดง",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 16,
+      "physicalWeight": 182.75,
+      "differenceWeight": 182.75,
+      "valueDifference": 0,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองแดงปอกช็อต",
+      "productId": "NOT_FOUND",
+      "group": "ทองแดง",
+      "systemWeight": null,
+      "averageCost": null,
+      "systemValue": null,
+      "lotCount": 0,
+      "physicalWeight": 153.74,
+      "differenceWeight": null,
+      "valueDifference": null,
+      "note": "NOT FOUND in DB"
+    },
+    {
+      "productName": "ทองแดงท่อ Candy",
+      "productId": "cmr09vcvi001cl105spng6d2h",
+      "group": "ทองแดง",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 1,
+      "physicalWeight": 0.9,
+      "differenceWeight": 0.9,
+      "valueDifference": 0,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองแดงใหญ่",
+      "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+      "group": "ทองแดง",
+      "systemWeight": 8.08,
+      "averageCost": 275.86,
+      "systemValue": 2228.97,
+      "lotCount": 74,
+      "physicalWeight": 75.42,
+      "differenceWeight": 67.34,
+      "valueDifference": 18576.57,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองแดงเล็ก",
+      "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+      "group": "ทองแดง",
+      "systemWeight": 7.18,
+      "averageCost": 383.58,
+      "systemValue": 2754.08,
+      "lotCount": 46,
+      "physicalWeight": 32.7,
+      "differenceWeight": 25.52,
+      "valueDifference": 9788.87,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองแดงชุบ",
+      "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+      "group": "ทองแดง",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 33,
+      "physicalWeight": 2.4,
+      "differenceWeight": 2.4,
+      "valueDifference": 0,
+      "note": "OK"
+    },
+    {
+      "productName": "ขี้กลึงทองแดง",
+      "productId": "prod_new_1782125293874_e0b882e0b8b5e0b989e0b881",
+      "group": "ทองแดง",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 0,
+      "physicalWeight": 0,
+      "differenceWeight": 0,
+      "valueDifference": 0,
+      "note": "OK"
+    },
+    {
+      "productName": "ทองแดงติดเหล็ก",
+      "productId": "cmr09vcvh0014l105skokga93",
+      "group": "ทองแดง",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 0,
+      "physicalWeight": 0,
+      "differenceWeight": 0,
+      "valueDifference": 0,
+      "note": "OK"
+    }
+  ],
+  "notFound": [
+    {
+      "name": "ทองแดงปอกช็อต",
+      "physical": 153.74,
+      "group": "ทองแดง"
+    }
+  ],
+  "ambiguous": [],
+  "session09": {
+    "id": "cmrdqgfru0000sn8fdmtjjnla",
+    "countDate": "2026-07-09T10:00:00.000Z",
+    "createdAt": "2026-07-09T16:40:30.426Z",
+    "status": "APPLIED",
+    "note": "Draft from owner physical count for 09/07/2569. Do not apply until owner reviews preview.",
+    "appliedAt": "2026-07-11T06:37:35.914Z",
+    "appliedById": "user_01_default",
+    "items": [
+      {
+        "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+        "productName": "ทองแดงปอกเงา",
+        "systemWeight": 93.7,
+        "physicalWeight": 0,
+        "differenceWeight": -93.7,
+        "averageCost": 418.37,
+        "valueDifference": -39201.27
+      },
+      {
+        "productId": "prod_mqgp9alick357v31bqqrlv43",
+        "productName": "ทองแดงช็อต",
+        "systemWeight": 116.4,
+        "physicalWeight": 1.16,
+        "differenceWeight": -115.24,
+        "averageCost": 399.09,
+        "valueDifference": -45991.13
+      },
+      {
+        "productId": "cmr09vcvi001cl105spng6d2h",
+        "productName": "ทองแดงท่อ Candy",
+        "systemWeight": 0,
+        "physicalWeight": 0,
+        "differenceWeight": 0,
+        "averageCost": 0,
+        "valueDifference": 0
+      },
+      {
+        "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+        "productName": "ทองแดงใหญ่",
+        "systemWeight": 56.3,
+        "physicalWeight": 8.08,
+        "differenceWeight": -48.22,
+        "averageCost": 377.24,
+        "valueDifference": -18190.51
+      },
+      {
+        "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+        "productName": "ทองแดงเล็ก",
+        "systemWeight": 17.9,
+        "physicalWeight": 7.18,
+        "differenceWeight": -10.72,
+        "averageCost": 392.78,
+        "valueDifference": -4210.6
+      },
+      {
+        "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+        "productName": "ทองแดงชุบ",
+        "systemWeight": 2.3,
+        "physicalWeight": 0,
+        "differenceWeight": -2.3,
+        "averageCost": 185.17,
+        "valueDifference": -425.89
+      },
+      {
+        "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+        "productName": "ทองเหลืองหนา",
+        "systemWeight": 41.2,
+        "physicalWeight": 7.92,
+        "differenceWeight": -33.28,
+        "averageCost": 196.05,
+        "valueDifference": -6524.54
+      },
+      {
+        "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+        "productName": "ทองเหลืองเนื้อแดง",
+        "systemWeight": 2.1,
+        "physicalWeight": 1.34,
+        "differenceWeight": -0.76,
+        "averageCost": 3.59,
+        "valueDifference": -2.73
+      }
+    ]
+  },
+  "auditLogs09": [
+    {
+      "id": "cmrfzspsh0000la04ziqkm5ze",
+      "createdAt": "2026-07-11T06:37:31.292Z",
+      "details": {
+        "type": "PHYSICAL_COUNT_APPLY",
+        "sessionId": "cmrdqgfru0000sn8fdmtjjnla",
+        "countDate": "2026-07-09T10:00:00.000Z",
+        "group": "ทองแดง/ทองเหลือง",
+        "note": "Owner approved apply for 09/07/2569 copper/brass physical count",
+        "adjustments": [
+          {
+            "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+            "productName": "ทองแดงปอกเงา",
+            "before": 93.7,
+            "physical": 0,
+            "difference": -93.7,
+            "after": 0,
+            "avgCost": 418.37
+          },
+          {
+            "productId": "prod_mqgp9alick357v31bqqrlv43",
+            "productName": "ทองแดงช็อต",
+            "before": 120.2,
+            "physical": 1.16,
+            "difference": -119.04,
+            "after": 1.16,
+            "avgCost": 399.09
+          },
+          {
+            "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+            "productName": "ทองแดงใหญ่",
+            "before": 56.3,
+            "physical": 8.08,
+            "difference": -48.22,
+            "after": 8.08,
+            "avgCost": 377.24
+          },
+          {
+            "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+            "productName": "ทองแดงเล็ก",
+            "before": 17.9,
+            "physical": 7.18,
+            "difference": -10.72,
+            "after": 7.18,
+            "avgCost": 392.78
+          },
+          {
+            "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+            "productName": "ทองแดงชุบ",
+            "before": 2.3,
+            "physical": 0,
+            "difference": -2.3,
+            "after": 0,
+            "avgCost": 185.17
+          },
+          {
+            "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+            "productName": "ทองเหลืองหนา",
+            "before": 41.2,
+            "physical": 7.92,
+            "difference": -33.28,
+            "after": 7.92,
+            "avgCost": 196.05
+          },
+          {
+            "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+            "productName": "ทองเหลืองเนื้อแดง",
+            "before": 2.1,
+            "physical": 1.34,
+            "difference": -0.76,
+            "after": 1.34,
+            "avgCost": 3.59
+          }
+        ],
+        "createdLotIds": [],
+        "deductedLotCount": 43
+      }
+    },
+    {
+      "id": "cmrfzstcy0001la04ro7vy413",
+      "createdAt": "2026-07-11T06:37:36.803Z",
+      "details": {
+        "type": "PHYSICAL_COUNT_APPLY",
+        "sessionId": "cmrdqgfru0000sn8fdmtjjnla",
+        "countDate": "2026-07-09T10:00:00.000Z",
+        "group": "ทองแดง/ทองเหลือง",
+        "note": "Owner approved apply for 09/07/2569 copper/brass physical count",
+        "adjustments": [
+          {
+            "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+            "productName": "ทองแดงชุบ",
+            "before": 1.7,
+            "physical": 0,
+            "difference": -1.7,
+            "after": 0,
+            "avgCost": 185.17
+          },
+          {
+            "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+            "productName": "ทองเหลืองหนา",
+            "before": 41.2,
+            "physical": 7.92,
+            "difference": -33.28,
+            "after": 7.92,
+            "avgCost": 196.05
+          },
+          {
+            "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+            "productName": "ทองเหลืองเนื้อแดง",
+            "before": 2.1,
+            "physical": 1.34,
+            "difference": -0.76,
+            "after": 1.34,
+            "avgCost": 3.59
+          }
+        ],
+        "createdLotIds": [],
+        "deductedLotCount": 12
+      }
+    }
+  ],
+  "sixPointThreeFourEntries": {
+    "buyItems": [],
+    "sortItems": [],
+    "transferItems": []
+  },
+  "draft08": {
+    "id": "cmrdae0vh0000sgmjvb5aiu0n",
+    "countDate": "2026-07-08T10:00:00.000Z",
+    "status": "DRAFT",
+    "note": "Draft from owner confirmed physical count for 08/07/2569. Do not apply until owner reviews preview.",
+    "items": [
+      {
+        "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+        "productName": "ทองแดงใหญ่",
+        "systemWeight": 56.3,
+        "physicalWeight": 6,
+        "differenceWeight": -50.3
+      },
+      {
+        "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+        "productName": "ทองเหลืองหนา",
+        "systemWeight": 39,
+        "physicalWeight": 6.34,
+        "differenceWeight": -32.66
+      },
+      {
+        "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+        "productName": "ทองเหลืองเนื้อแดง",
+        "systemWeight": 0.8,
+        "physicalWeight": 0.84,
+        "differenceWeight": 0.04
+      }
+    ]
+  },
+  "timeline": [
+    {
+      "productName": "ทองเหลืองหนา",
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "snapshotSystemWeight": 41.2,
+      "auditLog1Before": 41.2,
+      "auditLog1After": 7.92,
+      "auditLog2Before": 41.2,
+      "auditLog2After": 7.92,
+      "physicalTarget": 7.92,
+      "receipts10JulOnward": 0,
+      "consumption10JulOnward": 0,
+      "currentStock": 0,
+      "expectedCurrent": 7.92,
+      "delta": -7.92
+    },
+    {
+      "productName": "ทองเหลืองเนื้อแดง",
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "snapshotSystemWeight": 2.1,
+      "auditLog1Before": 2.1,
+      "auditLog1After": 1.34,
+      "auditLog2Before": 2.1,
+      "auditLog2After": 1.34,
+      "physicalTarget": 1.34,
+      "receipts10JulOnward": 0,
+      "consumption10JulOnward": 0,
+      "currentStock": 0.58,
+      "expectedCurrent": 1.34,
+      "delta": -0.76
+    }
+  ]
+}

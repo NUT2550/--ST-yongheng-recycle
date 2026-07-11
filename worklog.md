@@ -2812,3 +2812,87 @@ All in `/home/z/my-project/reconciliation/physical-count-apply-2026-07-09-and-10
 - **No DB writes performed** (read-only verification per Owner instruction)
 - ⚠️ **Stock discrepancy** found in ทองเหลืองหนา (-7.92 kg) and ทองเหลืองเนื้อแดง (-0.76 kg) vs audit log expected values
 - ⚠️ **NOT READY to close ST-9** — Owner review required for missing stock
+
+---
+
+## Task ID: 74 (ST-19)
+## Agent: Main
+## Task: Physical Count Investigation — READ-ONLY (Owner confirmed physical stock)
+
+### Summary
+Owner provided current physical stock counts for 10 copper/brass products. Investigation found:
+1. **9 products match DB** (1 not found: "ทองแดงปอกช็อต" — DB has "ทองแดงช็อต" + "ทองแดงปอกเงา" but not "ทองแดงปอกช็อต")
+2. **09/07 Physical Count targets were 7.92 + 1.34 = 9.26 kg** (NOT 89.40 + 3.66 = 93.06 kg per Owner) → understated by 83.80 kg (data entry error)
+3. **6.34 kg is the 08/07 draft's physical target for ทองเหลืองหนา** (NOT a daily receipt of 07/07)
+4. **8.68 kg of brass went missing after Apply 2** with no consumption events recorded (system bug)
+
+### Step 1-3: System vs Physical (10 products)
+- 9 products found in DB, 1 not found ("ทองแดงปอกช็อต")
+- Total System: 16.10 kg, Total Physical (Owner): 386.97 kg (excl. ทองแดงปอกช็อต)
+- Total Diff: +370.87 kg, Total Value Diff: 28,365.44 THB (only 2 products have non-zero avgCost)
+
+### Step 4-5: 09/07 Physical Count target source
+- 09/07 session (cmrdqgfru0000sn8fdmtjjnla) used physical targets:
+  - ทองเหลืองหนา: 7.92 kg (Owner said 8.00 — rounded)
+  - ทองเหลืองเนื้อแดง: 1.34 kg
+- These were the "physicalWeight" (physical count target) — NOT daily receipts
+- The "systemWeight" (closing stock before apply) was 41.2 + 2.1 = 43.3 kg
+- Apply deducted 33.28 + 0.76 = 34.04 kg via FIFO
+
+### Step 6: 6.34 kg investigation
+- No BuyBillItem, SortingBillItem, or StockTransferItem with weight=6.34 kg found on 07/07/2026
+- 6.34 kg is the physical count target for ทองเหลืองหนา in the 08/07 DRAFT session (Task 66, cmrdae0vh0000sgmjvb5aiu0n)
+- 6.34 kg is ALREADY classified as ทองเหลืองหนา (matches Owner's hypothesis)
+- Receipts for brass 07/06-07/09: ทองเหลืองหนา=33.00 kg, ทองเหลืองเนื้อแดง=2.10 kg
+
+### Step 7: Timeline for brass products
+**ทองเหลืองหนา**:
+- T1: System snapshot in 09/07 draft: 41.2 kg
+- T2 (Audit log 1, 06:37:31): before=41.2, after=7.92
+- T2 (Audit log 2, 06:37:36): before=41.2, after=7.92 (restored between applies!)
+- T3: Physical target: 7.92 kg
+- T4: 0 receipts, 0 consumption, 0 STOCK_ADJUSTMENT lots after apply
+- T5: Current live stock: 0 kg
+- Expected current: 7.92 kg, Actual: 0 kg, Delta: -7.92 kg
+
+**ทองเหลืองเนื้อแดง**:
+- T1: System snapshot in 09/07 draft: 2.1 kg
+- T2 (Audit log 1): before=2.1, after=1.34
+- T2 (Audit log 2): before=2.1, after=1.34 (restored between applies!)
+- T3: Physical target: 1.34 kg
+- T4: 0 receipts, 0 consumption, 0 STOCK_ADJUSTMENT lots after apply
+- T5: Current live stock: 0.58 kg
+- Expected current: 1.34 kg, Actual: 0.58 kg, Delta: -0.76 kg
+
+### Step 8: Summary
+**TWO separate problems identified:**
+1. **Data entry error**: 09/07 apply used physical target 9.26 kg instead of 93.06 kg per Owner — understated by 83.80 kg
+2. **System bug**: 8.68 kg of brass went missing after Apply 2 (7.92 + 0.76) with no consumption events recorded
+
+**ALSO**: Double-apply pattern visible — Apply 1 ran at 06:37:31, restoration script ran in 5-second window, Apply 2 ran at 06:37:36. Both audit logs have before=41.2/2.1 for brass (proving restoration happened).
+
+### Step 9: Correction plan (READ-ONLY, awaiting Owner approval)
+- ❌ NO DB writes performed
+- ❌ NO Adjustment, NO Reverse, NO Apply, NO Commit/Push/Deploy
+- Recommended phased approach (Phase 1: investigate restoration script + missing stock; Phase 2: reversal session + new physical count with correct targets; Phase 3: prevention via idempotency)
+
+### Owner questions to resolve
+1. "ทองแดงปอกช็อต" 153.74 kg — คือ product ใดใน DB?
+2. ยืนยัน data entry error ของ 9.26 kg target หรือไม่?
+3. อนุมัติให้ investigate ต่อ (read-only) สำหรับ 8.68 kg ที่หายไป?
+4. เลือก correction approach (reverse + new session, new session only, อื่นๆ)
+
+### Output Files
+All in `/home/z/my-project/reconciliation/st19-physical-count-investigation/`:
+1. `st19-investigate.mjs` — Read-only investigation script
+2. `st19-investigation.json` — Full JSON dump
+3. `step1-3-system-vs-physical.csv` — System vs Physical table
+4. `step7-timeline-brass.csv` — Brass products timeline
+5. `FINAL_REPORT.md` — This report (8 sections)
+
+### Stage Summary
+- **Status**: NOT READY for correction — awaiting Owner approval
+- **No DB writes** (read-only per Owner instruction)
+- **3 problems identified**: data entry error (9.26 vs 93.06 kg target) + system bug (8.68 kg missing) + double-apply pattern (2 audit logs in 5 seconds)
+- **"ทองแดงปอกช็อต" not in DB** — Owner must clarify which product
+- **Owner must approve correction plan before any DB writes**
