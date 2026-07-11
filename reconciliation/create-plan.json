@@ -1,0 +1,114 @@
+{
+  "newProducts": [
+    "อลูมิเนียมผ้าเบรค",
+    "อลูมิเนียมตูดกะทะไฟฟ้า",
+    "ฝาอลูมิเนียมติดพลาสติก",
+    "ฝาอลูมิเนียมเผา",
+    "สายไฟอลูมิเนียม",
+    "อลูมิเนียมติดเหล็ก",
+    "อลูมิเนียมแผ่นเพลท",
+    "กระป๋องสเปรย์อลูมิเนียม",
+    "อลูมิเนียมแข็งติดสี",
+    "อลูมิเนียมแข็งลูกสูบ",
+    "อลูมิเนียมแข็งก้านเบรค"
+  ],
+  "alreadyExists": [
+    {
+      "requestedName": "ฝาอลูมิเนียมเผา",
+      "existingId": "prod_mqgp9epjox7up6c2k8jrf289",
+      "existingName": "ฝาอลูมิเนียมเผา",
+      "reason": "EXACT match (after rename)"
+    }
+  ],
+  "nearDuplicates": [
+    {
+      "requestedName": "อลูมิเนียมตูดกะทะไฟฟ้า",
+      "candidates": [
+        {
+          "id": "prod_mqgp9edcxnxkocxfu0odbayj",
+          "name": "อลูมิเนียมตูดกะทะ",
+          "categoryId": "cmr09v2nj0000l10518owb4lf",
+          "categoryName": "อลูมิเนียม"
+        },
+        {
+          "id": "prod_mqgp9f3wvar7pgyoek1zen5k",
+          "name": "อลูมิเนียมตูดกะทะไฟฟ้าล้วน",
+          "categoryId": "cmr09v2nj0000l10518owb4lf",
+          "categoryName": "อลูมิเนียม"
+        }
+      ]
+    },
+    {
+      "requestedName": "ฝาอลูมิเนียมติดพลาสติก",
+      "candidates": [
+        {
+          "id": "prod_mqgp9e0y2ehae94h2mw403ns",
+          "name": "ฝาอลูมิเนียม",
+          "categoryId": "cmr09v2nj0000l10518owb4lf",
+          "categoryName": "อลูมิเนียม"
+        }
+      ]
+    },
+    {
+      "requestedName": "อลูมิเนียมแข็งติดสี",
+      "candidates": [
+        {
+          "id": "prod_mqgp9do7ui6p53xv2tbjq7tb",
+          "name": "อลูมิเนียมแข็ง",
+          "categoryId": "cmr09v2nj0000l10518owb4lf",
+          "categoryName": "อลูมิเนียม"
+        }
+      ]
+    },
+    {
+      "requestedName": "อลูมิเนียมแข็งลูกสูบ",
+      "candidates": [
+        {
+          "id": "prod_mqgp9do7ui6p53xv2tbjq7tb",
+          "name": "อลูมิเนียมแข็ง",
+          "categoryId": "cmr09v2nj0000l10518owb4lf",
+          "categoryName": "อลูมิเนียม"
+        }
+      ]
+    },
+    {
+      "requestedName": "อลูมิเนียมแข็งก้านเบรค",
+      "candidates": [
+        {
+          "id": "prod_mqgp9do7ui6p53xv2tbjq7tb",
+          "name": "อลูมิเนียมแข็ง",
+          "categoryId": "cmr09v2nj0000l10518owb4lf",
+          "categoryName": "อลูมิเนียม"
+        }
+      ]
+    }
+  ],
+  "toCreate": [
+    {
+      "name": "อลูมิเนียมผ้าเบรค",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม"
+    },
+    {
+      "name": "สายไฟอลูมิเนียม",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม"
+    },
+    {
+      "name": "อลูมิเนียมติดเหล็ก",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม"
+    },
+    {
+      "name": "อลูมิเนียมแผ่นเพลท",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม"
+    },
+    {
+      "name": "กระป๋องสเปรย์อลูมิเนียม",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม"
+    }
+  ],
+  "aluminumCategoryId": "cmr09v2nj0000l10518owb4lf"
+}

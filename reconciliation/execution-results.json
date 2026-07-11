@@ -1,0 +1,182 @@
+{
+  "renames": [
+    {
+      "id": "prod_mqgp9dbqtfx0j3mnsbl9mwix",
+      "oldName": "อลูมีเนียมอัลลอย",
+      "newName": "อลูมิเนียมอัลลอย"
+    },
+    {
+      "id": "prod_mqgp9dhn9ryniksnud8q714g",
+      "oldName": "อลูมีเนียมล้อแม๊กซ์",
+      "newName": "อลูมิเนียมล้อแม๊กซ์"
+    },
+    {
+      "id": "prod_mqgp9do7ui6p53xv2tbjq7tb",
+      "oldName": "อลูมีเนียมแข็ง",
+      "newName": "อลูมิเนียมแข็ง"
+    },
+    {
+      "id": "prod_mqgp9duo294uh2l320pbg1ru",
+      "oldName": "กระป๋องอลูมีเนียม",
+      "newName": "กระป๋องอลูมิเนียม"
+    },
+    {
+      "id": "prod_mqgp9e0y2ehae94h2mw403ns",
+      "oldName": "ฝาอลูมีเนียม",
+      "newName": "ฝาอลูมิเนียม"
+    },
+    {
+      "id": "prod_mqgp9e6yxtg3mo8mf998qnf6",
+      "oldName": "อลูมีเนียมกระทะ",
+      "newName": "อลูมิเนียมกระทะ"
+    },
+    {
+      "id": "prod_mqgp9edcxnxkocxfu0odbayj",
+      "oldName": "อลูมีเนียมตูดกะทะ",
+      "newName": "อลูมิเนียมตูดกะทะ"
+    },
+    {
+      "id": "prod_mqgp9ejcaz0g567zocy5ub8j",
+      "oldName": "หม้อน้ำอลูมีเนียม",
+      "newName": "หม้อน้ำอลูมิเนียม"
+    },
+    {
+      "id": "prod_mqgp9epjox7up6c2k8jrf289",
+      "oldName": "ฝาอลูมีเนียมเผา",
+      "newName": "ฝาอลูมิเนียมเผา"
+    },
+    {
+      "id": "prod_mqgp9ew9ar8ckyjn69mr8aq2",
+      "oldName": "อลูมีเนียมตูดหม้อหุงข้าว",
+      "newName": "อลูมิเนียมตูดหม้อหุงข้าว"
+    },
+    {
+      "id": "prod_mqgp9f3wvar7pgyoek1zen5k",
+      "oldName": "อลูมีเนียมตูดกะทะไฟฟ้าล้วน",
+      "newName": "อลูมิเนียมตูดกะทะไฟฟ้าล้วน"
+    },
+    {
+      "id": "prod_mqgp9fa7fylab8ztuya98a9p",
+      "oldName": "อลูมีเนียมฉากสี",
+      "newName": "อลูมิเนียมฉากสี"
+    },
+    {
+      "id": "prod_mqgp9fgoheos0xee1ntl0r27",
+      "oldName": "อลูมีเนียมเครื่อง",
+      "newName": "อลูมิเนียมเครื่อง"
+    },
+    {
+      "id": "prod_mqgp9fmounwsgwm9xyso0phf",
+      "oldName": "อลูมีเนียมครีบหม้อน้ำ",
+      "newName": "อลูมิเนียมครีบหม้อน้ำ"
+    },
+    {
+      "id": "prod_mqgp9fsl7s0haidcn5c9t4ee",
+      "oldName": "อลูมีเนียมมุ้งลวด",
+      "newName": "อลูมิเนียมมุ้งลวด"
+    },
+    {
+      "id": "prod_mqgp9fz6pqfgrkxoh5nbgchi",
+      "oldName": "อลูมีเนียมมู่ลี่",
+      "newName": "อลูมิเนียมมู่ลี่"
+    },
+    {
+      "id": "prod_mqgp9g5d78sw9tuoeuem3i1b",
+      "oldName": "อลูมีเนียมเพลท",
+      "newName": "อลูมิเนียมเพลท"
+    },
+    {
+      "id": "prod_mqgp9gh81ao3300v6dhcei3x",
+      "oldName": "อลูมีเนียมป๋องสเปรย์",
+      "newName": "อลูมิเนียมป๋องสเปรย์"
+    },
+    {
+      "id": "prod_mqgp9gn9lfu942el9hx2undl",
+      "oldName": "อลูมีเนียมปั้มกระป๋อง",
+      "newName": "อลูมิเนียมปั้มกระป๋อง"
+    },
+    {
+      "id": "prod_mqgp9gt8ki5lcwu67ps55equ",
+      "oldName": "อลูมีเนียมฟรอยไม่ติดพลาสติก",
+      "newName": "อลูมิเนียมฟรอยไม่ติดพลาสติก"
+    },
+    {
+      "id": "prod_mqgp9h048rj5720d2yk78tpk",
+      "oldName": "อลูมีเนียมซีรี 5,000",
+      "newName": "อลูมิเนียมซีรี 5,000"
+    }
+  ],
+  "creates": [
+    {
+      "id": "cmr7a7o4m0001mzietaojyqbr",
+      "name": "อลูมิเนียมผ้าเบรค",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7olr0003mzieoc9q18u2",
+      "name": "สายไฟอลูมิเนียม",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7p2v0005mzieoc9dnjo7",
+      "name": "อลูมิเนียมติดเหล็ก",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7plm0007mzie5kkgqpdh",
+      "name": "อลูมิเนียมแผ่นเพลท",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7q2o0009mziel3n3tz4c",
+      "name": "กระป๋องสเปรย์อลูมิเนียม",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7qjs000bmzies46dqkj9",
+      "name": "อลูมิเนียมตูดกะทะไฟฟ้า",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7r0u000dmzieba96rx04",
+      "name": "ฝาอลูมิเนียมติดพลาสติก",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7rhy000fmziexzseffgk",
+      "name": "อลูมิเนียมแข็งติดสี",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7ryz000hmziewpih12np",
+      "name": "อลูมิเนียมแข็งลูกสูบ",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    },
+    {
+      "id": "cmr7a7sg1000jmziewgol2rch",
+      "name": "อลูมิเนียมแข็งก้านเบรค",
+      "categoryId": "cmr09v2nj0000l10518owb4lf",
+      "categoryName": "อลูมิเนียม",
+      "initialStock": 0
+    }
+  ],
+  "errors": []
+}

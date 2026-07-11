@@ -1,0 +1,5 @@
+﻿No.,sale date,bill number,buyer/customer,raw product name,product code,weight,price per kg,amount,note,required handling,recommended source product,recommended future movement type
+1,08/01/2569,A2007349,บริษัท นิวโซลูชั่นส์ (ไทยแลนด์) จำกัด สำนักงานใหญ่,ทองแดงท่อ Candy,0312,2.9,367.241379310345,1065,,Create/verify sorting movement before final stock reconciliation,ทองแดงใหญ่,sorting/dismantling output from ทองแดงใหญ่
+2,05/02/2569,A2007395,บริษัท นิวโซลูชั่นส์ (ไทยแลนด์) จำกัด สำนักงานใหญ่,ทองแดงท่อ Candy,0312,53.2,366.616541353384,19504,,Create/verify sorting movement before final stock reconciliation,ทองแดงใหญ่,sorting/dismantling output from ทองแดงใหญ่
+3,21/04/2569,A2007502,ร้าน เอส.เอ็ม.เอ รีไซเคิล (สมพร),ทองแดงท่อ Candy,0312,56,385.982142857143,21615,,Create/verify sorting movement before final stock reconciliation,ทองแดงใหญ่,sorting/dismantling output from ทองแดงใหญ่
+4,04/07/2569,A2007621,ร้าน เอส.เอ็ม.เอ รีไซเคิล (สมพร),ทองแดงท่อ Candy,0312,22.6,417.96460176991206,9446,,Create/verify sorting movement before final stock reconciliation,ทองแดงใหญ่,sorting/dismantling output from ทองแดงใหญ่

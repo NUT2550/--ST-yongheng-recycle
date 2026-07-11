@@ -1,0 +1,13 @@
+{
+  "label": "pre-apply-task41",
+  "timestamp": "2026-07-05T13:50:54.253Z",
+  "counts": {
+    "product": 114,
+    "buyBill": 15,
+    "sellBill": 9,
+    "sortingBill": 141,
+    "stockTransfer": 3,
+    "stockLot": 854
+  },
+  "totalStockWeight": 547540.3000000002
+}

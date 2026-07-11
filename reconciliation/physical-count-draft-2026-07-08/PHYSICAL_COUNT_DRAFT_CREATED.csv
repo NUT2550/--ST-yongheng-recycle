@@ -1,0 +1,4 @@
+﻿session_id,count_date,group,status,item_id,product_name,product_id,system_weight_kg,physical_weight_kg,difference_weight_kg,average_cost_per_kg,value_difference_thb,direction,note
+cmrdae0vh0000sgmjvb5aiu0n,2026-07-08,ทองแดง/ทองเหลือง,DRAFT,cmrdae0vi0002sgmjdfucb72u,ทองแดงใหญ่,prod_mqgp9arb37xlm6b54b0xa44v,56.3,6,-50.3,377.24,-18975.17,ลดสต็อก,direction=ลดสต็อก
+cmrdae0vh0000sgmjvb5aiu0n,2026-07-08,ทองแดง/ทองเหลือง,DRAFT,cmrdae0vi0003sgmj7mssmnxs,ทองเหลืองหนา,prod_mqgp9bspglewfbgukggj7wdy,39,6.34,-32.66,207.11,-6764.21,ลดสต็อก,direction=ลดสต็อก
+cmrdae0vh0000sgmjvb5aiu0n,2026-07-08,ทองแดง/ทองเหลือง,DRAFT,cmrdae0vi0004sgmj1ow32xdu,ทองเหลืองเนื้อแดง,prod_mqgp9bmg24ygg55yytz9jphl,0.8,0.84,0.04,9.42,0.38,เพิ่มสต็อก,direction=เพิ่มสต็อก

@@ -1,0 +1,5 @@
+﻿No.,sale date,bill number,weight (kg),amount (THB),before/after restart,matching sorting movement exists,recommendation
+1,08/01/2569,A2007349,2.9,1065,old history (ignore),NO,Ignored — before copper/brass restart date (04/07/2569). Old history does not affect current stock reconciliation.
+2,05/02/2569,A2007395,53.2,19504,old history (ignore),NO,Ignored — before copper/brass restart date (04/07/2569). Old history does not affect current stock reconciliation.
+3,21/04/2569,A2007502,56,21615,old history (ignore),NO,Ignored — before copper/brass restart date (04/07/2569). Old history does not affect current stock reconciliation.
+4,04/07/2569,A2007621,22.6,9446,CURRENT SCOPE,NO,"Need owner decision whether to create sorting movement from ทองแดงใหญ่ to ทองแดงท่อ Candy for 22.6 kg on 04/07/2569, or exclude because copper/brass physical count adjustment will override."

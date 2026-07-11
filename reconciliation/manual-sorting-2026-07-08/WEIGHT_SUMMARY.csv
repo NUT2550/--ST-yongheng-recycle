@@ -1,0 +1,4 @@
+﻿recordId,type,room,sourceProduct,sourceWeight,totalOutputWeight,lossWeight,outputCount,issue,status
+1,คัดแยก,21,เหล็กหนาสั้น,62.6,62.5,0.1,12,,PRODUCT_ISSUE
+2,คัดแยก,22,เครื่องจักร,20.6,20.4,0.2,6,,PRODUCT_ISSUE
+3,แกะของ,24,ของแกะราคาสูง,2.1,2.1,0,2,,OK

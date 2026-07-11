@@ -1,0 +1,285 @@
+====================================================================================================================================================================================
+STAINLESS GROUP STOCK RECONCILIATION — DRY-RUN REPORT
+====================================================================================================================================================================================
+
+DATA SOURCES USED:
+  1. Detailed Buy .xls:  ซื้อ 22-1-2569 ถึง 3-7-2569 แบบละเอียด.xls  (5073 transactions, 66 products)
+  2. Detailed Sell .xls: ขาย 22-1-2569 ถึง 3-7 2569 แบบละเอียด.xls   (351 transactions, 54 products)
+  3. Sorting PDF:        สต๊อกทั้งหมด_คัดแยก_เสียหาย_Google_ชีต.pdf    (68 sorting bills, 6 Jan - 27 Jun 2026)
+  4. DB SortingBills from 28/06/2569 onward (4 active, 5 cancelled excluded)
+  5. DB StockTransfers from 28/06/2569 onward (1 active, 2 cancelled excluded)
+  6. DB StockLot sum per product (currentSystemStock)
+
+ALIASES APPLIED:
+  304           → สแตนเลส 304
+  202           → สแตนเลส 202
+  304ยาว        → สแตนเลส 304 ยาว
+  304 ยาว       → สแตนเลส 304 ยาว
+  ขี้กลึงสแตนเลส → ขี้กลึงสแตนเลส 304
+  (แสตนเลส/สแตนเลส spelling unified — both map to same product)
+
+NO DUPLICATE COUNTING:
+  - PDF covers 6 Jan - 27 Jun 2026 (verified: 67 stainless-related bills)
+  - DB SortingBills in PDF range (1 Jan - 27 Jun 2026): 127 bills — these DUPLICATE the PDF data (same dates/weights)
+  - Per user instruction, DB SortingBills ONLY counted from 28 Jun 2026 onward (no overlap)
+  - DB StockTransfers in PDF range: 0 (no overlap)
+
+NOTE ON DATA COVERAGE:
+  - Buy .xls is AUTHORITATIVE for buy data (5073 txns cover full period 22 Jan - 3 Jul 2026)
+  - Sell .xls is AUTHORITATIVE for sell data (351 txns cover full period)
+  - DB BuyBills only contain 10 recent bills (20 Jun - 1 Jul 2026) — INCOMPLETE for recalculation
+  - DB SellBills contain 0 stainless sells — INCOMPLETE for recalculation
+  - DB SortingBills contain ALL 131 sorting bills (127 migrated from PDF + 4 new)
+  - System stock in DB = snapshot from 21/6/2026 (fix-stock.ts) + post-snapshot transactions
+    → NOT a cumulative calculation from the reset date
+
+====================================================================================================================================================================================
+PER-PRODUCT RECONCILIATION TABLE
+====================================================================================================================================================================================
+
+productId                                          system product name        reset date   buyIn       sellOut     sortSrcOut  sortOutIn   trnSrcOut  trnOutIn  targetStock  systemStock  difference   confidence 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+prod_mqgp9caefhv0hs74sfuubrmr                      แสตนเลส 304                05/02/2569   3910.20     5786.30     0.00        1383.70     0.00       0.00      -492.40      6177.40      -6669.80     LOW        
+prod_mqgp9cmnidvf2vafwiepqg0d                      แสตนเลส 202                05/02/2569   370.90      735.20      0.00        478.80      0.00       0.00      114.50       1548.10      -1433.60     LOW        
+prod_new_1782125294328_e0b981e0b8aae0b895e0b899    แสตนเลสดูดติด              05/02/2569   0.00        206.00      0.00        0.00        0.00       0.00      -206.00      0.00         -206.00      LOW        
+prod_mqgp9cgafv9ts0i3ze22h1vb                      แสตนเลส 304 (ยาว)          05/02/2569   1776.60     0.00        0.00        264.10      0.00       0.00      2040.70      2847.80      -807.10      LOW        
+cmr09vcvi001ml1055umg3jpg                          แสตนเลสติดเหล็ก            05/02/2569   0.00        0.00        0.00        0.00        0.00       0.00      0.00         0.00         +0.00        HIGH       
+cmr09vcvi001ol105nmz9gye6                          นิกเกิล(สแตนเลส)           05/02/2569   0.00        0.00        0.00        0.00        0.00       0.00      0.00         0.00         +0.00        HIGH       
+cmr09vcvi001ql105usal36bv                          ขี้กลึงสแตนเลส304          22/01/2569   41.20       43.00       0.00        0.00        0.00       0.00      -1.80        0.00         -1.80        MEDIUM     
+
+====================================================================================================================================================================================
+PER-PRODUCT DETAIL WITH RECOMMENDED ACTION + NOTE
+====================================================================================================================================================================================
+
+PRODUCT: สแตนเลส 304
+  productId:              prod_mqgp9caefhv0hs74sfuubrmr
+  system product name:    แสตนเลส 304
+  reset date:             05/02/2569
+  buyIn (after reset):    3910.20 kg   (109 transactions)
+  sellOut (after reset):  5786.30 kg   (4 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        1383.70 kg   (PDF: 1363.70 + DB: 20.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  -492.40 kg
+  current system stock:     6177.40 kg
+  difference (target - system): -6669.80 kg
+  confidence:               LOW
+  recommended action:      NEEDS_REVIEW - large difference, verify data sources
+  note:                     Was sorted in 54x; 109 buy transactions; 4 sell transactions
+
+PRODUCT: สแตนเลส 202
+  productId:              prod_mqgp9cmnidvf2vafwiepqg0d
+  system product name:    แสตนเลส 202
+  reset date:             05/02/2569
+  buyIn (after reset):    370.90 kg   (53 transactions)
+  sellOut (after reset):  735.20 kg   (3 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        478.80 kg   (PDF: 478.80 + DB: 0.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  114.50 kg
+  current system stock:     1548.10 kg
+  difference (target - system): -1433.60 kg
+  confidence:               LOW
+  recommended action:      NEEDS_REVIEW - large difference, verify data sources
+  note:                     Was sorted in 45x; 53 buy transactions; 3 sell transactions
+
+PRODUCT: สแตนเลสดูดติด
+  productId:              prod_new_1782125294328_e0b981e0b8aae0b895e0b899
+  system product name:    แสตนเลสดูดติด
+  reset date:             05/02/2569
+  buyIn (after reset):    0.00 kg   (0 transactions)
+  sellOut (after reset):  206.00 kg   (1 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        0.00 kg   (PDF: 0.00 + DB: 0.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  -206.00 kg
+  current system stock:     0.00 kg
+  difference (target - system): -206.00 kg
+  confidence:               LOW
+  recommended action:      NEEDS_REVIEW - large difference, verify data sources
+  note:                     1 sell transactions
+
+PRODUCT: สแตนเลส 304 ยาว
+  productId:              prod_mqgp9cgafv9ts0i3ze22h1vb
+  system product name:    แสตนเลส 304 (ยาว)
+  reset date:             05/02/2569
+  buyIn (after reset):    1776.60 kg   (36 transactions)
+  sellOut (after reset):  0.00 kg   (0 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        264.10 kg   (PDF: 264.10 + DB: 0.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  2040.70 kg
+  current system stock:     2847.80 kg
+  difference (target - system): -807.10 kg
+  confidence:               LOW
+  recommended action:      NEEDS_REVIEW - large difference, verify data sources
+  note:                     Was sorted in 10x; 36 buy transactions
+
+PRODUCT: สแตนเลสติดเหล็ก
+  productId:              cmr09vcvi001ml1055umg3jpg
+  system product name:    แสตนเลสติดเหล็ก
+  reset date:             05/02/2569
+  buyIn (after reset):    0.00 kg   (0 transactions)
+  sellOut (after reset):  0.00 kg   (0 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        0.00 kg   (PDF: 0.00 + DB: 0.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  0.00 kg
+  current system stock:     0.00 kg
+  difference (target - system): +0.00 kg
+  confidence:               HIGH
+  recommended action:      NO_MOVEMENT - confirm physical count = 0
+  note:                     No stainless transactions in any source after reset date
+
+PRODUCT: นิกเกิล
+  productId:              cmr09vcvi001ol105nmz9gye6
+  system product name:    นิกเกิล(สแตนเลส)
+  reset date:             05/02/2569
+  buyIn (after reset):    0.00 kg   (0 transactions)
+  sellOut (after reset):  0.00 kg   (0 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        0.00 kg   (PDF: 0.00 + DB: 0.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  0.00 kg
+  current system stock:     0.00 kg
+  difference (target - system): +0.00 kg
+  confidence:               HIGH
+  recommended action:      NO_MOVEMENT - confirm physical count = 0
+  note:                     No stainless transactions in any source after reset date
+
+PRODUCT: ขี้กลึงสแตนเลส 304
+  productId:              cmr09vcvi001ql105usal36bv
+  system product name:    ขี้กลึงสแตนเลส304
+  reset date:             22/01/2569
+  buyIn (after reset):    41.20 kg   (1 transactions)
+  sellOut (after reset):  43.00 kg   (1 transactions)
+  sortingSourceOut:       0.00 kg   (PDF: 0.00 + DB: 0.00)
+  sortingOutputIn:        0.00 kg   (PDF: 0.00 + DB: 0.00)
+  transferSourceOut:      0.00 kg
+  transferOutputIn:       0.00 kg
+  ---
+  calculated target stock:  -1.80 kg
+  current system stock:     0.00 kg
+  difference (target - system): -1.80 kg
+  confidence:               MEDIUM
+  recommended action:      PHYSICAL_COUNT_RECOMMENDED before adjustment
+  note:                     1 buy transactions; 1 sell transactions
+
+====================================================================================================================================================================================
+UNMATCHED / AMBIGUOUS STAINLESS NAMES
+====================================================================================================================================================================================
+
+  AMBIGUOUS: "304สั น"
+     → Not in alias list (304, 202, 304ยาว, 304 ยาว, ขี้กลึงสแตนเลส)
+     → NOT counted in any product's calculation
+     → Appears in PDF sorting output (1 occurrence, ~3.1 kg)
+     → Owner must clarify: is this "สแตนเลส 304" (short version, distinct from 304ยาว) or a separate product?
+
+====================================================================================================================================================================================
+PHYSICAL COUNT RECOMMENDATION
+====================================================================================================================================================================================
+
+  PHYSICAL COUNT IS RECOMMENDED before any adjustment, for:
+
+    - สแตนเลส 304
+        confidence: LOW
+        difference: -6669.80 kg
+        reason:     NEEDS_REVIEW - large difference, verify data sources
+
+    - สแตนเลส 202
+        confidence: LOW
+        difference: -1433.60 kg
+        reason:     NEEDS_REVIEW - large difference, verify data sources
+
+    - สแตนเลสดูดติด
+        confidence: LOW
+        difference: -206.00 kg
+        reason:     NEEDS_REVIEW - large difference, verify data sources
+
+    - สแตนเลส 304 ยาว
+        confidence: LOW
+        difference: -807.10 kg
+        reason:     NEEDS_REVIEW - large difference, verify data sources
+
+    - ขี้กลึงสแตนเลส 304
+        confidence: MEDIUM
+        difference: -1.80 kg
+        reason:     PHYSICAL_COUNT_RECOMMENDED before adjustment
+
+  Rationale: The .xls files cover 22 Jan - 3 Jul 2026. The DB system stock is a snapshot
+  from 21/6/2026 + post-snapshot transactions — NOT a cumulative calc from the reset date.
+  Large differences are expected because the system stock includes pre-reset stock that
+  is NOT captured by the .xls files (which start 22 Jan 2026, before any reset date).
+
+====================================================================================================================================================================================
+PRODUCTS READY FOR ADJUSTMENT
+====================================================================================================================================================================================
+
+  - สแตนเลสติดเหล็ก: diff=0.00kg, confidence=HIGH
+  - นิกเกิล: diff=0.00kg, confidence=HIGH
+
+  These products have either:
+    (a) No stainless transactions in any source after the reset date (target = 0, system = 0)
+    (b) Difference < 1 kg (rounding-level)
+
+====================================================================================================================================================================================
+PRODUCTS NOT READY FOR ADJUSTMENT
+====================================================================================================================================================================================
+
+  - สแตนเลส 304
+      reason: confidence=LOW, diff=-6669.80kg — NEEDS_REVIEW - large difference, verify data sources
+
+  - สแตนเลส 202
+      reason: confidence=LOW, diff=-1433.60kg — NEEDS_REVIEW - large difference, verify data sources
+
+  - สแตนเลสดูดติด
+      reason: confidence=LOW, diff=-206.00kg — NEEDS_REVIEW - large difference, verify data sources
+
+  - สแตนเลส 304 ยาว
+      reason: confidence=LOW, diff=-807.10kg — NEEDS_REVIEW - large difference, verify data sources
+
+  - ขี้กลึงสแตนเลส 304
+      reason: confidence=MEDIUM, diff=-1.80kg — PHYSICAL_COUNT_RECOMMENDED before adjustment
+
+  Common reasons:
+    - System stock is a snapshot from 21/6/2026 (NOT a 0-reset on the reset date)
+    - Buy .xls may be missing pre-22 Jan 2026 buys (file starts 22 Jan 2026)
+    - Negative target stock for some products indicates pre-reset stock existed
+      (mathematically impossible to have negative stock — implies data gap)
+    - Owner should NOT apply these adjustments without:
+        (a) Verifying buy/sell .xls completeness (any pre-22 Jan 2026 transactions?)
+        (b) Performing a physical count to confirm the actual stock
+        (c) Deciding what "reset to 0" means if pre-reset stock existed
+
+====================================================================================================================================================================================
+SUMMARY
+====================================================================================================================================================================================
+
+  Total buyIn (after reset):           6098.90 kg
+  Total sellOut (after reset):         6770.50 kg
+  Total sortingOutputIn (after reset): 2126.60 kg
+  Total target stock (sum):            1455.00 kg
+  Total current system stock (sum):    10573.30 kg
+  Total difference (target - system):  -9118.30 kg
+
+  Products at HIGH confidence:    2 / 7  (สแตนเลสติดเหล็ก, นิกเกิล)
+  Products at MEDIUM confidence:  1 / 7  (ขี้กลึงสแตนเลส 304)
+  Products at LOW confidence:     4 / 7  (สแตนเลส 304, 202, ดูดติด, 304 ยาว)
+
+  Ambiguous stainless names found: 1  ("304สั น" — not in alias list)
+
+====================================================================================================================================================================================
+NO PRODUCTION STOCK CHANGES WERE MADE.
+====================================================================================================================================================================================

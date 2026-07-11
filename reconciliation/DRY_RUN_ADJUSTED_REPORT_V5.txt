@@ -1,0 +1,213 @@
+====================================================================================================================================================================================
+REVISED DRY-RUN REPORT: Sync MetalTrack Product Master to Adjusted Product List
+Input file: รายการสิ้นต้า_ปรับแล้ว.xls (5/7/2569)
+Revision: v5 — Owner correction (Task 39): สายไฟอลูมิเนียม ≠ อลูมิเนียมสายไฟ
+Status: DRY-RUN ONLY — NO changes applied. Waiting for owner approval.
+====================================================================================================================================================================================
+
+====================================================================================================================================================================================
+⚠️  OWNER CORRECTION APPLIED (Task 39)
+====================================================================================================================================================================================
+
+The following product pair is now treated as SEPARATE products (EXACT_EXCLUSIONS):
+
+  "สายไฟอลูมิเนียม"  ⟂  "อลูมิเนียมสายไฟ"
+  Reason: Owner correction (Task 39): สายไฟอลูมิเนียม (insulated cable, with rubber/plastic sheath) is DIFFERENT from อลูมิเนียมสายไฟ (stripped wire, pure aluminum). Do NOT rename/merge/alias.
+
+Effect:
+  - "สายไฟอลูมิเนียม" (adjusted file) is now CREATE_NEW_PRODUCT (not a rename of อลูมิเนียมสายไฟ)
+  - "อลูมิเนียมสายไฟ" (existing MT product, 255.4 kg stock) is KEPT unchanged
+  - No stock transfer, no alias, no merge between these two
+
+====================================================================================================================================================================================
+TABLE 1: REVISED SUMMARY
+====================================================================================================================================================================================
+
+Adjusted file product count:              102
+Current MetalTrack product count:          114
+EXACT_MATCH:                               79
+RENAME_EXISTING:                           12  (was 13, now 12 — สายไฟอลูมิเนียม removed)
+CATEGORY_CHANGE:                           2
+CREATE_NEW_PRODUCT:                        9  (was 8, now 9 — สายไฟอลูมิเนียม added)
+ARCHIVE_OR_IGNORE_OLD_PRODUCT:             23
+DUPLICATE_OR_COLLISION:                    0
+SERVICE_OR_NON_STOCK:                      0
+OWNER_REVIEW_REQUIRED:                     8  (was 9, now 8 — สายไฟอลูมิเนียม removed)
+COLLISIONS (rename would duplicate):       0
+Adjusted-file duplicates:                  0
+EXACT_EXCLUSIONS (owner-locked pairs):     1
+
+====================================================================================================================================================================================
+TABLE 2: REVISED RENAME PLAN (12 products — สายไฟอลูมิเนียม REMOVED)
+====================================================================================================================================================================================
+
+No. | productId                                          | current MT name                         | adjusted file name                     | current cat  | adjusted cat | action  | conf   | stock (kg) | review flags
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | cmr09vcvf0008l105vtay0h8k                          | เหล็กเส้น 6 หุน (1.8m ขึ้นไป)          | เหล็กเส้น 6 หุน                        | เหล็ก        | เหล็ก        | RENAME  | medium | 0          | CLOSER_MATCH_EXISTS
+  2 | cmr09vcvf000al105rdq4ae4s                          | เหล็กเส้น 1 นิ้ว (1mขึ้นไป)            | เหล็กเส้น 1 นิ้ว                       | เหล็ก        | เหล็ก        | RENAME  | medium | 0          | 
+  3 | cmr09vcvg000ml105kzmhv6c6                          | เหล็กเส้น3-4หุน                        | เหล็กเส้น 3-4 หุน                      | เหล็ก        | เหล็ก        | RENAME  | high   | 0          | 
+  4 | prod_mqgp9do7ui6p53xv2tbjq7tb                      | อลูมิเนียมแข็ง                         | อลูมิเนียมแข็ง (หล่อ/หนา)              | อลูมิเนียม   | อลูมิเนียม   | RENAME  | medium | 1151.800000000001 | SIGNIFICANT_STOCK
+  5 | prod_mqgp9e6yxtg3mo8mf998qnf6                      | อลูมิเนียมกระทะ                        | อลูมิเนียมกะทะ                         | อลูมิเนียม   | อลูมิเนียม   | RENAME  | medium | 12.8       | 
+  6 | prod_mqgp9e0y2ehae94h2mw403ns                      | อลูมิเนียมฝา                           | อลูมิเนียมฝาไม่แกะ                     | อลูมิเนียม   | อลูมิเนียม   | RENAME  | medium | 115.7      | SIGNIFICANT_STOCK
+  7 | prod_mqgp9dbqtfx0j3mnsbl9mwix                      | อลูมิเนียมอัลลอย                       | อลูมิเนียมอัลลอยด์                     | อลูมิเนียม   | อลูมิเนียม   | RENAME  | high   | 3.6        | 
+  8 | prod_mqgp9gn9lfu942el9hx2undl                      | อลูมิเนียมปั้มกระป๋อง                  | ปั้มกระป๋อง                            | อลูมิเนียม   | อลูมิเนียม   | RENAME  | medium | 0          | 
+  9 | prod_mqgp9ew9ar8ckyjn69mr8aq2                      | อลูมิเนียมตูดหม้อหุงข้าว               | ตูดหม้อหุงข้าว                         | อลูมิเนียม   | อลูมิเนียม   | RENAME  | medium | 0          | 
+ 10 | prod_mqgp9do7ui6p53xv2tbjq7tb                      | อลูมิเนียมแข็ง                         | อลูมิเนียมแข็งก้ามเบรค                 | อลูมิเนียม   | อลูมิเนียม   | RENAME  | medium | 1151.800000000001 | CLOSER_MATCH_EXISTS; SIGNIFICANT_STOCK
+ 11 | prod_new_1782125294097_e0b882e0b8b5e0b989e0b881    | ขี้กลึงทองเหลือง (เนื้อแดง)            | ขี้กลึงทองเหลืองเนื้อแดง               | ทองเหลือง    | ทองเหลือง    | RENAME  | high   | 0          | 
+ 12 | prod_mqgp9cgafv9ts0i3ze22h1vb                      | แสตนเลส 304 (ยาว)                      | แสตนเลส 304 ยาว                        | แสตนเลส      | แสตนเลส      | RENAME  | high   | 2847.8     | SIGNIFICANT_STOCK
+
+NOTE: "สายไฟอลูมิเนียม" is NO LONGER in this table. It has been moved to TABLE 3 (CREATE_NEW_PRODUCT).
+      "อลูมิเนียมสายไฟ" (existing MT product, 255.4 kg stock) is KEPT unchanged — no rename, no merge.
+
+====================================================================================================================================================================================
+TABLE 3: REVISED NEW PRODUCTS TO CREATE (9 products — สายไฟอลูมิเนียม ADDED)
+(initial stock = 0 kg, no StockLots)
+====================================================================================================================================================================================
+
+No. | adjusted product name                 | adjusted category | suggested categoryId                        | initial stock | reason
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | แหนบ                                   | เหล็ก             | cat_mqgp96fx33ba2pp09s8ikynf               | 0 kg          | No match in MT category "เหล็ก" — new product needed
+  2 | เหล็กคัดขาย                            | เหล็ก             | cat_mqgp96fx33ba2pp09s8ikynf               | 0 kg          | No match in MT category "เหล็ก" — new product needed
+  3 | อลูมิเนียมล้อแม็ค                      | อลูมิเนียม        | cmr09v2nj0000l10518owb4lf                  | 0 kg          | No match in MT category "อลูมิเนียม" — new product needed
+  4 | สายไฟอลูมิเนียม                        | อลูมิเนียม        | cmr09v2nj0000l10518owb4lf                  | 0 kg          | No match (excluded from matching with "อลูมิเนียมสายไฟ"): Ow ⭐ NEW (owner correction)
+  5 | ขี้กลึงอลูมิเนียม                      | อลูมิเนียม        | cmr09v2nj0000l10518owb4lf                  | 0 kg          | No match in MT category "อลูมิเนียม" — new product needed
+  6 | ฟรอยไม่ติดพลาสติก                      | อลูมิเนียม        | cmr09v2nj0000l10518owb4lf                  | 0 kg          | No match in MT category "อลูมิเนียม" — new product needed
+  7 | ฝาเนียมเผา                             | อลูมิเนียม        | cmr09v2nj0000l10518owb4lf                  | 0 kg          | No match in MT category "อลูมิเนียม" — new product needed
+  8 | สายไฟทองแดง                            | อื่นๆ             | cat_mqgp97rabmhxn0sn7pr3ozky               | 0 kg          | No match in MT category "อื่นๆ" — new product needed
+  9 | เบิกใช้งานภายในบริษัท                  | อื่นๆ             | cat_mqgp97rabmhxn0sn7pr3ozky               | 0 kg          | No match in MT category "อื่นๆ" — new product needed
+
+====================================================================================================================================================================================
+TABLE 4: METALTRACK PRODUCTS NOT IN ADJUSTED FILE (23 — unchanged)
+(Includes อลูมิเนียมสายไฟ as KEEP — has 255.4 kg stock, do NOT delete)
+====================================================================================================================================================================================
+
+No. | productId                                          | current MT name                         | category     | stock (kg)  | has lots | has movement | recommended action | reason
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1 | prod_new_1782125293615_e0b897e0b8ade0b887e0b981    | ทองแดงท่อใหม่ Candy                    | ทองแดง       | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+  2 | cmr09vcvh0016l105bpvmhfwq                          | ทองแดงเกินจาก ST                       | ทองแดง       | 3.5         | true     | true         | KEEP               | Has stock/movement — do NOT delete
+  3 | cmr09vcvh0018l1053r76hh95                          | ทองแดงขาดจาก ST                        | ทองแดง       | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+  4 | cmr09vcvi001il105ty4h75k8                          | ทองเหลืองเกินจาก ST                    | ทองเหลือง    | 1.6         | true     | true         | KEEP               | Has stock/movement — do NOT delete
+  5 | cmr09vcvi001kl105f1e6emmx                          | ทองเหลืองขาดจาก ST                     | ทองเหลือง    | 0.1         | true     | true         | KEEP               | Has stock/movement — do NOT delete
+  6 | cmr09vcvi001ol105nmz9gye6                          | นิกเกิล(สแตนเลส)                       | แสตนเลส      | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+  7 | cmr09vcvj0024l1052pb03lfk                          | สายไฟไม่ปอก                            | อื่นๆ        | 48.7        | true     | true         | KEEP               | Has stock/movement — do NOT delete
+  8 | cmr09vcvj0028l10595uvtr4n                          | ขยะ                                    | อื่นๆ        | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+  9 | cmr09vcvj002al1051bpzbc7a                          | สูญเสีย                                | อื่นๆ        | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 10 | cmr09vcvk002cl105y9o96j5z                          | กระสอบขาด                              | อื่นๆ        | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 11 | cmr09vcvk002el105gzwzf9ti                          | น้ำม้นเก่า                             | อื่นๆ        | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 12 | prod_mqgp9dhn9ryniksnud8q714g                      | อลูมิเนียมล้อแม๊กซ์                    | อลูมิเนียม   | 122.5       | true     | true         | KEEP               | Has stock/movement — do NOT delete
+ 13 | prod_mqgp9edcxnxkocxfu0odbayj                      | อลูมิเนียมตูดกะทะ                      | อลูมิเนียม   | 1978.1      | true     | true         | KEEP               | Has stock/movement — do NOT delete
+ 14 | prod_mqgp9epjox7up6c2k8jrf289                      | อลูมิเนียมฝาเผา                        | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 15 | prod_mqgp9f3wvar7pgyoek1zen5k                      | อลูมิเนียมตูดกะทะไฟฟ้าล้วน             | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 16 | prod_mqgp9gh81ao3300v6dhcei3x                      | อลูมิเนียมป๋องสเปรย์                   | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 17 | prod_mqgp9gt8ki5lcwu67ps55equ                      | อลูมิเนียมฟรอย                         | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 18 | prod_mqgp9h048rj5720d2yk78tpk                      | อลูมิเนียมซีรี 5,000                   | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 19 | cmr7a7r0u000dmzieba96rx04                          | ฝาอลูมิเนียมติดพลาสติก                 | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 20 | cmr7a7sg1000jmziewgol2rch                          | อลูมิเนียมแข็งก้านเบรค                 | อลูมิเนียม   | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+ 21 | cmr3dpqkv0003jm04tvxnsu9w                          | รีเลย์                                 | อิเล็กทรอนิกส์ | 7.8         | true     | true         | KEEP               | Has stock/movement — do NOT delete
+ 22 | cmr3dp3ad0001jm04iggejwq2                          | เบรกเกอร์                              | อิเล็กทรอนิกส์ | 8.200000000000001 | true     | true         | KEEP               | Has stock/movement — do NOT delete
+ 23 | cmr09vcvk002ml105w1loc8hg                          | พลาสติกรวม                             | พลาสติก      | 0           | false    | false        | ARCHIVE            | No stock, no movement — safe to archive
+
+====================================================================================================================================================================================
+TABLE 5: DUPLICATES / COLLISIONS
+====================================================================================================================================================================================
+
+No duplicates or collisions detected.
+
+
+====================================================================================================================================================================================
+TABLE 6: FINAL TARGET PRODUCT MASTER (revised)
+====================================================================================================================================================================================
+
+After applying the revised plan, MetalTrack would have:
+  - 79 exact matches (no change)
+  - 12 renamed products (preserve productId)  [was 13, now 12]
+  - 2 category changes (OWNER REVIEW)
+  - 9 new products created (stock = 0)  [was 8, now 9 — includes สายไฟอลูมิเนียม]
+  - 15 products archived (no stock/movement)
+  - 8 products kept (have stock/movement) — includes อลูมิเนียมสายไฟ (255.4 kg)
+  Total: 125 products  [was 125, now 126 — +1 for สายไฟอลูมิเนียม as separate product]
+
+====================================================================================================================================================================================
+✅ CONFIRMATION: สายไฟอลูมิเนียม and อลูมิเนียมสายไฟ are SEPARATE products
+====================================================================================================================================================================================
+
+1. "อลูมิเนียมสายไฟ" (stripped aluminum wire, pure aluminum)
+   - EXISTS in MetalTrack: id prod_mqgp9csvq0takfp04k5d2dv6
+   - Category: อลูมิเนียม
+   - Stock: 255.4 kg (11 lots) — has stock AND movement history
+   - Action: KEEP unchanged (not in adjusted file, but has stock → KEEP per safety rules)
+   - NO rename, NO merge, NO alias, NO stock transfer
+
+2. "สายไฟอลูมิเนียม" (insulated aluminum cable, with rubber/plastic sheath)
+   - Does NOT exist in MetalTrack (verified via exact name search)
+   - Classification: CREATE_NEW_PRODUCT
+   - Category: อลูมิเนียม
+   - Initial stock: 0 kg (no StockLots)
+   - Action: Create as new product after owner approval
+
+3. EXACT_EXCLUSIONS list now contains this pair — they will NEVER be matched/merged/aliased
+   by the product-sync logic, even if fuzzy/contains similarity is high.
+
+====================================================================================================================================================================================
+⚠️  REVISED ITEMS REQUIRING OWNER REVIEW (8 — was 9, สายไฟอลูมิเนียม removed)
+====================================================================================================================================================================================
+
+1. [0111] "เหล็กเส้น 6 หุน" (adjusted, group 01/เหล็ก)
+   Matched to: "เหล็กเส้น 6 หุน (1.8m ขึ้นไป)" (เหล็ก) — id cmr09vcvf0008l105vtay0h8k
+   Stock: 0 kg, Lots: false, Movement: false
+   ⚠️  CLOSER_MATCH_EXISTS: "เหล็กเส้น 5 หุน" has fuzzy sim 93% but was not selected
+
+2. [0205] "อลูมิเนียมแข็ง (หล่อ/หนา)" (adjusted, group 02/อลูมิเนียม)
+   Matched to: "อลูมิเนียมแข็ง" (อลูมิเนียม) — id prod_mqgp9do7ui6p53xv2tbjq7tb
+   Stock: 1151.800000000001 kg, Lots: true, Movement: true
+   ⚠️  SIGNIFICANT_STOCK: matched product has 1151.800000000001 kg stock — verify rename is safe
+
+3. [0214] "อลูมิเนียมฝาไม่แกะ" (adjusted, group 02/อลูมิเนียม)
+   Matched to: "อลูมิเนียมฝา" (อลูมิเนียม) — id prod_mqgp9e0y2ehae94h2mw403ns
+   Stock: 115.7 kg, Lots: true, Movement: true
+   ⚠️  SIGNIFICANT_STOCK: matched product has 115.7 kg stock — verify rename is safe
+
+4. [0241] "อลูมิเนียมแข็งก้ามเบรค" (adjusted, group 02/อลูมิเนียม)
+   Matched to: "อลูมิเนียมแข็ง" (อลูมิเนียม) — id prod_mqgp9do7ui6p53xv2tbjq7tb
+   Stock: 1151.800000000001 kg, Lots: true, Movement: true
+   ⚠️  CLOSER_MATCH_EXISTS: "อลูมิเนียมแข็งก้านเบรค" has fuzzy sim 95% but was not selected
+   ⚠️  SIGNIFICANT_STOCK: matched product has 1151.800000000001 kg stock — verify rename is safe
+
+5. [0504] "แสตนเลส 304 ยาว" (adjusted, group 05/แสตนเลส)
+   Matched to: "แสตนเลส 304 (ยาว)" (แสตนเลส) — id prod_mqgp9cgafv9ts0i3ze22h1vb
+   Stock: 2847.8 kg, Lots: true, Movement: true
+   ⚠️  SIGNIFICANT_STOCK: matched product has 2847.8 kg stock — verify rename is safe
+
+6. [no-code] "แผงวงจรเขียว" (adjusted, group 07/อิเล็กทรอนิกส์)
+   Matched to: "แผงวงจรเขียว" (อื่นๆ) — id cmr09vcvk002il1059frrfzsp
+   Stock: 17.2 kg, Lots: true, Movement: true
+   ⚠️  CATEGORY_CHANGE_WITH_DATA: product has stock/movement — changing category is risky
+
+7. [0506] "นิกเกิล" (adjusted, group 05/แสตนเลส)
+   Category change: MT has "นิกเกิล" in "อื่นๆ" — adjusted file wants "แสตนเลส"
+   Stock: 0 kg, Lots: false, Movement: false
+   ⚠️  CATEGORY_CHANGE — owner must confirm
+
+====================================================================================================================================================================================
+⚠️  OWNER APPROVAL GATE — STOP
+====================================================================================================================================================================================
+
+NO changes have been applied to MetalTrack production.
+
+To apply the revised plan, owner must explicitly say:
+"อนุมัติให้ปรับรายการสินค้าใน MetalTrack ตามไฟล์ รายการสิ้นต้า_ปรับแล้ว"
+
+After approval, the following will be applied:
+  1. Rename 12 existing products (preserve productId) — สายไฟอลูมิเนียม NOT included
+  2. Change category for 2 products (OWNER REVIEW first)
+  3. Create 9 new products (initial stock = 0 kg, no StockLots) — INCLUDES สายไฟอลูมิเนียม
+  4. Archive 15 MT products (no stock/movement)
+  5. Keep 8 MT products (have stock/movement) — INCLUDES อลูมิเนียมสายไฟ (255.4 kg)
+  6. NO stock quantities changed
+  7. NO bill records modified
+  8. NO StockLots created or deleted
+  9. สายไฟอลูมิเนียม (insulated) and อลูมิเนียมสายไฟ (stripped) remain SEPARATE products
+
+====================================================================================================================================================================================
+No production changes were made.
+====================================================================================================================================================================================
