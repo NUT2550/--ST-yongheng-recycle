@@ -1,4 +1,0 @@
-﻿bill_number,table,id,date,room,source_product,source_weight,output_count,businessType_before,isCancelled,stock_movement_applied
-TRN-2569-00006,StockTransfer,cmrc3nnjh0001jy04yu8s3cat,2026-07-08,24,ของแกะราคาสูง,2.1,2,null (before fix — no businessType field existed),false,YES (FIFO deduction already applied at creation)
-TRN-2569-00008,StockTransfer,cmrd404o80001i8046f99gnjm,2026-07-08,21,เหล็กหนาสั้น,62.6,12,null (before fix — no businessType field existed),false,YES (FIFO deduction already applied at creation)
-TRN-2569-00009,StockTransfer,cmrd40ti70013i804ymlbxjur,2026-07-08,22,เครื่องจักร,20.6,6,null (before fix — no businessType field existed),false,YES (FIFO deduction already applied at creation)

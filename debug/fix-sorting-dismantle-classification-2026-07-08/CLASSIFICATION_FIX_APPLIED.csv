@@ -1,4 +1,0 @@
-﻿bill_number,table,id,businessType_before,businessType_after,change_applied,update_count
-TRN-2569-00006,StockTransfer,cmrc3nnjh0001jy04yu8s3cat,null,แกะของ,Set businessType=แกะของ (keep in แกะของ tab),1
-TRN-2569-00008,StockTransfer,cmrd404o80001i8046f99gnjm,null,คัดแยก,Set businessType=คัดแยก (move to คัดแยก tab display),1
-TRN-2569-00009,StockTransfer,cmrd40ti70013i804ymlbxjur,null,คัดแยก,Set businessType=คัดแยก (move to คัดแยก tab display),1

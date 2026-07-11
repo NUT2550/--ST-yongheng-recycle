@@ -1,4 +1,0 @@
-﻿No.,type,SortingBill ID,PDF date,source weight,total output,total waste,difference,note
-1,OUTPUT_EXCEEDS_INPUT,cmqoykaaz003vqjihzgx53tjf,07/01/2569,34.2,126.4,0,92.2,Output (126.4 kg) exceeds input (34.2 kg)
-2,NEGATIVE_LOSS,cmqoykaaz003vqjihzgx53tjf,07/01/2569,34.2,126.4,0,-92.2,Negative loss: output + waste exceeds input by 92.2 kg
-3,OUTPUT_EXCEEDS_INPUT,cmqoyrd170001qjn33fd1piit,05/03/2569,68.1,68.10000000000001,0,0,Output (68.10000000000001 kg) exceeds input (68.1 kg)

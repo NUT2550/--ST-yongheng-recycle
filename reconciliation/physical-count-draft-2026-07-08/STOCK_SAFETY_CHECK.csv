@@ -1,9 +1,0 @@
-﻿metric,before,after,change,expected,status
-PhysicalCountSession,2,3,1,+1,✅ PASS
-PhysicalCountItem,8,11,3,+3,✅ PASS
-TotalStockWeight,552312.3,552312.3,0,0 (unchanged),✅ PASS
-StockLot,1115,1115,0,0 (unchanged),✅ PASS
-BuyBill,158,158,0,0 (unchanged),✅ PASS
-SellBill,18,18,0,0 (unchanged),✅ PASS
-SortingBill,144,144,0,0 (unchanged),✅ PASS
-Product,113,113,0,0 (unchanged),✅ PASS

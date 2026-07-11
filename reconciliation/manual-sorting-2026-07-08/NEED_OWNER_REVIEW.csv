@@ -1,3 +1,0 @@
-﻿recordId,type,date,room,sourceProduct,sourceWeight,issues
-1,คัดแยก,08/07/2569,21,เหล็กหนาสั้น,62.6,"Output product ""ทองเหลืองหน้าแดง"" not found in product master; Output product ""ทองเหลือง"" not found in product master; Output product ""ตะกั่วแข่ง"" not found in product master; Output product ""สแตนเลส 304"" not found in product master; Output product ""อลูมิเนียมแข็ง"" not found in product master"
-2,คัดแยก,08/07/2569,22,เครื่องจักร,20.6,"Output product ""ทองเหลือง"" not found in product master; Output product ""สายไฟ"" not found in product master; Output product ""สายไฟ"" not found in product master; ""สายไฟ"" is ambiguous — appears 2 times with different prices. Could be สายไฟไม่ปอก or สายไฟทองแดง or other."

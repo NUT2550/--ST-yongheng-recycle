@@ -1,7 +1,0 @@
-﻿endpoint,filter,total_returned,businessType_in_response,target_00006,target_00008,target_00009,expected_00006,expected_00008,expected_00009,status
-GET /api/stock-transfers?businessType=คัดแยก,คัดแยก,6 (stale — should be 2),MISSING,present (wrong),present (correct),present (correct),excluded,included,included,"❌ STALE — filter ignored, returns all 6"
-GET /api/stock-transfers?businessType=แกะของ,แกะของ,6 (stale — should be 4),MISSING,present (correct),present (wrong),present (wrong),included,excluded,excluded,"❌ STALE — filter ignored, returns all 6"
-GET /api/stock-transfers (no filter),none,6,MISSING,present,present,present,-,-,-,⚠️ Returns all 6 (UI should NOT use unfiltered for tabs)
-GET /api/sorting-bills,n/a,135 (unchanged),n/a,n/a,n/a,n/a,n/a,n/a,n/a,✅ Correct — SortingBills unchanged
-,,,,,,,,,,
-SUMMARY,,,,,,,,,,"Production API is STALE — businessType field missing, filter ignored. DB is correct but API code is pre-Task-68."

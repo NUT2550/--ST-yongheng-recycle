@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Product, BuyCartItem } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -131,7 +131,19 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      // User cancelled the file picker — not an error
+      return;
+    }
+
+    // ST-15: Validate file type before parsing
+    const lowerName = file.name.toLowerCase();
+    if (!lowerName.endsWith('.xls') && !lowerName.endsWith('.xlsx')) {
+      toast.error('ไฟล์ต้องเป็น .xls หรือ .xlsx เท่านั้น');
+      // Reset input so the same file can be "selected" again
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
 
     setLoading(true);
     setPlannedBills([]);
@@ -300,10 +312,19 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
 
     try {
       const token = getAuthToken();
-      // Query existing buy bills to check for duplicate externalBillNumbers
+      if (!token) {
+        // ST-15: No token — skip duplicate check, warn user
+        toast.warning('ไม่สามารถตรวจบิลซ้ำได้ — กรุณา Login ใหม่');
+        return;
+      }
       const res = await fetch('/api/buy-bills?page=1&limit=100&includeCancelled=true', {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { Authorization: `Bearer ${token}` },
       });
+      if (res.status === 401) {
+        // ST-15: Token expired — warn but don't block
+        toast.warning('เซสชันหมดอายุ — กรุณา Login ใหม่เพื่อตรวจบิลซ้ำ');
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         const existingNums = new Set(
@@ -319,7 +340,7 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
         );
       }
     } catch {
-      // non-fatal
+      // non-fatal — network error
     }
   };
 
@@ -384,16 +405,21 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
     if (!v) {
       setPlannedBills([]);
       setFileName('');
+      // ST-15: Reset file input value on close so the same file can be re-selected
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  // Auto-check duplicates when planned bills change
+  // ST-15: Auto-check duplicates when planned bills change — moved to useEffect to avoid
+  // calling async function during render (which can cause state issues).
   const duplicateChecked = useRef(false);
-  if (plannedBills.length > 0 && !duplicateChecked.current) {
-    duplicateChecked.current = true;
-    checkDuplicates();
-  }
-  if (plannedBills.length === 0) duplicateChecked.current = false;
+  useEffect(() => {
+    if (plannedBills.length > 0 && !duplicateChecked.current) {
+      duplicateChecked.current = true;
+      checkDuplicates();
+    }
+    if (plannedBills.length === 0) duplicateChecked.current = false;
+  }, [plannedBills]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
