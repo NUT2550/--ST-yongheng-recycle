@@ -11,7 +11,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from '@/components/ui/dialog';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -442,6 +442,7 @@ export default function PhysicalCountPage() {
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Preview Adjustment — {group} ({date})</DialogTitle>
+            <DialogDescription>รายการที่มีส่วนต่างจากสต็อกในระบบ</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <p className="text-sm text-gray-500">รายการที่มีส่วนต่าง ({previewItems.length} รายการ):</p>
@@ -544,6 +545,7 @@ export default function PhysicalCountPage() {
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>รายละเอียดการชั่ง — {detailSession?.group} ({detailSession ? new Date(detailSession.countDate).toLocaleDateString('th-TH') : ''})</DialogTitle>
+            <DialogDescription>รายละเอียดสินค้าและส่วนต่างจากการชั่ง</DialogDescription>
           </DialogHeader>
           {detailSession && (
             <Table>
@@ -590,6 +592,7 @@ export default function PhysicalCountPage() {
         <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-red-600">⚠️ ยืนยันการ Apply — จะปรับสต็อกจริง</DialogTitle>
+            <DialogDescription>ตรวจสอบรายการให้ถูกต้องก่อนกดยืนยัน — ระบบจะสร้าง STOCK_ADJUSTMENT ทันที</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-gray-600">
