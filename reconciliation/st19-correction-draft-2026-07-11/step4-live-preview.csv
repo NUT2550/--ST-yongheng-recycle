@@ -1,0 +1,12 @@
+﻿#,product_name,product_id,live_system_kg,physical_kg,difference_kg,avg_cost,value_diff_thb,expected_after_kg,negative_after,snapshot_matches_live
+1,ทองเหลืองหนา,prod_mqgp9bspglewfbgukggj7wdy,0,89.4,89.4,0,0,89.4,no,YES
+2,ทองเหลืองเนื้อแดง,prod_mqgp9bmg24ygg55yytz9jphl,0.58,3.66,3.08,0,0,3.66,no,YES
+3,ทองแดงปอกเงา,prod_mqgp9aevp2yb18adpkyr3qtr,0,182.75,182.75,0,0,182.75,no,YES
+4,ทองแดงช็อต,prod_mqgp9alick357v31bqqrlv43,3.8,153.74,149.94,40,5997.6,153.74,no,YES
+5,ทองแดงท่อ Candy,cmr09vcvi001cl105spng6d2h,0,0.9,0.9,0,0,0.9,no,YES
+6,ทองแดงใหญ่,prod_mqgp9arb37xlm6b54b0xa44v,8.08,75.42,67.34,275.86,18576.41,75.42,no,YES
+7,ทองแดงเล็ก,prod_mqgp9axign3hnk45ex03l4aw,7.18,32.7,25.52,383.58,9788.96,32.7,no,YES
+8,ทองแดงชุบ,prod_mqgp9bgavns7vxc8rzrlsn65,0,2.4,2.4,0,0,2.4,no,YES
+9,ขี้กลึงทองแดง,prod_new_1782125293874_e0b882e0b8b5e0b989e0b881,0,0,0,0,0,0,no,YES
+10,ทองแดงติดเหล็ก,cmr09vcvh0014l105skokga93,0,0,0,0,0,0,no,YES
+TOTAL,(10 items),,19.64,540.97,521.33,,34362.97,540.97,,

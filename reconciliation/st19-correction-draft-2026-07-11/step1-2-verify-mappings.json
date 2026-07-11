@@ -1,0 +1,239 @@
+{
+  "generatedAt": "2026-07-11T16:43:33.009Z",
+  "ownerPhysical": [
+    {
+      "name": "ทองเหลืองหนา",
+      "physical": 89.4,
+      "group": "ทองเหลือง"
+    },
+    {
+      "name": "ทองเหลืองเนื้อแดง",
+      "physical": 3.66,
+      "group": "ทองเหลือง"
+    },
+    {
+      "name": "ทองแดงปอกเงา",
+      "physical": 182.75,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงช็อต",
+      "physical": 153.74,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงท่อ Candy",
+      "physical": 0.9,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงใหญ่",
+      "physical": 75.42,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงเล็ก",
+      "physical": 32.7,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงชุบ",
+      "physical": 2.4,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ขี้กลึงทองแดง",
+      "physical": 0,
+      "group": "ทองแดง"
+    },
+    {
+      "name": "ทองแดงติดเหล็ก",
+      "physical": 0,
+      "group": "ทองแดง"
+    }
+  ],
+  "verifiedProducts": [
+    {
+      "name": "ทองเหลืองหนา",
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "categoryId": "cat_mqgp96s7mp0h9hamr7wk2ej6",
+      "categoryName": "ทองเหลือง",
+      "categoryType": "BRASS",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 20,
+      "activeLots": 0,
+      "physicalWeight": 89.4,
+      "group": "ทองเหลือง",
+      "differenceWeight": 89.4,
+      "valueDifference": 0,
+      "expectedAfter": 89.4
+    },
+    {
+      "name": "ทองเหลืองเนื้อแดง",
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "categoryId": "cat_mqgp96s7mp0h9hamr7wk2ej6",
+      "categoryName": "ทองเหลือง",
+      "categoryType": "BRASS",
+      "systemWeight": 0.58,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 70,
+      "activeLots": 1,
+      "physicalWeight": 3.66,
+      "group": "ทองเหลือง",
+      "differenceWeight": 3.08,
+      "valueDifference": 0,
+      "expectedAfter": 3.66
+    },
+    {
+      "name": "ทองแดงปอกเงา",
+      "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 16,
+      "activeLots": 0,
+      "physicalWeight": 182.75,
+      "group": "ทองแดง",
+      "differenceWeight": 182.75,
+      "valueDifference": 0,
+      "expectedAfter": 182.75
+    },
+    {
+      "name": "ทองแดงช็อต",
+      "productId": "prod_mqgp9alick357v31bqqrlv43",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 3.8,
+      "averageCost": 40,
+      "systemValue": 152,
+      "lotCount": 26,
+      "activeLots": 2,
+      "physicalWeight": 153.74,
+      "group": "ทองแดง",
+      "differenceWeight": 149.94,
+      "valueDifference": 5997.6,
+      "expectedAfter": 153.74
+    },
+    {
+      "name": "ทองแดงท่อ Candy",
+      "productId": "cmr09vcvi001cl105spng6d2h",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 1,
+      "activeLots": 0,
+      "physicalWeight": 0.9,
+      "group": "ทองแดง",
+      "differenceWeight": 0.9,
+      "valueDifference": 0,
+      "expectedAfter": 0.9
+    },
+    {
+      "name": "ทองแดงใหญ่",
+      "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 8.08,
+      "averageCost": 275.86,
+      "systemValue": 2228.97,
+      "lotCount": 74,
+      "activeLots": 6,
+      "physicalWeight": 75.42,
+      "group": "ทองแดง",
+      "differenceWeight": 67.34,
+      "valueDifference": 18576.57,
+      "expectedAfter": 75.42
+    },
+    {
+      "name": "ทองแดงเล็ก",
+      "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 7.18,
+      "averageCost": 383.58,
+      "systemValue": 2754.08,
+      "lotCount": 46,
+      "activeLots": 4,
+      "physicalWeight": 32.7,
+      "group": "ทองแดง",
+      "differenceWeight": 25.52,
+      "valueDifference": 9788.87,
+      "expectedAfter": 32.7
+    },
+    {
+      "name": "ทองแดงชุบ",
+      "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 33,
+      "activeLots": 0,
+      "physicalWeight": 2.4,
+      "group": "ทองแดง",
+      "differenceWeight": 2.4,
+      "valueDifference": 0,
+      "expectedAfter": 2.4
+    },
+    {
+      "name": "ขี้กลึงทองแดง",
+      "productId": "prod_new_1782125293874_e0b882e0b8b5e0b989e0b881",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 0,
+      "activeLots": 0,
+      "physicalWeight": 0,
+      "group": "ทองแดง",
+      "differenceWeight": 0,
+      "valueDifference": 0,
+      "expectedAfter": 0
+    },
+    {
+      "name": "ทองแดงติดเหล็ก",
+      "productId": "cmr09vcvh0014l105skokga93",
+      "categoryId": "cat_mqgp96m5vaoalu4d05cqgzi5",
+      "categoryName": "ทองแดง",
+      "categoryType": "COPPER",
+      "systemWeight": 0,
+      "averageCost": 0,
+      "systemValue": 0,
+      "lotCount": 0,
+      "activeLots": 0,
+      "physicalWeight": 0,
+      "group": "ทองแดง",
+      "differenceWeight": 0,
+      "valueDifference": 0,
+      "expectedAfter": 0
+    }
+  ],
+  "mappingErrors": [],
+  "expectedCopperShotId": "prod_mqgp9alick357v31bqqrlv43",
+  "copperShotMatch": true,
+  "radiatorCopperExcluded": true,
+  "totalSystem": 19.64,
+  "totalPhysical": 540.97,
+  "totalDiff": 521.33,
+  "totalValueDiff": 34363.04,
+  "existingSessions11Jul": [],
+  "matchingExisting": null,
+  "conflictExisting": null,
+  "decision": "PROCEED_TO_STEP_3"
+}

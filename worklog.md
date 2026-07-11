@@ -2896,3 +2896,89 @@ All in `/home/z/my-project/reconciliation/st19-physical-count-investigation/`:
 - **3 problems identified**: data entry error (9.26 vs 93.06 kg target) + system bug (8.68 kg missing) + double-apply pattern (2 audit logs in 5 seconds)
 - **"ทองแดงปอกช็อต" not in DB** — Owner must clarify which product
 - **Owner must approve correction plan before any DB writes**
+
+---
+
+## Task ID: 75 (ST-19 Phase 2 — DRAFT creation)
+## Agent: Main
+## Task: Create Physical Count Correction DRAFT from Owner-confirmed current stock (11/07/2569)
+
+### Summary
+Created PhysicalCountSession DRAFT in production with 10 items matching Owner-confirmed physical stock. NO Apply, NO Reverse, NO Adjustment, NO StockLot write — only DRAFT session created.
+
+### Step 1: Verify Product mappings (read-only)
+- 10 products searched by exact name
+- All 10 found, single match per name, no ambiguity
+- "ทองแดงช็อต" id=prod_mqgp9alick357v31bqqrlv43 (matches 10/07 apply product) ✅
+- "หม้อน้ำทองแดง" correctly EXCLUDED ✅
+- All 10 product IDs unique ✅
+
+### Step 2: Check existing 11/07 DRAFT (read-only)
+- 0 existing sessions with countDate=11/07/2569
+- → PROCEED to create new DRAFT
+
+### Step 3: Create DRAFT session
+- **Session ID**: cmrgli52j0000oslknzwk9gah
+- countDate: 2026-07-11T10:00:00.000Z (11/07/2569 Thai)
+- group: ทองแดง/ทองเหลือง
+- status: DRAFT
+- note: "Corrective physical count from Owner-confirmed current stock after ST-19 investigation"
+- items: 10
+
+### Step 4: Live Preview (re-fetched)
+
+| # | Product | Current (kg) | Physical (kg) | Diff (kg) | AvgCost | ValueDiff | After (kg) |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 1 | ทองเหลืองหนา | 0.00 | 89.40 | +89.40 | 0 | 0 | 89.40 |
+| 2 | ทองเหลืองเนื้อแดง | 0.58 | 3.66 | +3.08 | 0 | 0 | 3.66 |
+| 3 | ทองแดงปอกเงา | 0.00 | 182.75 | +182.75 | 0 | 0 | 182.75 |
+| 4 | ทองแดงช็อต | 3.80 | 153.74 | +149.94 | 40.00 | 5,997.60 | 153.74 |
+| 5 | ทองแดงท่อ Candy | 0.00 | 0.90 | +0.90 | 0 | 0 | 0.90 |
+| 6 | ทองแดงใหญ่ | 8.08 | 75.42 | +67.34 | 275.86 | 18,576.41 | 75.42 |
+| 7 | ทองแดงเล็ก | 7.18 | 32.70 | +25.52 | 383.58 | 9,788.96 | 32.70 |
+| 8 | ทองแดงชุบ | 0.00 | 2.40 | +2.40 | 0 | 0 | 2.40 |
+| 9 | ขี้กลึงทองแดง | 0.00 | 0.00 | 0.00 | 0 | 0 | 0.00 |
+| 10 | ทองแดงติดเหล็ก | 0.00 | 0.00 | 0.00 | 0 | 0 | 0.00 |
+| **TOTAL** | | **19.64** | **540.97** | **+521.33** | — | **34,362.97** | **540.97** |
+
+### Validation: ✅ ALL PASS
+- All snapshots match live stock
+- No items would have negative stock after apply
+- All expectedAfter == physicalWeight (target end-state)
+- Has exactly 10 items
+- All 10 product IDs unique
+- หม้อน้ำทองแดง NOT in items
+- ทองแดงช็อต uses 10/07 product id
+
+### Step 5: Safety invariants — ALL PASS ✅
+
+| Metric | Before | After | Change | Expected | Status |
+|---|---:|---:|---:|---|---|
+| PhysicalCountSession | 5 | 6 | +1 | +1 | ✅ PASS |
+| PhysicalCountItem | 20 | 30 | +10 | +10 | ✅ PASS |
+| TotalStockWeight | 572,189.44 | 572,189.44 | 0 | unchanged | ✅ PASS |
+| StockLot | 1,153 | 1,153 | 0 | unchanged | ✅ PASS |
+| BuyBill | 174 | 174 | 0 | unchanged | ✅ PASS |
+| SellBill | 18 | 18 | 0 | unchanged | ✅ PASS |
+| SortingBill | 146 | 146 | 0 | unchanged | ✅ PASS |
+| StockTransfer | 11 | 11 | 0 | unchanged | ✅ PASS |
+| Product | 113 | 113 | 0 | unchanged | ✅ PASS |
+
+### Other sessions untouched ✅
+- 08/07 (3 sessions): all still DRAFT, appliedAt=null ✅
+- 09/07 (cmrdqgfru0000sn8fdmtjjnla): still APPLIED, appliedAt=2026-07-11T06:37:35.914Z ✅
+- 10/07 (cmrfzuu1b0002la044u1ikzzd): still APPLIED, appliedAt=2026-07-11T06:39:26.056Z ✅
+
+### Prohibited actions confirmed NOT performed
+- ❌ Apply, Reverse, Adjustment, Delete, Merge
+- ❌ Edit 08/07, 09/07, 10/07 sessions
+- ❌ Direct StockLot write, Restoration script, Direct SQL
+- ❌ Commit / Push / Deploy
+
+### Stage Summary
+- **Status**: DRAFT created, awaiting Owner approval to Apply
+- **Session ID**: cmrgli52j0000oslknzwk9gah
+- **Net stock change after Apply**: +521.33 kg (+92.48 kg brass, +428.85 kg copper)
+- **Value impact**: +34,362.97 THB (8 items will get STOCK_ADJUSTMENT lots, 2 items diff=0 skipped)
+- **Method**: 8 positive adjustments → create STOCK_ADJUSTMENT lots, 0 FIFO deductions needed
+- **Ready for Owner Apply approval**: ✅ YES
