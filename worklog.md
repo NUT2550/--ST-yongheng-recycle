@@ -2722,3 +2722,93 @@ GitHub blocked the push with error GH007 because `nutnun456@gmail.com` is config
 - `debug/task70-vercel-deploy-fix/SAFETY_CHECK.csv`
 
 **Vercel deployment unblocked with verified Git author.**
+
+---
+
+## Task ID: 73
+## Agent: Main
+## Task: Physical Count Production — verify & operate 09/07 + 10/07 (read-only)
+
+### Summary
+Owner instructed to verify and operate (only) the Physical Count sessions for 09/07/2569 (8 items) and 10/07/2569 (ทองแดงช็อต 3.8 kg). Read-only verification found BOTH sessions are ALREADY APPLIED in production — no re-apply needed (and forbidden per owner instruction). Found stock discrepancy in 2 products — STOPPED and reported (no DB writes).
+
+### Step 1 — Read-only verification (5 sessions total)
+| Date | Session ID | Group | Status | Items | Applied At |
+|---|---|---|---|---:|---|
+| 08/07 | cmrbzw8te0000jo04qz2skp4q | ทองแดง | DRAFT | 5 | — |
+| 08/07 | cmrbzwau00007jo043ivzvzcz | ทองเหลือง | DRAFT | 3 | — |
+| 08/07 | cmrdae0vh0000sgmjvb5aiu0n | ทองแดง/ทองเหลือง | DRAFT | 3 | — (Task 66) |
+| 09/07 | cmrdqgfru0000sn8fdmtjjnla | ทองแดง/ทองเหลือง | **APPLIED** | 8 | 2026-07-11T06:37:35.914Z |
+| 10/07 | cmrfzuu1b0002la044u1ikzzd | ทองแดง/ทองเหลือง | **APPLIED** | 1 | 2026-07-11T06:39:26.056Z |
+
+- All 3 sessions 08/07 are DRAFT (untouched) ✅
+- 09/07 already APPLIED by user_01_default (นัท ผู้จัดการ) — 8 items, 2 audit logs
+- 10/07 already APPLIED by user_01_default — 1 item (ทองแดงช็อต 3.8 kg) ✅ matches Owner instruction
+
+### Step 2 — Verify 09/07 (already APPLIED, no re-apply)
+- Status: APPLIED, appliedAt: 2026-07-11T06:37:35.914Z, appliedById: user_01_default
+- appliedNote: "Owner approved apply for 09/07/2569 copper/brass physical count"
+- AuditLog IDs: cmrfzspsh0000la04ziqkm5ze (06:37:31, 7 adjustments, 43 lots) + cmrfzstcy0001la04ro7vy413 (06:37:36, 3 adjustments, 12 lots)
+- ⚠️ 2 audit logs for same session (5-second gap) — suggests Apply ran twice with restoration script between runs
+
+### Step 3 — Verify 10/07 (already APPLIED)
+- Status: APPLIED, appliedAt: 2026-07-11T06:39:26.056Z, appliedById: user_01_default
+- 1 item: ทองแดงช็อต 3.8 kg ✅ matches Owner instruction exactly
+- AuditLog ID: cmrfzv6cg0007la046dqa9ugo (1 adjustment, 1 STOCK_ADJUSTMENT lot created)
+- Product "ทองแดงช็อต" id=prod_mqgp9alick357v31bqqrlv43 — exact match, no ambiguity
+- Current stock ทองแดงช็อต = 3.8 kg ✅ matches audit log "after"
+
+### Per-product stock match (8 items + 1 from 10/07)
+- 6/9 products ✅ MATCH (ทองแดงปอกเงา=0, ทองแดงช็อต=3.8, ทองแดงใหญ่=8.08, ทองแดงเล็ก=7.18, ทองแดงชุบ=0, ทองแดงท่อ Candy=0)
+- 2/9 products ❌ MISMATCH:
+  - ทองเหลืองหนา: audit log says after=7.92, current=0 (missing 7.92 kg)
+  - ทองเหลืองเนื้อแดง: audit log says after=1.34, current=0.58 (missing 0.76 kg)
+
+### Investigation of missing stock (read-only)
+Checked all consumption channels after apply timestamp (2026-07-11T06:37:36Z):
+- ❌ No SellBill/SellBill cancellation
+- ❌ No SortingBill source consumption / cancellation
+- ❌ No StockTransfer source consumption / cancellation
+- ❌ No BuyBill cancellation after apply
+- ❌ No STOCK_ADJUSTMENT lots after apply
+- ❌ No StockLot updatedAt > apply timestamp
+- (1 backdated SortingBill with createdAt=2026-12-28 added 2 kg to ทองเหลืองเนื้อแดง, but still missing 2.76 kg)
+
+→ Cause of missing stock cannot be determined from normal bill records. Likely caused by:
+  1. Manual SQL/DB edit, OR
+  2. Bug in apply endpoint's FIFO deduction (double-apply pattern visible in audit logs), OR
+  3. Unrecorded stock movement
+
+### Safety Snapshot
+- Total stock weight: 572,189.44 kg (baseline Task 70: 552,312.30 kg, delta +19,877.14 kg from normal business)
+- StockLot count: 1,153
+- **Negative StockLots: 0 ✅**
+- BuyBill: 174, SellBill: 18, SortingBill: 146, StockTransfer: 11, Product: 113
+- PhysicalCountSession: 5 (3 DRAFT + 2 APPLIED)
+
+### Compliance with Owner instructions
+- ✅ Did NOT re-apply (both already APPLIED)
+- ✅ Did NOT touch 08/07 drafts (all 3 still DRAFT)
+- ✅ Did NOT merge / delete / reverse
+- ✅ Did NOT perform Permission test
+- ✅ Did NOT rotate credentials
+- ✅ Did NOT commit / push / deploy
+- ✅ STOPPED at discrepancy (no DB writes) — reported evidence instead
+- ✅ Did NOT expose password / token / DATABASE_URL
+
+### Output Files
+All in `/home/z/my-project/reconciliation/physical-count-apply-2026-07-09-and-10/`:
+1. `step1-verify-sessions.mjs` + `.json` + `.csv` — sessions + audit logs + safety
+2. `step2-3-verify-post-apply.mjs` + `.json` + `.csv` — per-product stock match
+3. `step-investigate-consumption.mjs` + `.json` — consumption events investigation
+4. `step-investigate-cancellations.mjs` — cancellations + StockLot updatedAt
+5. `FINAL_REPORT.md` — this report
+
+### Stage Summary
+- **09/07/2569 session is APPLIED** (status=APPLIED, appliedById=user_01_default, appliedAt=2026-07-11T06:37:35.914Z, 2 audit logs)
+- **10/07/2569 session is APPLIED** (status=APPLIED, appliedById=user_01_default, appliedAt=2026-07-11T06:39:26.056Z, 1 audit log)
+- **08/07/2569 drafts untouched** (3 sessions still DRAFT)
+- **No negative StockLots** ✅
+- **No DB writes performed** (read-only verification per Owner instruction)
+- ⚠️ **Stock discrepancy** found in ทองเหลืองหนา (-7.92 kg) and ทองเหลืองเนื้อแดง (-0.76 kg) vs audit log expected values
+- ⚠️ **NOT READY to close ST-9** — Owner review required for missing stock

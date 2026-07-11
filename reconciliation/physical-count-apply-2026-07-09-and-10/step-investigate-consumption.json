@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-07-11T14:23:19.167Z",
+  "applyTimestamp": "2026-07-11T06:37:36.000Z",
+  "findings": [
+    {
+      "product": "ทองเหลืองหนา",
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "expectedAfter": 7.92,
+      "current": 0,
+      "missing": 7.92,
+      "consumptionEvents": []
+    },
+    {
+      "product": "ทองเหลืองเนื้อแดง",
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "expectedAfter": 1.34,
+      "current": 0.58,
+      "missing": 0.76,
+      "consumptionEvents": [
+        {
+          "type": "SORTING_BILL_OUTPUT",
+          "billId": "cmqoyokw5000bqjlgawq69n8w",
+          "billNumber": null,
+          "date": "2026-06-25T10:00:00.000Z",
+          "createdAt": "2026-12-28T10:00:00.000Z",
+          "weight": 2,
+          "cancelled": false
+        }
+      ]
+    }
+  ]
+}

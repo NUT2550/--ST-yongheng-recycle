@@ -1,0 +1,9 @@
+﻿product_id,product_name,sessions,physical_09_07,physical_10_07,audit_log_expected_after,current_stock_weight,current_active_lots,current_total_lots,current_avg_cost,stock_adjustment_lots,delta_vs_expected,match
+prod_mqgp9aevp2yb18adpkyr3qtr,ทองแดงปอกเงา,09/07,0,,0,0,0,16,0,0,0,✅ MATCH
+prod_mqgp9alick357v31bqqrlv43,ทองแดงช็อต,09/07+10/07,1.16,3.8,3.8,3.8,2,26,40,1,0,✅ MATCH
+cmr09vcvi001cl105spng6d2h,ทองแดงท่อ Candy,09/07,0,,,0,0,1,0,1,,N/A
+prod_mqgp9arb37xlm6b54b0xa44v,ทองแดงใหญ่,09/07,8.08,,8.08,8.08,6,74,275.86,0,0,✅ MATCH
+prod_mqgp9axign3hnk45ex03l4aw,ทองแดงเล็ก,09/07,7.18,,7.18,7.18,4,46,383.58,0,0,✅ MATCH
+prod_mqgp9bgavns7vxc8rzrlsn65,ทองแดงชุบ,09/07,0,,0,0,0,33,0,0,0,✅ MATCH
+prod_mqgp9bspglewfbgukggj7wdy,ทองเหลืองหนา,09/07,7.92,,7.92,0,0,20,0,0,-7.92,❌ MISMATCH
+prod_mqgp9bmg24ygg55yytz9jphl,ทองเหลืองเนื้อแดง,09/07,1.34,,1.34,0.58,1,70,0,0,-0.76,❌ MISMATCH

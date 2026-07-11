@@ -1,0 +1,335 @@
+{
+  "generatedAt": "2026-07-11T14:21:49.865Z",
+  "sessions": {
+    "09/07": {
+      "sessionId": "cmrdqgfru0000sn8fdmtjjnla",
+      "status": "APPLIED",
+      "appliedAt": "2026-07-11T06:37:35.914Z",
+      "appliedById": "user_01_default",
+      "appliedNote": "Owner approved apply for 09/07/2569 copper/brass physical count",
+      "auditLogCount": 2
+    },
+    "10/07": {
+      "sessionId": "cmrfzuu1b0002la044u1ikzzd",
+      "status": "APPLIED",
+      "appliedAt": "2026-07-11T06:39:26.056Z",
+      "appliedById": "user_01_default",
+      "appliedNote": "Owner approved apply for 10/07/2569",
+      "auditLogCount": 1
+    }
+  },
+  "allStockMatchesAuditLog": false,
+  "negativeStockLotsGlobal": 0,
+  "safetySnapshot": {
+    "totalStockWeight": 572189.44,
+    "stockLotCount": 1153,
+    "negativeLots": 0,
+    "buyBillCount": 174,
+    "sellBillCount": 18,
+    "sortingBillCount": 146,
+    "stockTransferCount": 11,
+    "productCount": 113,
+    "sessionCount": 5
+  },
+  "sessions08Untouched": [
+    {
+      "id": "cmrbzwau00007jo043ivzvzcz",
+      "status": "DRAFT",
+      "appliedAt": null,
+      "appliedById": null,
+      "group": "ทองเหลือง",
+      "itemCount": 3,
+      "untouched": true
+    },
+    {
+      "id": "cmrbzw8te0000jo04qz2skp4q",
+      "status": "DRAFT",
+      "appliedAt": null,
+      "appliedById": null,
+      "group": "ทองแดง",
+      "itemCount": 5,
+      "untouched": true
+    },
+    {
+      "id": "cmrdae0vh0000sgmjvb5aiu0n",
+      "status": "DRAFT",
+      "appliedAt": null,
+      "appliedById": null,
+      "group": "ทองแดง/ทองเหลือง",
+      "itemCount": 3,
+      "untouched": true
+    }
+  ],
+  "verification": [
+    {
+      "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+      "productName": "ทองแดงปอกเงา",
+      "sessions": "09/07",
+      "physicalFromSession09": 0,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": 0,
+      "currentStockWeight": 0,
+      "currentActiveLots": 0,
+      "currentTotalLots": 16,
+      "currentAvgCost": 0,
+      "matches": "✅ MATCH",
+      "deltaVsExpected": 0,
+      "stockAdjustmentLots": 0
+    },
+    {
+      "productId": "prod_mqgp9alick357v31bqqrlv43",
+      "productName": "ทองแดงช็อต",
+      "sessions": "09/07+10/07",
+      "physicalFromSession09": 1.16,
+      "physicalFromSession10": 3.8,
+      "auditLogExpectedAfter": 3.8,
+      "currentStockWeight": 3.8,
+      "currentActiveLots": 2,
+      "currentTotalLots": 26,
+      "currentAvgCost": 40,
+      "matches": "✅ MATCH",
+      "deltaVsExpected": 0,
+      "stockAdjustmentLots": 1
+    },
+    {
+      "productId": "cmr09vcvi001cl105spng6d2h",
+      "productName": "ทองแดงท่อ Candy",
+      "sessions": "09/07",
+      "physicalFromSession09": 0,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": null,
+      "currentStockWeight": 0,
+      "currentActiveLots": 0,
+      "currentTotalLots": 1,
+      "currentAvgCost": 0,
+      "matches": "N/A",
+      "deltaVsExpected": null,
+      "stockAdjustmentLots": 1
+    },
+    {
+      "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+      "productName": "ทองแดงใหญ่",
+      "sessions": "09/07",
+      "physicalFromSession09": 8.08,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": 8.08,
+      "currentStockWeight": 8.08,
+      "currentActiveLots": 6,
+      "currentTotalLots": 74,
+      "currentAvgCost": 275.86,
+      "matches": "✅ MATCH",
+      "deltaVsExpected": 0,
+      "stockAdjustmentLots": 0
+    },
+    {
+      "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+      "productName": "ทองแดงเล็ก",
+      "sessions": "09/07",
+      "physicalFromSession09": 7.18,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": 7.18,
+      "currentStockWeight": 7.18,
+      "currentActiveLots": 4,
+      "currentTotalLots": 46,
+      "currentAvgCost": 383.58,
+      "matches": "✅ MATCH",
+      "deltaVsExpected": 0,
+      "stockAdjustmentLots": 0
+    },
+    {
+      "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+      "productName": "ทองแดงชุบ",
+      "sessions": "09/07",
+      "physicalFromSession09": 0,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": 0,
+      "currentStockWeight": 0,
+      "currentActiveLots": 0,
+      "currentTotalLots": 33,
+      "currentAvgCost": 0,
+      "matches": "✅ MATCH",
+      "deltaVsExpected": 0,
+      "stockAdjustmentLots": 0
+    },
+    {
+      "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+      "productName": "ทองเหลืองหนา",
+      "sessions": "09/07",
+      "physicalFromSession09": 7.92,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": 7.92,
+      "currentStockWeight": 0,
+      "currentActiveLots": 0,
+      "currentTotalLots": 20,
+      "currentAvgCost": 0,
+      "matches": "❌ MISMATCH",
+      "deltaVsExpected": -7.92,
+      "stockAdjustmentLots": 0
+    },
+    {
+      "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+      "productName": "ทองเหลืองเนื้อแดง",
+      "sessions": "09/07",
+      "physicalFromSession09": 1.34,
+      "physicalFromSession10": null,
+      "auditLogExpectedAfter": 1.34,
+      "currentStockWeight": 0.58,
+      "currentActiveLots": 1,
+      "currentTotalLots": 70,
+      "currentAvgCost": 0,
+      "matches": "❌ MISMATCH",
+      "deltaVsExpected": -0.76,
+      "stockAdjustmentLots": 0
+    }
+  ],
+  "auditLogs09": [
+    {
+      "id": "cmrfzspsh0000la04ziqkm5ze",
+      "createdAt": "2026-07-11T06:37:31.292Z",
+      "details": {
+        "type": "PHYSICAL_COUNT_APPLY",
+        "sessionId": "cmrdqgfru0000sn8fdmtjjnla",
+        "countDate": "2026-07-09T10:00:00.000Z",
+        "group": "ทองแดง/ทองเหลือง",
+        "note": "Owner approved apply for 09/07/2569 copper/brass physical count",
+        "adjustments": [
+          {
+            "productId": "prod_mqgp9aevp2yb18adpkyr3qtr",
+            "productName": "ทองแดงปอกเงา",
+            "before": 93.7,
+            "physical": 0,
+            "difference": -93.7,
+            "after": 0,
+            "avgCost": 418.37
+          },
+          {
+            "productId": "prod_mqgp9alick357v31bqqrlv43",
+            "productName": "ทองแดงช็อต",
+            "before": 120.2,
+            "physical": 1.16,
+            "difference": -119.04,
+            "after": 1.16,
+            "avgCost": 399.09
+          },
+          {
+            "productId": "prod_mqgp9arb37xlm6b54b0xa44v",
+            "productName": "ทองแดงใหญ่",
+            "before": 56.3,
+            "physical": 8.08,
+            "difference": -48.22,
+            "after": 8.08,
+            "avgCost": 377.24
+          },
+          {
+            "productId": "prod_mqgp9axign3hnk45ex03l4aw",
+            "productName": "ทองแดงเล็ก",
+            "before": 17.9,
+            "physical": 7.18,
+            "difference": -10.72,
+            "after": 7.18,
+            "avgCost": 392.78
+          },
+          {
+            "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+            "productName": "ทองแดงชุบ",
+            "before": 2.3,
+            "physical": 0,
+            "difference": -2.3,
+            "after": 0,
+            "avgCost": 185.17
+          },
+          {
+            "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+            "productName": "ทองเหลืองหนา",
+            "before": 41.2,
+            "physical": 7.92,
+            "difference": -33.28,
+            "after": 7.92,
+            "avgCost": 196.05
+          },
+          {
+            "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+            "productName": "ทองเหลืองเนื้อแดง",
+            "before": 2.1,
+            "physical": 1.34,
+            "difference": -0.76,
+            "after": 1.34,
+            "avgCost": 3.59
+          }
+        ],
+        "createdLotIds": [],
+        "deductedLotCount": 43
+      }
+    },
+    {
+      "id": "cmrfzstcy0001la04ro7vy413",
+      "createdAt": "2026-07-11T06:37:36.803Z",
+      "details": {
+        "type": "PHYSICAL_COUNT_APPLY",
+        "sessionId": "cmrdqgfru0000sn8fdmtjjnla",
+        "countDate": "2026-07-09T10:00:00.000Z",
+        "group": "ทองแดง/ทองเหลือง",
+        "note": "Owner approved apply for 09/07/2569 copper/brass physical count",
+        "adjustments": [
+          {
+            "productId": "prod_mqgp9bgavns7vxc8rzrlsn65",
+            "productName": "ทองแดงชุบ",
+            "before": 1.7,
+            "physical": 0,
+            "difference": -1.7,
+            "after": 0,
+            "avgCost": 185.17
+          },
+          {
+            "productId": "prod_mqgp9bspglewfbgukggj7wdy",
+            "productName": "ทองเหลืองหนา",
+            "before": 41.2,
+            "physical": 7.92,
+            "difference": -33.28,
+            "after": 7.92,
+            "avgCost": 196.05
+          },
+          {
+            "productId": "prod_mqgp9bmg24ygg55yytz9jphl",
+            "productName": "ทองเหลืองเนื้อแดง",
+            "before": 2.1,
+            "physical": 1.34,
+            "difference": -0.76,
+            "after": 1.34,
+            "avgCost": 3.59
+          }
+        ],
+        "createdLotIds": [],
+        "deductedLotCount": 12
+      }
+    }
+  ],
+  "auditLogs10": [
+    {
+      "id": "cmrfzv6cg0007la046dqa9ugo",
+      "createdAt": "2026-07-11T06:39:26.945Z",
+      "details": {
+        "type": "PHYSICAL_COUNT_APPLY",
+        "sessionId": "cmrfzuu1b0002la044u1ikzzd",
+        "countDate": "2026-07-10T00:00:00.000Z",
+        "group": "ทองแดง/ทองเหลือง",
+        "note": "Owner approved apply for 10/07/2569",
+        "adjustments": [
+          {
+            "productId": "prod_mqgp9alick357v31bqqrlv43",
+            "productName": "ทองแดงช็อต",
+            "before": 1.16,
+            "physical": 3.8,
+            "difference": 2.64,
+            "after": 3.8,
+            "avgCost": 40
+          }
+        ],
+        "createdLotIds": [
+          "cmrfzv4z50006la04z2x0f5qz"
+        ],
+        "deductedLotCount": 0
+      }
+    }
+  ]
+}
