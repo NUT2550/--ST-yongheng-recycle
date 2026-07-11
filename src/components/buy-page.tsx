@@ -22,7 +22,6 @@ import { ProductCombobox, ProductComboboxGroup } from '@/components/ui/product-c
 import { ShoppingCart, Plus, Trash2, Loader2, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
-import { ExcelImportDialog } from '@/components/excel-import-dialog';
 import { DetailedExcelImportDialog } from '@/components/detailed-excel-import-dialog';
 
 export function BuyPage() {
@@ -302,20 +301,8 @@ export function BuyPage() {
                 </div>
               </div>
 
-              {/* Excel Import */}
+              {/* ST-18: Single detailed Excel import button (replaces old single-bill import) */}
               <div className="mt-3 flex flex-wrap gap-2">
-                <ExcelImportDialog
-                  products={products}
-                  groupedProducts={groupedProducts}
-                  onImport={(items, importBillDate) => {
-                    items.forEach((item) => addBuyCartItem(item));
-                    if (importBillDate) {
-                      setDateTime(new Date(importBillDate).toISOString().slice(0, 16));
-                    }
-                    toast.success(`เพิ่ม ${items.length} รายการจาก Excel แล้ว`);
-                  }}
-                  billType="buy"
-                />
                 <DetailedExcelImportDialog
                   products={products}
                   onImport={async (bills) => {
