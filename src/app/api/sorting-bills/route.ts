@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
 import { isRealFormula } from '@/lib/safe-math';
+import {
+  previewFifoDeduction,
+  validateSourceLotCosts,
+  verifyFifoMatch,
+  buildFifoAuditDetails,
+} from '@/lib/fifo-validation';
 
 // Helper: Deduct stock using FIFO and return weighted average cost
 async function deductStockFIFO(
@@ -147,6 +153,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- ST-20 Phase 2: Pre-flight FIFO validation (no DB writes) ---
+    // Detect zero-cost source lot contamination BEFORE any deduction.
+    const sourceProduct = await db.product.findUnique({
+      where: { id: sourceProductId },
+      select: { name: true },
+    });
+    const sourceProductName = sourceProduct?.name || sourceProductId;
+
+    // Determine if there are non-waste outputs (with positive weight)
+    const hasNonWasteOutput = items.some((i) => !i.isWaste && i.weight > 0);
+
+    const fifoPreview = previewFifoDeduction(
+      sourceProductId,
+      sourceWeight,
+      sourceLots.map((l) => ({
+        id: l.id,
+        remainingWeight: l.remainingWeight,
+        costPerKg: l.costPerKg,
+        dateAdded: l.dateAdded,
+      }))
+    );
+
+    if (!fifoPreview.success) {
+      return NextResponse.json(
+        {
+          error: fifoPreview.message,
+          code: fifoPreview.code,
+          sourceProductId,
+          sourceProductName,
+          sourceWeight,
+          totalAvailable: fifoPreview.totalAvailable,
+          affectedSourceLotIds: fifoPreview.affectedSourceLotIds,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate source lot costs against SortingBill policy
+    const costValidation = validateSourceLotCosts(fifoPreview, {
+      type: 'SORTING',
+      hasNonWasteOutput,
+    });
+    if (!costValidation.valid) {
+      return NextResponse.json(
+        {
+          error: costValidation.message,
+          code: costValidation.code,
+          sourceProductId,
+          sourceProductName,
+          sourceWeight,
+          affectedSourceLotIds: costValidation.affectedSourceLotIds,
+          weightedAverageCost: costValidation.weightedAverageCost,
+        },
+        { status: 400 }
+      );
+    }
+
     // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
     const billNumber = await generateBillNumber(db, 'SORT');
 
@@ -154,6 +217,27 @@ export async function POST(request: NextRequest) {
     // Step 1: Deduct source stock via FIFO
     const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, db);
     const sourceCostPerKg = fifoResult.costPerKg;
+
+    // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
+    // (detects race conditions / concurrent modifications between preview and deduction)
+    if (!verifyFifoMatch(fifoPreview, fifoResult)) {
+      // Mismatch — compensate by restoring deducted stock
+      console.error(
+        `[ST-20] FIFO mismatch detected | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`
+      );
+      await restoreStock(sourceProductId, sourceWeight, sourceCostPerKg, db, 'SORT_FIFO_MISMATCH_ROLLBACK');
+      return NextResponse.json(
+        {
+          error: 'ตรวจพบความไม่ตรงของต้นทุน FIFO ระหว่าง preview และ execution กรุณาลองอีกครั้ง',
+          code: 'FIFO_MISMATCH',
+          sourceProductId,
+          sourceWeight,
+          previewCost: fifoPreview.weightedAverageCost,
+          actualCost: fifoResult.costPerKg,
+        },
+        { status: 409 }
+      );
+    }
 
     // Calculate loss = sourceWeight - sum(item weights)
     const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
@@ -234,6 +318,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 4: Audit log (best-effort, non-fatal)
+    // ST-20 Phase 2: Enhanced audit with source lot breakdown + cost allocation details
+    const fifoAuditDetails = buildFifoAuditDetails(fifoPreview, {
+      type: 'SORTING',
+      hasNonWasteOutput,
+    });
     await writeAuditLog(db, {
       action: 'CREATE',
       entityType: 'SORTING_BILL',
@@ -242,13 +331,20 @@ export async function POST(request: NextRequest) {
       userName: payload.name,
       details: JSON.stringify({
         billNumber,
-        sourceProductId,
-        sourceWeight,
+        sourceProductName,
         sourceCostPerKg,
         lossWeight,
         lossCost,
         itemCount: created.items.length,
         nonWasteItemCount: items.filter((i) => !i.isWaste).length,
+        // ST-20 Phase 2: FIFO audit details (provides sourceProductId, sourceWeight, etc.)
+        ...fifoAuditDetails,
+        outputItems: items.map((item) => ({
+          productId: item.productId,
+          weight: item.weight,
+          isWaste: item.isWaste,
+          assignedCostPerKg: item.isWaste ? 0 : sourceCostPerKg,
+        })),
       }),
     });
 
@@ -259,6 +355,14 @@ export async function POST(request: NextRequest) {
 
     if (message.includes('Insufficient stock')) {
       return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    // ST-20 Phase 2: Surface FIFO validation errors with proper codes
+    if (message.includes('NEGATIVE_COST_SOURCE_LOT') || message.includes('ZERO_COST_SOURCE_LOT') || message.includes('ZERO_SOURCE_COST')) {
+      return NextResponse.json(
+        { error: message, code: 'FIFO_VALIDATION_ERROR' },
+        { status: 400 }
+      );
     }
 
     // Unique constraint on billNumber — should not happen after the

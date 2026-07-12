@@ -4,6 +4,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
 import { isRealFormula } from '@/lib/safe-math';
+import {
+  previewFifoDeduction,
+  validateSourceLotCosts,
+  verifyFifoMatch,
+  buildFifoAuditDetails,
+} from '@/lib/fifo-validation';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
 // ST-11: deductStockFIFO now attaches partial deductedLots to the error if it throws mid-loop,
@@ -332,7 +338,57 @@ export async function POST(request: NextRequest) {
         {
           error: `สต็อกไม่เพียงพอสำหรับ "${sourceProduct.name}". มี: ${totalAvailable} กก., ต้องการ: ${sourceWeight} กก.`,
         },
-        { status: 400 }
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+
+    // ========== ST-20 Phase 2: Pre-flight FIFO validation (no DB writes) ==========
+    // StockTransfer has NO waste concept — block any zero-cost source lots.
+    const fifoPreview = previewFifoDeduction(
+      sourceProductId,
+      sourceWeight,
+      sourceLots.map((l) => ({
+        id: l.id,
+        remainingWeight: l.remainingWeight,
+        costPerKg: l.costPerKg,
+        dateAdded: l.dateAdded,
+      }))
+    );
+
+    if (!fifoPreview.success) {
+      return NextResponse.json(
+        {
+          error: fifoPreview.message,
+          code: fifoPreview.code,
+          sourceProductId,
+          sourceProductName: sourceProduct.name,
+          sourceWeight,
+          totalAvailable: fifoPreview.totalAvailable,
+          affectedSourceLotIds: fifoPreview.affectedSourceLotIds,
+          requestId,
+        },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+
+    // Validate source lot costs against StockTransfer policy (always block zero-cost)
+    const costValidation = validateSourceLotCosts(fifoPreview, {
+      type: 'TRANSFER',
+      hasNonWasteOutput: true, // Transfer has no waste — always treat as non-waste
+    });
+    if (!costValidation.valid) {
+      return NextResponse.json(
+        {
+          error: costValidation.message,
+          code: costValidation.code,
+          sourceProductId,
+          sourceProductName: sourceProduct.name,
+          sourceWeight,
+          affectedSourceLotIds: costValidation.affectedSourceLotIds,
+          weightedAverageCost: costValidation.weightedAverageCost,
+          requestId,
+        },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
       );
     }
 
@@ -347,6 +403,27 @@ export async function POST(request: NextRequest) {
     deductedLots = fifoResult.deductedLots;
     const sourceCostPerKg = fifoResult.costPerKg;
     const sourceTotalCost = fifoResult.totalCost;
+
+    // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
+    if (!verifyFifoMatch(fifoPreview, fifoResult)) {
+      console.error(
+        `[ST-20] StockTransfer FIFO mismatch | requestId=${requestId} | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`
+      );
+      // Compensate deducted lots via the existing durable compensation mechanism
+      await compensateDeductedLots(deductedLots, `${requestId}-fifo-mismatch`, 'FIFO preview/execution mismatch');
+      return NextResponse.json(
+        {
+          error: 'ตรวจพบความไม่ตรงของต้นทุน FIFO ระหว่าง preview และ execution กรุณาลองอีกครั้ง',
+          code: 'FIFO_MISMATCH',
+          sourceProductId,
+          sourceWeight,
+          previewCost: fifoPreview.weightedAverageCost,
+          actualCost: fifoResult.costPerKg,
+          requestId,
+        },
+        { status: 409, headers: { 'X-Request-ID': requestId } }
+      );
+    }
 
     // Step 3: Calculate loss and profitability
     const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
@@ -422,6 +499,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 6: Write audit log
+    // ST-20 Phase 2: Enhanced audit with source lot breakdown + cost allocation details
+    const transferFifoAuditDetails = buildFifoAuditDetails(fifoPreview, {
+      type: 'TRANSFER',
+      hasNonWasteOutput: true,
+    });
     await db.auditLog.create({
       data: {
         action: 'CREATE',
@@ -431,14 +513,21 @@ export async function POST(request: NextRequest) {
         userName: payload.name,
         details: JSON.stringify({
           billNumber,
-          sourceProductId,
-          sourceWeight,
+          sourceProductName: sourceProduct.name,
           sourceCostPerKg,
           sourceTotalCost,
           lossWeight,
           lossCost,
           itemCount: created.items.length,
           nonWasteItemCount: items.filter((i) => !i.isWaste).length,
+          // ST-20 Phase 2: FIFO audit details (provides sourceProductId, sourceWeight, etc.)
+          ...transferFifoAuditDetails,
+          outputItems: items.map((item) => ({
+            productId: item.productId,
+            weight: item.weight,
+            isWaste: item.isWaste,
+            assignedCostPerKg: item.isWaste ? 0 : sourceCostPerKg,
+          })),
         }),
       },
     });
@@ -529,6 +618,14 @@ export async function POST(request: NextRequest) {
     if (message.includes('Insufficient stock')) {
       return NextResponse.json(
         { error: message, requestId },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+
+    // ST-20 Phase 2: Surface FIFO validation errors
+    if (message.includes('NEGATIVE_COST_SOURCE_LOT') || message.includes('ZERO_COST_SOURCE_LOT') || message.includes('ZERO_SOURCE_COST')) {
+      return NextResponse.json(
+        { error: message, code: 'FIFO_VALIDATION_ERROR', requestId },
         { status: 400, headers: { 'X-Request-ID': requestId } }
       );
     }
