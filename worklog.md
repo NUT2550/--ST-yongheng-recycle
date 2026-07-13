@@ -3061,3 +3061,56 @@ For each of 8 products, pulled:
 - **ทองแดงท่อ Candy**: Owner must define (no data in DB)
 - **Value impact**: Draft = 34,363 THB (understated) → Revised = 189,706 THB (delta +155,343 THB)
 - **Awaiting Owner approval**: (1) cost recommendations, (2) ทองแดงท่อ Candy cost, (3) correction approach (A/B/C)
+
+---
+
+## Task ID: 90 (ST-16 — Implement report04 bill prefix fix and open Draft PR)
+## Agent: Main
+## Task: Fix D-prefixed bill detection, add regression tests, open Draft PR
+
+### Summary
+Fixed report04 parser regex from `/^A\d+/i` to `/^[A-Z]\d+$/i` to recognize any letter-prefixed bill number. Added 50 regression tests. Reconciled test file: all 23 bills now parse correctly with 0 mismatches. Draft PR #2 opened, all CI checks pass.
+
+### Branch
+- Name: `st-16-report04-bill-prefix-fix`
+- Based on: `origin/main` (19ea127)
+- Commit: `24c7426` — "fix(import): recognize D-prefixed bill numbers in report04 parser (ST-16)"
+
+### Files changed
+- `src/components/detailed-excel-import-dialog.tsx` (+5 -2) — regex fix + comment
+- `tests/st16-report04-bill-prefix.test.ts` (new, +198) — 50 regression tests
+
+### Fix
+Line 198: Changed from `/^A\d+/i` to `/^[A-Z]\d+$/i`
+- Matches any single letter prefix (A, D, B, C, etc.) followed by digits
+- `$` anchor rejects strings with extra characters
+
+### Reconciliation with test file
+Test file: `ซื้อ 11-7-2569 แบบละเอียด.xls`
+- 23 bills parsed, 70 items total
+- All 23 bills: 0 mismatches ✅
+- A1051492: 9 items, 6,113.40 THB ✅ (was 12,359.30)
+- D1025582: 5 items, 6,245.90 THB ✅ (was not detected)
+- D1025583: 9 items, 18,696.70 THB ✅ (was not detected)
+- A1051485: 1 item, 15,244.40 THB ✅ (was 33,941.10)
+
+### CI results (all PASS ✅)
+- Lint: ✅
+- TypeScript Typecheck: ✅
+- Unit Tests: ✅ 75 pass (25 ST-20 + 50 ST-16)
+- Production Build: ✅
+- Vercel Preview: ✅
+
+### Draft PR
+- URL: https://github.com/NUT2550/--ST-yongheng-recycle/pull/2
+- Number: 2
+- State: open (Draft)
+- Head SHA: 24c7426
+- Mergeable: true, clean
+
+### Safety
+- ✅ No Production data changes
+- ✅ No real bills imported
+- ✅ No database/stock changes
+- ✅ No merge (Draft PR)
+- ✅ No deploy
