@@ -38,6 +38,7 @@ import { HistoryPage } from '@/components/history-page';
 import UsersPage from '@/components/users-page';
 import ProductsPage from '@/components/products-page';
 import PhysicalCountPage from '@/components/physical-count-page';
+import DailyWeighingPage from '@/components/daily-weighing-page';
 import LoginPage from '@/components/login-page';
 import { toast } from 'sonner';
 import { getAuthToken, setAuthToken } from '@/lib/api';
@@ -58,7 +59,8 @@ const navItems: Array<{
   { tab: 'credit', label: 'เครดิต', icon: CreditCard, color: 'text-rose-600' },
   { tab: 'bonus', label: 'โบนัส', icon: Gift, color: 'text-pink-600' },
   { tab: 'history', label: 'ประวัติ', icon: ClipboardList, color: 'text-teal-600' },
-  { tab: 'physical-count', label: 'ชั่งสต็อกจริง', icon: Scale, color: 'text-amber-700' },
+  { tab: 'physical-count', label: 'ชั่งสต็อกจริง (Legacy)', icon: Scale, color: 'text-amber-700' },
+  { tab: 'daily-weighing', label: 'ชั่งยอดซื้อทองแดง/ทองเหลือง', icon: Scale, color: 'text-emerald-600' },
 ];
 
 // Page content renderer
@@ -88,6 +90,8 @@ function PageContent({ activeTab }: { activeTab: PageTab }) {
       return <ProductsPage />;
     case 'physical-count':
       return <PhysicalCountPage />;
+    case 'daily-weighing':
+      return <DailyWeighingPage />;
     default:
       return <DashboardPage />;
   }

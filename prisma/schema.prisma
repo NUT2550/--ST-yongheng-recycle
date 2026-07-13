@@ -31,6 +31,7 @@ model Product {
   transferSource   StockTransfer[]    @relation("TransferSource")
   transferItems    StockTransferItem[]
   physicalCountItems PhysicalCountItem[]
+  dailyWeighingItems  DailyPurchaseWeighingItem[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 }
@@ -369,6 +370,47 @@ model PhysicalCountItem {
   note             String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([sessionId])
+  @@index([productId])
+}
+
+// ST-35: Daily Purchase Weighing — audit/verification of daily copper/brass purchases.
+// This does NOT modify stock. It records the difference between purchased weight
+// (from BuyBills) and actual weighed weight at end of day.
+model DailyPurchaseWeighingSession {
+  id           String   @id @default(cuid())
+  weighingDate DateTime
+  category     String   // ทองแดง, ทองเหลือง
+  status       String   @default("SAVED") // SAVED (locked, cannot edit)
+  note         String?
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items DailyPurchaseWeighingItem[]
+
+  @@unique([weighingDate, category]) // One session per date + category
+  @@index([weighingDate])
+  @@index([category])
+}
+
+model DailyPurchaseWeighingItem {
+  id                  String   @id @default(cuid())
+  sessionId           String
+  session             DailyPurchaseWeighingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId           String
+  product             Product  @relation(fields: [productId], references: [id])
+
+  purchasedWeight     Float    // Snapshot from BuyBill aggregation at save time
+  purchaseBillCount   Int      // Snapshot: how many bills had this product
+  actualWeighedWeight Float?   // null = not weighed yet; 0 = weighed and got zero
+  differenceWeight    Float?   // null = not calculated; actual - purchased
+  status              String   // MATCH, DIFFERENCE, NOT_WEIGHED
+  note                String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([sessionId])
   @@index([productId])

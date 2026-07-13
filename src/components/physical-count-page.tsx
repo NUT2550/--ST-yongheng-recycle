@@ -16,7 +16,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { Scale, Loader2, Save, Eye, Lock, History, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Scale, Loader2, Save, Eye, Lock, History, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { getAuthToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatWeight, formatBaht } from '@/lib/helpers';
@@ -294,6 +294,12 @@ export default function PhysicalCountPage() {
 
   return (
     <div className="space-y-4">
+      {/* ST-35: Legacy warning banner */}
+      <div className="flex items-center gap-2 p-3 rounded-lg bg-red-50 border border-red-300 text-sm text-red-800">
+        <AlertTriangle className="h-5 w-5 shrink-0" />
+        <span><strong>หยุดใช้งาน — กระบวนการนี้ไม่ตรงกับงานจริงของบริษัท</strong> ระบบ Physical Count Apply ถูกระงับ กรุณาใช้หน้า "ชั่งยอดซื้อทองแดง/ทองเหลือง" แทน</span>
+      </div>
+
       {/* Preview-only warning */}
       <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-300 text-sm text-amber-800">
         <Scale className="h-5 w-5 shrink-0" />
@@ -572,7 +578,8 @@ export default function PhysicalCountPage() {
             </Table>
           )}
           <DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-            {detailSession?.status === 'DRAFT' && (
+            {/* ST-35: Apply button hidden — Physical Count Apply is disabled */}
+            {/* {detailSession?.status === 'DRAFT' && (
               <Button
                 onClick={() => detailSession && handleConfirmApply(detailSession)}
                 disabled={applying}
@@ -581,7 +588,7 @@ export default function PhysicalCountPage() {
                 {applying ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-1" />}
                 ดู Preview และ Apply
               </Button>
-            )}
+            )} */}
             <DialogClose asChild><Button variant="outline">ปิด</Button></DialogClose>
           </DialogFooter>
         </DialogContent>
