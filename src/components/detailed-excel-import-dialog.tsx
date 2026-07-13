@@ -21,6 +21,12 @@ import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
 import { getAuthToken } from '@/lib/api';
 import * as XLSX from 'xlsx';
+import {
+  isValidExternalBillNumber,
+  isReport04SellerSummaryRow,
+  isReport04BillHeaderRow,
+  isReport04ItemRow,
+} from '@/lib/excel-parsers';
 
 export interface PlannedBill {
   externalBillNumber: string;
@@ -188,14 +194,17 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
           if (fixThaiText(String(r[12] || '')).includes('report04') || fixThaiText(String(r[0] || '')).match(/^หน้าที่/)) continue;
 
           // Seller summary row: col 0 = seller code (4-digit), col 1 = seller name, col 12 = seller total
-          if (r[0] && r[1] && !r[2] && r[12] != null && /^\d{4}$/.test(String(r[0]).trim())) {
+          if (isReport04SellerSummaryRow(r)) {
             currentSeller = fixThaiText(String(r[1])).trim();
             continue;
           }
 
-          // Bill header row: col 1 = date (dd/m/yyyy), col 2 = bill number (A...), col 3 = license plate, col 4 = note
+          // Bill header row: col 1 = date (dd/m/yyyy), col 2 = bill number (letter-prefixed, e.g. A1051492, D1025582), col 3 = license plate, col 4 = note
           // col 12 = bill total
-          if (r[1] && r[2] && String(r[2]).trim().match(/^A\d+/i)) {
+          // ST-16: Fix — recognize any letter-prefixed bill number, not just A-prefixed.
+          // Previously /^A\d+/i caused D-prefixed bills (D1025582, D1025583) to be missed,
+          // leaking their items into the previous A-prefixed bill.
+          if (isReport04BillHeaderRow(r)) {
             if (currentBill) bills.push(currentBill);
             const dateStr = fixThaiText(String(r[1])).trim();
             const billNo = String(r[2]).trim();
@@ -218,7 +227,8 @@ export function DetailedExcelImportDialog({ products, onImport }: DetailedExcelI
           }
 
           // Item row: col 2 = product code (4-digit), col 3 = product name, col 9 = weight, col 11 = price, col 12 = amount
-          if (r[2] && r[3] && r[9] != null && currentBill) {
+          // ST-16: Use isReport04ItemRow helper — also guards against bill-number-like col 2 values being treated as items
+          if (isReport04ItemRow(r) && currentBill) {
             const productName = fixThaiText(String(r[3])).trim();
             const weight = parseFloat(String(r[9])) || 0;
             const pricePerKg = parseFloat(String(r[11])) || 0;
