@@ -26,7 +26,7 @@ permissions:
 
 # Cancel superseded runs on the same branch/PR to save CI minutes.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
