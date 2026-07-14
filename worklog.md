@@ -3146,3 +3146,44 @@ Test file: `ซื้อ 11-7-2569 แบบละเอียด.xls`
 - Head SHA: f3f1771
 - Mergeable: true, clean
 - Changed files: 15
+
+---
+
+## Task ID: 95 (ST-35 — Replace simulated tests with production-code imports)
+## Agent: Main
+## Task: Extract production helpers, rewrite tests to import actual code
+
+### Changes
+1. **NEW** `src/lib/daily-weighing-permission.ts` — Extracted `hasDailyPurchaseWeighingPermission()` from inline route code
+2. **MODIFIED** `src/lib/daily-purchase-weighing.ts` — Added `validateWeighingPostInput()` and `buildSessionItems()` as exported pure functions
+3. **MODIFIED** `src/app/api/daily-weighing/route.ts` — Import and use extracted functions instead of inline
+4. **MODIFIED** `src/app/api/daily-weighing/[id]/route.ts` — Import permission from extracted module
+5. **REWRITTEN** `tests/st35-integration.test.ts` — All tests now import and execute actual production code:
+   - `hasDailyPurchaseWeighingPermission` from `src/lib/daily-weighing-permission`
+   - `validateWeighingPostInput` from `src/lib/daily-purchase-weighing`
+   - `buildSessionItems` from `src/lib/daily-purchase-weighing`
+   - Legacy Apply 403 test imports and calls actual `POST` handler
+   - $transaction test reads actual route source file
+   - StockLot invariant test verifies actual module exports
+   - NO copied functions, NO mock implementations, NO placeholder assertions
+
+### Commit
+- `4685cac` — test(weighing): replace simulated tests with production-code imports (ST-35)
+
+### Test results
+| Category | Count |
+|---|---:|
+| ST-20 FIFO validation | 25 |
+| ST-16 report04 bill prefix | 67 |
+| ST-35 pure helpers | 27 |
+| ST-35 integration (production code) | 42 |
+| **Total** | **161 pass, 0 fail** |
+
+### CI: All 5 checks pass ✅
+- Lint ✅ | Typecheck ✅ | Tests ✅ 161 pass | Build ✅ | Vercel ✅
+
+### PR #3 status
+- State: open, Draft (not merged)
+- Head SHA: 4685cac
+- Mergeable: true, clean
+- Changed files: 17
