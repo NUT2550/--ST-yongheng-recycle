@@ -140,11 +140,10 @@ export default function DailyWeighingPage() {
     setSaving(true);
     try {
       const token = getAuthToken();
+      // ST-35: Client sends ONLY productId, actualWeighedWeight, and note.
+      // Server recomputes purchasedWeight, purchaseBillCount, difference, status.
       const items = weighingItems.map(item => ({
         productId: item.productId,
-        productName: item.productName,
-        purchasedWeight: item.purchasedWeight,
-        purchaseBillCount: item.purchaseBillCount,
         actualWeighedWeight: item.actualWeighedWeight === '' ? null : parseFloat(item.actualWeighedWeight),
         note: item.note || undefined,
       }));

@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
         'transfer.create': true,
         'history.edit': true,
         'physical-count.apply': true,
+        'dailyPurchaseWeighing': true,
         'user.manage': true,
         'product.manage': true,
       }

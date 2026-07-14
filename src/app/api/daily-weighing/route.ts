@@ -1,8 +1,19 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
+import {
+  aggregateDailyPurchases,
+  isValidWeighingDate,
+  isValidWeighingCategory,
+  isValidActualWeighedWeight,
+  calculateWeighingStatus,
+} from '@/lib/daily-purchase-weighing';
 
-const TOLERANCE = 0.10; // ±0.10 kg per Owner decision
+// Permission: Admin OR staff with dailyPurchaseWeighing permission
+function hasWeighingPermission(payload: { role: string; permissions?: Record<string, boolean> }): boolean {
+  if (payload.role === 'admin') return true;
+  return payload.permissions?.['dailyPurchaseWeighing'] === true;
+}
 
 // GET /api/daily-weighing — list sessions OR aggregate purchases for a date
 export async function GET(request: NextRequest) {
@@ -11,94 +22,33 @@ export async function GET(request: NextRequest) {
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
 
+  if (!hasWeighingPermission(payload)) {
+    return NextResponse.json({ error: 'ไม่มีสิทธิ์ใช้งานการชั่งยอดซื้อ' }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'list';
 
   if (action === 'aggregate') {
-    // Aggregate BuyBillItems for a specific date + category
     const dateStr = searchParams.get('date');
     const category = searchParams.get('category');
     if (!dateStr || !category) {
       return NextResponse.json({ error: 'กรุณาระบุวันที่และหมวดหมู่' }, { status: 400 });
     }
-
-    // Parse date: input is CE ISO date (e.g. "2026-07-11")
-    const startDate = new Date(dateStr + 'T00:00:00+07:00');
-    const endDate = new Date(dateStr + 'T23:59:59+07:00');
-
-    // Find category
-    const cat = await db.productCategory.findFirst({ where: { name: category } });
-    if (!cat) {
-      return NextResponse.json({ error: `ไม่พบหมวดหมู่ "${category}"` }, { status: 400 });
+    if (!isValidWeighingDate(dateStr)) {
+      return NextResponse.json({ error: 'รูปแบบวันที่ไม่ถูกต้อง' }, { status: 400 });
+    }
+    if (!isValidWeighingCategory(category)) {
+      return NextResponse.json({ error: 'หมวดหมู่ต้องเป็น ทองแดง หรือ ทองเหลือง' }, { status: 400 });
     }
 
-    // Get all products in this category
-    const products = await db.product.findMany({
-      where: { categoryId: cat.id },
-      select: { id: true, name: true, sortOrder: true },
-      orderBy: { sortOrder: 'asc' },
-    });
-    const productIds = new Set(products.map(p => p.id));
-
-    // Get all non-cancelled BuyBills for this date
-    const bills = await db.buyBill.findMany({
-      where: {
-        isCancelled: false,
-        date: { gte: startDate, lte: endDate },
-      },
-      include: {
-        items: { include: { product: { select: { id: true, name: true } } } },
-      },
-    });
-
-    // Aggregate by product
-    const aggMap = new Map<string, { productId: string; productName: string; purchasedWeight: number; purchaseBillCount: number; totalAmount: number }>();
-    const billCountByProduct = new Map<string, Set<string>>(); // productId → set of billIds
-
-    for (const bill of bills) {
-      for (const item of bill.items) {
-        if (!productIds.has(item.productId)) continue; // Skip products not in this category
-        if (!aggMap.has(item.productId)) {
-          aggMap.set(item.productId, {
-            productId: item.productId,
-            productName: item.product.name,
-            purchasedWeight: 0,
-            purchaseBillCount: 0,
-            totalAmount: 0,
-          });
-          billCountByProduct.set(item.productId, new Set());
-        }
-        const agg = aggMap.get(item.productId)!;
-        agg.purchasedWeight += item.weight;
-        agg.totalAmount += item.totalAmount;
-        billCountByProduct.get(item.productId)!.add(bill.id);
-      }
+    try {
+      const result = await aggregateDailyPurchases(dateStr, category);
+      return NextResponse.json(result);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      return NextResponse.json({ error: msg }, { status: 400 });
     }
-
-    // Set bill counts
-    for (const [pid, billSet] of billCountByProduct) {
-      const agg = aggMap.get(pid)!;
-      agg.purchaseBillCount = billSet.size;
-      agg.purchasedWeight = Math.round(agg.purchasedWeight * 100) / 100;
-      agg.totalAmount = Math.round(agg.totalAmount * 100) / 100;
-    }
-
-    // Sort by product sortOrder
-    const result = products
-      .filter(p => aggMap.has(p.id))
-      .map(p => aggMap.get(p.id)!)
-      .sort((a, b) => {
-        const pa = products.find(p => p.id === a.productId)?.sortOrder ?? 0;
-        const pb = products.find(p => p.id === b.productId)?.sortOrder ?? 0;
-        return pa - pb;
-      });
-
-    return NextResponse.json({
-      date: dateStr,
-      category,
-      totalBills: bills.length,
-      items: result,
-    });
   }
 
   // Default: list sessions (paginated)
@@ -122,11 +72,16 @@ export async function GET(request: NextRequest) {
 }
 
 // POST /api/daily-weighing — save a daily weighing session
+// ST-35: Server recomputes all aggregation — client sends only actualWeighedWeight + notes
 export async function POST(request: NextRequest) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
+
+  if (!hasWeighingPermission(payload)) {
+    return NextResponse.json({ error: 'ไม่มีสิทธิ์บันทึกผลชั่ง' }, { status: 403 });
+  }
 
   try {
     const body = await request.json();
@@ -134,19 +89,60 @@ export async function POST(request: NextRequest) {
       weighingDate: string;
       category: string;
       note?: string;
+      // Client sends ONLY these fields per item:
       items: Array<{
         productId: string;
-        productName: string;
-        purchasedWeight: number;
-        purchaseBillCount: number;
         actualWeighedWeight: number | null;
         note?: string;
       }>;
     };
 
-    if (!weighingDate) return NextResponse.json({ error: 'กรุณาระบุวันที่' }, { status: 400 });
-    if (!category) return NextResponse.json({ error: 'กรุณาระบุหมวดหมู่' }, { status: 400 });
-    if (!items || items.length === 0) return NextResponse.json({ error: 'กรุณาเพิ่มรายการอย่างน้อย 1 รายการ' }, { status: 400 });
+    // Validate date
+    if (!weighingDate || !isValidWeighingDate(weighingDate)) {
+      return NextResponse.json({ error: 'รูปแบบวันที่ไม่ถูกต้อง' }, { status: 400 });
+    }
+    // Validate category
+    if (!category || !isValidWeighingCategory(category)) {
+      return NextResponse.json({ error: 'หมวดหมู่ต้องเป็น ทองแดง หรือ ทองเหลือง' }, { status: 400 });
+    }
+    // Validate items
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: 'กรุณาเพิ่มรายการอย่างน้อย 1 รายการ' }, { status: 400 });
+    }
+
+    // Reject duplicate productId in request
+    const seenProductIds = new Set<string>();
+    for (const item of items) {
+      if (!item.productId || typeof item.productId !== 'string') {
+        return NextResponse.json({ error: 'รายการต้องมี productId' }, { status: 400 });
+      }
+      if (seenProductIds.has(item.productId)) {
+        return NextResponse.json({ error: `productId ซ้ำ: ${item.productId}` }, { status: 400 });
+      }
+      seenProductIds.add(item.productId);
+
+      // Validate actualWeighedWeight — null/undefined/0/positive are valid; negative/NaN/Infinity are not
+      if (!isValidActualWeighedWeight(item.actualWeighedWeight)) {
+        return NextResponse.json({ error: `น้ำหนักชั่งจริงไม่ถูกต้องสำหรับ productId: ${item.productId}` }, { status: 400 });
+      }
+    }
+
+    // RECOMPUTE aggregation from BuyBills — DO NOT trust client values
+    const aggregation = await aggregateDailyPurchases(weighingDate, category);
+
+    if (aggregation.items.length === 0) {
+      return NextResponse.json({ error: `ไม่มีใบซื้อ${category}ของวันที่ ${weighingDate}` }, { status: 400 });
+    }
+
+    // Build map of valid products from server aggregation
+    const validProducts = new Map(aggregation.items.map(item => [item.productId, item]));
+
+    // Block productIds that don't have purchase bills
+    for (const item of items) {
+      if (!validProducts.has(item.productId)) {
+        return NextResponse.json({ error: `สินค้า ${item.productId} ไม่มียอดซื้อในวันที่และหมวดที่เลือก` }, { status: 400 });
+      }
+    }
 
     // Check duplicate session (one per date + category)
     const date = new Date(weighingDate + 'T00:00:00+07:00');
@@ -160,30 +156,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build items with status + difference
+    // Build session items — SERVER controls all fields except actualWeighedWeight + note
     const sessionItems = items.map(item => {
-      const actual = item.actualWeighedWeight;
-      let difference: number | null = null;
-      let status: string;
-
-      if (actual === null || actual === undefined) {
-        status = 'NOT_WEIGHED';
-      } else {
-        difference = Math.round((actual - item.purchasedWeight) * 100) / 100;
-        status = Math.abs(difference) <= TOLERANCE ? 'MATCH' : 'DIFFERENCE';
-      }
+      const agg = validProducts.get(item.productId)!;
+      const actual = item.actualWeighedWeight ?? null;
+      const { difference, status } = calculateWeighingStatus(actual, agg.purchasedWeight);
 
       return {
         productId: item.productId,
-        purchasedWeight: item.purchasedWeight,
-        purchaseBillCount: item.purchaseBillCount,
-        actualWeighedWeight: actual ?? null,
-        differenceWeight: difference,
-        status,
+        purchasedWeight: agg.purchasedWeight,       // server-computed
+        purchaseBillCount: agg.purchaseBillCount,    // server-computed
+        actualWeighedWeight: actual,
+        differenceWeight: difference,                // server-computed
+        status,                                      // server-computed
         note: item.note || null,
       };
     });
 
+    // Create session + items (pgbouncer-safe sequential, no $transaction)
     const session = await db.dailyPurchaseWeighingSession.create({
       data: {
         weighingDate: date,
@@ -196,22 +186,28 @@ export async function POST(request: NextRequest) {
       include: { items: { include: { product: { select: { name: true } } } } },
     });
 
-    // Audit log
-    await db.auditLog.create({
-      data: {
-        action: 'CREATE',
-        entityType: 'DAILY_WEIGHING',
-        entityId: session.id,
-        userId: payload.userId,
-        userName: payload.name,
-        details: JSON.stringify({
-          weighingDate: session.weighingDate,
-          category: session.category,
-          itemCount: session.items.length,
-          note: session.note,
-        }),
-      },
-    });
+    // Audit log (best-effort — non-fatal if fails, but session is already saved)
+    try {
+      await db.auditLog.create({
+        data: {
+          action: 'CREATE',
+          entityType: 'DAILY_WEIGHING',
+          entityId: session.id,
+          userId: payload.userId,
+          userName: payload.name,
+          details: JSON.stringify({
+            weighingDate: session.weighingDate,
+            category: session.category,
+            itemCount: session.items.length,
+            totalBills: aggregation.totalBills,
+            totalPurchasedWeight: aggregation.totalPurchasedWeight,
+            note: session.note,
+          }),
+        },
+      });
+    } catch (auditErr) {
+      console.error('ST-35: AuditLog write failed (non-fatal):', auditErr);
+    }
 
     return NextResponse.json({ session }, { status: 201 });
   } catch (error) {
