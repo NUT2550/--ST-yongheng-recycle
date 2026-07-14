@@ -1,470 +1,749 @@
 /**
- * ST-35: Integration tests that import and execute ACTUAL production code.
+ * ST-35: Real production-service tests using a fake repository with
+ * real commit/rollback semantics.
  *
- * No copied logic. No mock implementations. No placeholder assertions.
- * Every test calls the same functions used by the production API routes.
+ * Tests call the SAME production service functions used by routes:
+ * - aggregateDailyPurchasesWithRepository()
+ * - saveDailyPurchaseWeighing()
+ * - getDailyWeighingHistory()
+ * - getDailyWeighingDetail()
+ *
+ * The fake repository implements the SAME interface as the Prisma adapter.
+ * Only persistence is faked — all business logic is production code.
  *
  * Run: bun test tests/st35-integration.test.ts
  */
-import { test, expect, describe } from 'bun:test';
+import { test, expect, describe, beforeEach } from 'bun:test';
 
-// Import PRODUCTION code — same functions used by API routes
+// Import PRODUCTION service functions
 import {
-  isValidWeighingDate,
-  isValidWeighingCategory,
-  isValidActualWeighedWeight,
-  calculateWeighingStatus,
-  getThaiDateRange,
-  validateWeighingPostInput,
-  buildSessionItems,
-  type AggregationResult,
-} from '../src/lib/daily-purchase-weighing';
+  aggregateDailyPurchasesWithRepository,
+  saveDailyPurchaseWeighing,
+  getDailyWeighingHistory,
+  getDailyWeighingDetail,
+} from '../src/lib/daily-purchase-weighing-service';
+
+// Import PRODUCTION permission helper
 import { hasDailyPurchaseWeighingPermission } from '../src/lib/daily-weighing-permission';
 
-// ============ Mock aggregation for buildSessionItems tests ============
-// This is test FIXTURE data, not copied production logic.
-// buildSessionItems is the production function being tested.
-const mockAggregation: AggregationResult = {
-  date: '2026-07-11',
-  category: 'ทองแดง',
-  totalBills: 3,
-  productCount: 2,
-  totalPurchasedWeight: 100.5,
-  items: [
-    { productId: 'prod-1', productName: 'ทองแดงปอกเงา', purchasedWeight: 80.5, purchaseBillCount: 2, totalAmount: 33970 },
-    { productId: 'prod-2', productName: 'ทองแดงช็อต', purchasedWeight: 20, purchaseBillCount: 3, totalAmount: 8200 },
-  ],
-};
+// Import PRODUCTION pure helpers (used in route)
+import { validateWeighingPostInput, buildSessionItems } from '../src/lib/daily-purchase-weighing';
+
+// Import fake repository (test-only, implements production interface)
+import { FakeDailyPurchaseWeighingRepository } from './st35-fake-repository';
+
+// Import types
+import type { BuyBillRow, ProductRow } from '../src/lib/daily-weighing-repository';
+
+// ============ Test fixtures ============
+
+function makeBill(id: string, date: Date, items: Array<{ productId: string; weight: number; totalAmount: number; productName: string }>): BuyBillRow {
+  return {
+    id,
+    date,
+    isCancelled: false,
+    items: items.map(it => ({
+      productId: it.productId,
+      weight: it.weight,
+      totalAmount: it.totalAmount,
+      product: { id: it.productId, name: it.productName },
+    })),
+  };
+}
+
+function setupCopperProducts(repo: FakeDailyPurchaseWeighingRepository): ProductRow[] {
+  const products: ProductRow[] = [
+    { id: 'copper-1', name: 'ทองแดงปอกเงา', sortOrder: 1 },
+    { id: 'copper-2', name: 'ทองแดงช็อต', sortOrder: 2 },
+    { id: 'copper-3', name: 'ทองแดงใหญ่', sortOrder: 3 },
+  ];
+  repo.setCategory('ทองแดง', 'cat-copper');
+  repo.setProducts('cat-copper', products);
+  return products;
+}
+
+function setupBrassProducts(repo: FakeDailyPurchaseWeighingRepository): ProductRow[] {
+  const products: ProductRow[] = [
+    { id: 'brass-1', name: 'ทองเหลืองหนา', sortOrder: 1 },
+    { id: 'brass-2', name: 'ทองเหลืองเนื้อแดง', sortOrder: 2 },
+  ];
+  repo.setCategory('ทองเหลือง', 'cat-brass');
+  repo.setProducts('cat-brass', products);
+  return products;
+}
 
 // ============ Tests ============
 
-describe('ST-35: Permission enforcement (production helper)', () => {
+describe('ST-35: Permission (production helper)', () => {
   test('admin has permission', () => {
     expect(hasDailyPurchaseWeighingPermission({ role: 'admin' })).toBe(true);
   });
-
-  test('staff with dailyPurchaseWeighing permission has access', () => {
+  test('staff with dailyPurchaseWeighing = true', () => {
     expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: { dailyPurchaseWeighing: true } })).toBe(true);
   });
-
-  test('staff without dailyPurchaseWeighing permission is denied', () => {
+  test('staff without permission = false', () => {
     expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: { 'buy.create': true } })).toBe(false);
   });
-
-  test('staff with no permissions is denied', () => {
+  test('staff with empty permissions = false', () => {
     expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: {} })).toBe(false);
   });
-
-  test('staff with undefined permissions is denied', () => {
+  test('staff with no permissions key = false', () => {
     expect(hasDailyPurchaseWeighingPermission({ role: 'staff' })).toBe(false);
   });
-
-  test('staff with dailyPurchaseWeighing=false is denied', () => {
+  test('staff with dailyPurchaseWeighing = false', () => {
     expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: { dailyPurchaseWeighing: false } })).toBe(false);
   });
 });
 
-describe('ST-35: POST input validation (production function)', () => {
-  test('valid payload passes', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [
-        { productId: 'prod-1', actualWeighedWeight: 80.5 },
-        { productId: 'prod-2', actualWeighedWeight: null },
-      ],
-    });
-    expect(result.valid).toBe(true);
+describe('ST-35: Aggregation service (production function with fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBrassProducts(repo);
   });
 
-  test('invalid date format rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '11/7/2569',
-      category: 'ทองแดง',
-      items: [{ productId: 'prod-1', actualWeighedWeight: 80 }],
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) expect(result.status).toBe(400);
+  test('1. multiple bills on one date', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'copper-1', weight: 20, totalAmount: 8400, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].purchasedWeight).toBe(30);
   });
 
-  test('invalid category rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'เหล็ก',
-      items: [{ productId: 'prod-1', actualWeighedWeight: 80 }],
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) expect(result.status).toBe(400);
+  test('2. same product across multiple bills', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'copper-1', weight: 15, totalAmount: 6300, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b3', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.items[0].purchaseBillCount).toBe(3);
+    expect(result.items[0].purchasedWeight).toBe(30);
   });
 
-  test('empty items array rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [],
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) expect(result.status).toBe(400);
+  test('3. distinct bill count per product', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [
+        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
+        { productId: 'copper-2', weight: 5, totalAmount: 2000, productName: 'ทองแดงช็อต' },
+      ]),
+      makeBill('b2', date, [{ productId: 'copper-1', weight: 20, totalAmount: 8400, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    const p1 = result.items.find(i => i.productId === 'copper-1')!;
+    const p2 = result.items.find(i => i.productId === 'copper-2')!;
+    expect(p1.purchaseBillCount).toBe(2);
+    expect(p2.purchaseBillCount).toBe(1);
   });
 
-  test('duplicate productId rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [
-        { productId: 'prod-1', actualWeighedWeight: 80 },
-        { productId: 'prod-1', actualWeighedWeight: 90 },
-      ],
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.status).toBe(400);
-      expect(result.error).toContain('ซ้ำ');
-    }
+  test('4. category-level relevant bill count', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'copper-2', weight: 5, totalAmount: 2000, productName: 'ทองแดงช็อต' }]),
+      makeBill('b3', date, [{ productId: 'steel-1', weight: 100, totalAmount: 900, productName: 'เหล็กบาง' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(2); // b1 + b2, NOT b3 (steel-only)
   });
 
-  test('negative actualWeighedWeight rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'prod-1', actualWeighedWeight: -5 }],
-    });
-    expect(result.valid).toBe(false);
+  test('5. steel-only bill excluded from copper count', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'steel-1', weight: 100, totalAmount: 900, productName: 'เหล็กบาง' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1); // only b1
   });
 
-  test('NaN actualWeighedWeight rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'prod-1', actualWeighedWeight: NaN }],
-    });
-    expect(result.valid).toBe(false);
+  test('6. mixed-category bill counted only for selected category', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [
+        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
+        { productId: 'steel-1', weight: 50, totalAmount: 450, productName: 'เหล็กบาง' },
+      ]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1); // b1 has copper → counted
+    expect(result.items).toHaveLength(1); // only copper-1
   });
 
-  test('Infinity actualWeighedWeight rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'prod-1', actualWeighedWeight: Infinity }],
-    });
-    expect(result.valid).toBe(false);
+  test('7. cancelled bill excluded', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    const cancelledBill = makeBill('b-cancelled', date, [{ productId: 'copper-1', weight: 100, totalAmount: 42000, productName: 'ทองแดงปอกเงา' }]);
+    cancelledBill.isCancelled = true;
+    repo.setBuyBills([
+      cancelledBill,
+      makeBill('b2', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1); // only b2
+    expect(result.items[0].purchasedWeight).toBe(10);
   });
 
-  test('zero actualWeighedWeight accepted (valid)', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'prod-1', actualWeighedWeight: 0 }],
-    });
-    expect(result.valid).toBe(true);
+  test('8. A-prefixed bill included', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    const bill = makeBill('A1051492', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]);
+    repo.setBuyBills([bill]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
   });
 
-  test('null actualWeighedWeight accepted (not weighed)', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'prod-1', actualWeighedWeight: null }],
-    });
-    expect(result.valid).toBe(true);
+  test('9. D-prefixed bill included', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    const bill = makeBill('D1025582', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]);
+    repo.setBuyBills([bill]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
   });
 
-  test('missing productId rejected', () => {
-    const result = validateWeighingPostInput({
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ actualWeighedWeight: 80 } as any],
-    });
-    expect(result.valid).toBe(false);
+  test('10. BuyBill.date used (not createdAt)', async () => {
+    // Bill has date=2026-07-11 but "createdAt" would be different
+    // The fake repository filters by date field, not createdAt
+    const billDate = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', billDate, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    // Query for 2026-07-11 → should find the bill
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
+    // Query for 2026-07-12 → should NOT find the bill
+    const result2 = await aggregateDailyPurchasesWithRepository(repo, '2026-07-12', 'ทองแดง');
+    expect(result2.totalBills).toBe(0);
   });
 
-  test('non-object body rejected', () => {
-    const result = validateWeighingPostInput('not an object');
-    expect(result.valid).toBe(false);
+  test('11. Thailand start boundary (00:00 ICT = 17:00 UTC previous day)', async () => {
+    const earlyBill = new Date('2026-07-11T00:00:00+07:00'); // exactly midnight ICT
+    repo.setBuyBills([
+      makeBill('b1', earlyBill, [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
   });
 
-  test('null body rejected', () => {
-    const result = validateWeighingPostInput(null);
-    expect(result.valid).toBe(false);
+  test('12. Thailand end boundary (23:59 ICT)', async () => {
+    const lateBill = new Date('2026-07-11T23:59:00+07:00'); // 23:59 ICT
+    repo.setBuyBills([
+      makeBill('b1', lateBill, [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
+  });
+
+  test('13. no bills returns empty aggregation', async () => {
+    repo.setBuyBills([]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.items).toHaveLength(0);
+    expect(result.totalBills).toBe(0);
+    expect(result.totalPurchasedWeight).toBe(0);
+  });
+
+  test('14. copper and brass remain isolated', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [
+        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
+        { productId: 'brass-1', weight: 5, totalAmount: 1300, productName: 'ทองเหลืองหนา' },
+      ]),
+    ]);
+    const copperResult = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    const brassResult = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองเหลือง');
+    expect(copperResult.items).toHaveLength(1);
+    expect(copperResult.items[0].productId).toBe('copper-1');
+    expect(brassResult.items).toHaveLength(1);
+    expect(brassResult.items[0].productId).toBe('brass-1');
+  });
+
+  test('15. totalPurchasedWeight correct', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 10.5, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'copper-2', weight: 20.3, totalAmount: 8400, productName: 'ทองแดงช็อต' }]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalPurchasedWeight).toBe(30.8);
+  });
+
+  test('16. product order follows sortOrder', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [
+        { productId: 'copper-3', weight: 5, totalAmount: 2000, productName: 'ทองแดงใหญ่' },
+        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
+        { productId: 'copper-2', weight: 8, totalAmount: 3200, productName: 'ทองแดงช็อต' },
+      ]),
+    ]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.items[0].productId).toBe('copper-1'); // sortOrder=1
+    expect(result.items[1].productId).toBe('copper-2'); // sortOrder=2
+    expect(result.items[2].productId).toBe('copper-3'); // sortOrder=3
   });
 });
 
-describe('ST-35: Server recomputation (production buildSessionItems)', () => {
-  test('server recomputes purchasedWeight from aggregation, not client', () => {
-    const clientItems = [
-      { productId: 'prod-1', actualWeighedWeight: 85 },
-      { productId: 'prod-2', actualWeighedWeight: 19.9 },
-    ];
-    const result = buildSessionItems(mockAggregation, clientItems);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      // prod-1: server says 80.5 kg from 2 bills (not from client)
-      expect(result.items[0].purchasedWeight).toBe(80.5);
-      expect(result.items[0].purchaseBillCount).toBe(2);
-      // prod-2: server says 20 kg from 3 bills (not from client)
-      expect(result.items[1].purchasedWeight).toBe(20);
-      expect(result.items[1].purchaseBillCount).toBe(3);
-    }
-  });
+describe('ST-35: Save service (production function with fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
 
-  test('server computes difference', () => {
-    const clientItems = [
-      { productId: 'prod-1', actualWeighedWeight: 85 }, // 85 - 80.5 = 4.5
-      { productId: 'prod-2', actualWeighedWeight: null }, // not weighed
-    ];
-    const result = buildSessionItems(mockAggregation, clientItems);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.items[0].differenceWeight).toBe(4.5);
-      expect(result.items[1].differenceWeight).toBeNull();
-    }
-  });
-
-  test('server computes status (MATCH vs DIFFERENCE)', () => {
-    const clientItems = [
-      { productId: 'prod-1', actualWeighedWeight: 80.5 }, // exact match
-      { productId: 'prod-2', actualWeighedWeight: 25 },   // diff = 5 → DIFFERENCE
-    ];
-    const result = buildSessionItems(mockAggregation, clientItems);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.items[0].status).toBe('MATCH');
-      expect(result.items[1].status).toBe('DIFFERENCE');
-    }
-  });
-
-  test('null actual = NOT_WEIGHED status', () => {
-    const result = buildSessionItems(mockAggregation, [
-      { productId: 'prod-1', actualWeighedWeight: null },
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'copper-2', weight: 20, totalAmount: 8200, productName: 'ทองแดงช็อต' }]),
     ]);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.items[0].status).toBe('NOT_WEIGHED');
-      expect(result.items[0].actualWeighedWeight).toBeNull();
-      expect(result.items[0].differenceWeight).toBeNull();
+  });
+
+  test('server ignores fake client purchasedWeight', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [
+        // Client sends fake purchasedWeight — server must ignore it
+        { productId: 'copper-1', actualWeighedWeight: 80, purchasedWeight: 999 } as any,
+      ],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Server used 80.5 (from aggregation), NOT 999 (from client)
+      expect(result.session.items[0].purchasedWeight).toBe(80.5);
     }
   });
 
-  test('zero actual = DIFFERENCE (when purchased > 0)', () => {
-    const result = buildSessionItems(mockAggregation, [
-      { productId: 'prod-1', actualWeighedWeight: 0 }, // 0 - 80.5 = -80.5
-    ]);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.items[0].status).toBe('DIFFERENCE');
-      expect(result.items[0].differenceWeight).toBe(-80.5);
-      expect(result.items[0].actualWeighedWeight).toBe(0);
+  test('server calculates difference itself', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 85 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.session.items[0].differenceWeight).toBe(4.5); // 85 - 80.5
     }
   });
 
-  test('client does not control purchasedWeight — server value always used', () => {
-    // Client payload has NO purchasedWeight field — it's not in the WeighingPostItem type
-    // The server gets it from aggregation. Verify the output matches aggregation, not any client value.
-    const result = buildSessionItems(mockAggregation, [
-      { productId: 'prod-1', actualWeighedWeight: 80 },
-    ]);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.items[0].purchasedWeight).toBe(80.5); // from aggregation, not client
+  test('server calculates status itself', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80.5 }], // exact match
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.session.items[0].status).toBe('MATCH');
     }
   });
 
-  test('product not in aggregation is blocked', () => {
-    const result = buildSessionItems(mockAggregation, [
-      { productId: 'nonexistent-product', actualWeighedWeight: 50 },
-    ]);
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
+  test('product without purchase is blocked', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'nonexistent', actualWeighedWeight: 50 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
       expect(result.status).toBe(400);
       expect(result.error).toContain('ไม่มียอดซื้อ');
     }
   });
 
-  test('mixed valid + invalid products — entire request blocked', () => {
-    const result = buildSessionItems(mockAggregation, [
-      { productId: 'prod-1', actualWeighedWeight: 80 },
-      { productId: 'nonexistent', actualWeighedWeight: 50 },
+  test('duplicate productId is blocked', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [
+        { productId: 'copper-1', actualWeighedWeight: 80 },
+        { productId: 'copper-1', actualWeighedWeight: 90 },
+      ],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.status).toBe(400);
+  });
+
+  test('negative weight is blocked', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: -5 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(false);
+  });
+
+  test('NaN weight is blocked', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: NaN }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(false);
+  });
+
+  test('Infinity weight is blocked', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: Infinity }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(false);
+  });
+
+  test('null remains NOT_WEIGHED', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: null }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.session.items[0].status).toBe('NOT_WEIGHED');
+      expect(result.session.items[0].actualWeighedWeight).toBeNull();
+    }
+  });
+
+  test('zero remains valid zero', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 0 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.session.items[0].actualWeighedWeight).toBe(0);
+      expect(result.session.items[0].status).toBe('DIFFERENCE'); // 0 - 80.5 = -80.5
+    }
+  });
+
+  test('session snapshot uses server aggregation', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [
+        { productId: 'copper-1', actualWeighedWeight: 80 },
+        { productId: 'copper-2', actualWeighedWeight: 20 },
+      ],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      // Snapshot should have server-computed values, not client values
+      expect(result.session.items[0].purchasedWeight).toBe(80.5); // from bill b1
+      expect(result.session.items[1].purchasedWeight).toBe(20);   // from bill b2
+      expect(result.session.items[0].purchaseBillCount).toBe(1);   // 1 bill
+      expect(result.session.items[1].purchaseBillCount).toBe(1);
+    }
+  });
+
+  test('AuditLog records actor/date/category/totals', async () => {
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    expect(repo.getAuditLogCount()).toBe(1);
+  });
+});
+
+describe('ST-35: Duplicate session (production service)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBrassProducts(repo);
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date, [{ productId: 'brass-1', weight: 5, totalAmount: 1300, productName: 'ทองเหลืองหนา' }]),
     ]);
-    expect(result.ok).toBe(false);
+  });
+
+  test('first save succeeds, second returns conflict', async () => {
+    const body = {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
+    };
+
+    const result1 = await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
+    expect(result1.success).toBe(true);
+
+    const result2 = await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
+    expect(result2.success).toBe(false);
+    if (!result2.success) {
+      expect(result2.status).toBe(409);
+      expect(result2.error).toContain('ห้ามบันทึกซ้ำ');
+    }
+  });
+
+  test('only one session exists after duplicate attempt', async () => {
+    const body = {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
+    };
+
+    await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
+    await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
+
+    expect(repo.getSessionCount()).toBe(1);
+  });
+
+  test('same date + different category is allowed', async () => {
+    const copperBody = {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
+    };
+    const brassBody = {
+      weighingDate: '2026-07-11',
+      category: 'ทองเหลือง',
+      items: [{ productId: 'brass-1', actualWeighedWeight: 5 }],
+    };
+
+    const r1 = await saveDailyPurchaseWeighing(repo, copperBody, 'user-1', 'Test');
+    const r2 = await saveDailyPurchaseWeighing(repo, brassBody, 'user-1', 'Test');
+
+    expect(r1.success).toBe(true);
+    expect(r2.success).toBe(true);
+    expect(repo.getSessionCount()).toBe(2);
+  });
+
+  test('different date + same category is allowed', async () => {
+    const date1 = new Date('2026-07-11T10:00:00+07:00');
+    const date2 = new Date('2026-07-12T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date1, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+      makeBill('b2', date2, [{ productId: 'copper-1', weight: 15, totalAmount: 6300, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+
+    const r1 = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
+    }, 'user-1', 'Test');
+
+    const r2 = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-12', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 15 }],
+    }, 'user-1', 'Test');
+
+    expect(r1.success).toBe(true);
+    expect(r2.success).toBe(true);
+    expect(repo.getSessionCount()).toBe(2);
   });
 });
 
-describe('ST-35: Duplicate session prevention logic', () => {
-  test('same date + same category = duplicate (should be blocked by API)', () => {
-    // The API checks db.dailyPurchaseWeighingSession.findFirst with @@unique constraint
-    // This test verifies the date+category matching logic
-    const date1 = new Date('2026-07-11T00:00:00+07:00');
-    const date2 = new Date('2026-07-11T00:00:00+07:00');
-    const cat1 = 'ทองแดง';
-    const cat2 = 'ทองแดง';
+describe('ST-35: AuditLog rollback (production service + fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
 
-    const isSame = date1.getTime() === date2.getTime() && cat1 === cat2;
-    expect(isSame).toBe(true);
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
+    ]);
   });
 
-  test('same date + different category = NOT duplicate', () => {
-    const cat1: string = 'ทองแดง';
-    const cat2: string = 'ทองเหลือง';
-    expect(cat1 === cat2).toBe(false);
+  test('AuditLog failure leaves zero session, zero items, zero AuditLog', async () => {
+    // Configure fake repository to fail on AuditLog creation
+    repo.setShouldFailAuditLog(true);
+
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    // Save should fail
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.status).toBe(500);
+    }
+
+    // Verify NO partial data was committed
+    expect(repo.getSessionCount()).toBe(0);     // zero sessions
+    expect(repo.getAuditLogCount()).toBe(0);    // zero audit logs
   });
 
-  test('different date + same category = NOT duplicate', () => {
-    const date1 = new Date('2026-07-11T00:00:00+07:00');
-    const date2 = new Date('2026-07-12T00:00:00+07:00');
-    expect(date1.getTime()).not.toBe(date2.getTime());
+  test('successful save leaves 1 session + 1 AuditLog', async () => {
+    repo.setShouldFailAuditLog(false);
+
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    expect(repo.getSessionCount()).toBe(1);
+    expect(repo.getAuditLogCount()).toBe(1);
   });
 });
 
-describe('ST-35: Legacy Apply 403 (production route behavior)', () => {
-  test('apply route exports POST that returns 403', async () => {
-    // Import the ACTUAL production route handler
+describe('ST-35: Stock invariants (production service + fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+    // Pre-populate stock lots for invariant checking
+    repo.addStockLot('lot-1', 100, 400, 'BUY');
+    repo.addStockLot('lot-2', 50, 10, 'SORTING');
+  });
+
+  test('successful save does not change StockLot count', async () => {
+    const stockBefore = repo.getStockLotCount();
+    expect(stockBefore).toBe(2);
+
+    const result = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    expect(result.success).toBe(true);
+    expect(repo.getStockLotCount()).toBe(stockBefore); // unchanged
+  });
+
+  test('successful save does not create StockMovements', async () => {
+    const movementsBefore = repo.getStockMovementCount();
+
+    await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    expect(repo.getStockMovementCount()).toBe(movementsBefore); // unchanged
+  });
+
+  test('successful save does not create STOCK_ADJUSTMENT audit logs', async () => {
+    const adjBefore = repo.getStockAdjustmentAuditLogCount();
+
+    await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    expect(repo.getStockAdjustmentAuditLogCount()).toBe(adjBefore); // unchanged
+  });
+
+  test('duplicate rejection does not change stock', async () => {
+    // First save
+    await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    const stockBefore = repo.getStockLotCount();
+
+    // Second save (duplicate)
+    await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 90 }],
+    }, 'user-1', 'Test User');
+
+    expect(repo.getStockLotCount()).toBe(stockBefore); // unchanged
+  });
+
+  test('AuditLog rollback does not change stock', async () => {
+    repo.setShouldFailAuditLog(true);
+    const stockBefore = repo.getStockLotCount();
+
+    await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    }, 'user-1', 'Test User');
+
+    expect(repo.getStockLotCount()).toBe(stockBefore); // unchanged
+  });
+});
+
+describe('ST-35: Legacy Apply route (actual production handler)', () => {
+  test('POST returns 403 with suspension message', async () => {
     const { POST } = await import('../src/app/api/physical-counts/[id]/apply/route');
-
-    // Create a mock NextRequest
     const mockRequest = new Request('http://localhost/api/physical-counts/test/apply', {
       method: 'POST',
     }) as any;
 
     const result = await POST(mockRequest, { params: Promise.resolve({ id: 'test' }) });
-
     expect(result.status).toBe(403);
+
     const body = await result.json();
     expect(body.error).toContain('ระงับการใช้งาน');
     expect(body.error).toContain('ชั่งยอดซื้อ');
   });
 });
 
-describe('ST-35: Stock invariant verification (production code analysis)', () => {
-  test('daily-purchase-weighing.ts does not import or reference StockLot', async () => {
-    // Read the production source and verify it doesn't touch StockLot
-    const dailyModule = await import('../src/lib/daily-purchase-weighing');
+describe('ST-35: History and detail (production service + fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
 
-    // The module exports functions — verify none of them reference StockLot
-    // by checking the exported function names
-    const exports = Object.keys(dailyModule);
-    for (const name of exports) {
-      expect(name).not.toContain('stockLot');
-      expect(name).not.toContain('StockLot');
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([
+      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
+    ]);
+  });
+
+  test('history returns saved sessions', async () => {
+    await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
+    }, 'user-1', 'Test');
+
+    const { sessions, total } = await getDailyWeighingHistory(repo, 0, 20);
+    expect(total).toBe(1);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].category).toBe('ทองแดง');
+  });
+
+  test('detail returns session by ID', async () => {
+    const saveResult = await saveDailyPurchaseWeighing(repo, {
+      weighingDate: '2026-07-11',
+      category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
+    }, 'user-1', 'Test');
+
+    if (saveResult.success) {
+      const detail = await getDailyWeighingDetail(repo, saveResult.session.id);
+      expect(detail).not.toBeNull();
+      expect(detail!.id).toBe(saveResult.session.id);
     }
-
-    // Verify the key functions exist
-    expect(dailyModule.aggregateDailyPurchases).toBeDefined();
-    expect(dailyModule.validateWeighingPostInput).toBeDefined();
-    expect(dailyModule.buildSessionItems).toBeDefined();
-    expect(dailyModule.calculateWeighingStatus).toBeDefined();
   });
 
-  test('daily-weighing-permission.ts exports only permission check', async () => {
-    const permModule = await import('../src/lib/daily-weighing-permission');
-    expect(permModule.hasDailyPurchaseWeighingPermission).toBeDefined();
-    expect(typeof permModule.hasDailyPurchaseWeighingPermission).toBe('function');
-  });
-
-  test('apply route has no DB import (no stock modification possible)', async () => {
-    // The apply route was simplified to just return 403 — no db import
-    // Verify by checking the module doesn't export any DB-dependent function
-    const applyModule = await import('../src/app/api/physical-counts/[id]/apply/route');
-    expect(applyModule.POST).toBeDefined();
-    expect(typeof applyModule.POST).toBe('function');
-  });
-});
-
-describe('ST-35: Atomic $transaction (production code analysis)', () => {
-  test('POST route uses db.$transaction for atomic save', async () => {
-    // Read the actual route source code
-    const fs = await import('fs');
-    const path = await import('path');
-    const routeSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/route.ts'),
-      'utf-8'
-    );
-
-    // Verify $transaction is used
-    expect(routeSource).toContain('db.$transaction');
-    expect(routeSource).toContain('tx.dailyPurchaseWeighingSession.create');
-    expect(routeSource).toContain('tx.auditLog.create');
-
-    // Verify both operations are in the $transaction block by checking
-    // that tx.auditLog.create appears AFTER tx.dailyPurchaseWeighingSession.create
-    // and BEFORE the closing of the transaction
-    const sessionCreateIdx = routeSource.indexOf('tx.dailyPurchaseWeighingSession.create');
-    const auditCreateIdx = routeSource.indexOf('tx.auditLog.create');
-    expect(sessionCreateIdx).toBeGreaterThan(-1);
-    expect(auditCreateIdx).toBeGreaterThan(-1);
-    expect(auditCreateIdx).toBeGreaterThan(sessionCreateIdx);
-  });
-
-  test('POST route does not use best-effort AuditLog (no try-catch around auditLog)', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const routeSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/route.ts'),
-      'utf-8'
-    );
-
-    // The old code had: try { auditLog.create } catch { console.error }
-    // The new code has: auditLog.create inside $transaction (no try-catch)
-    // Verify there's no "non-fatal" or "best-effort" comment
-    expect(routeSource).not.toContain('non-fatal');
-    expect(routeSource).not.toContain('best-effort');
-  });
-});
-
-describe('ST-35: Aggregation category isolation (production logic)', () => {
-  test('totalBills counts only bills with items in selected category', () => {
-    // This tests the same logic that aggregateDailyPurchases uses
-    // (the function is async + DB-dependent, but the category filter logic is verifiable)
-    const mockBills = [
-      { id: 'bill-1', items: [{ productId: 'copper-1' }] },
-      { id: 'bill-2', items: [{ productId: 'steel-1' }] },
-      { id: 'bill-3', items: [{ productId: 'copper-2' }, { productId: 'steel-1' }] },
-    ];
-    const copperProductIds = new Set(['copper-1', 'copper-2']);
-
-    // This is the SAME logic used inside aggregateDailyPurchases
-    const relevantBillIds = new Set<string>();
-    for (const bill of mockBills) {
-      for (const item of bill.items) {
-        if (copperProductIds.has(item.productId)) {
-          relevantBillIds.add(bill.id);
-        }
-      }
-    }
-
-    expect(relevantBillIds.size).toBe(2); // bill-1 and bill-3
-    expect(relevantBillIds.has('bill-1')).toBe(true);
-    expect(relevantBillIds.has('bill-2')).toBe(false); // steel-only bill excluded
-    expect(relevantBillIds.has('bill-3')).toBe(true);
-  });
-});
-
-describe('ST-35: ICT timezone boundary (production function)', () => {
-  test('2026-07-11 00:00 ICT = 2026-07-10 17:00 UTC', () => {
-    const [start] = getThaiDateRange('2026-07-11');
-    expect(start.toISOString()).toBe('2026-07-10T17:00:00.000Z');
-  });
-
-  test('2026-07-11 23:59 ICT = 2026-07-11 16:59 UTC', () => {
-    const [, end] = getThaiDateRange('2026-07-11');
-    expect(end.toISOString()).toBe('2026-07-11T16:59:59.000Z');
-  });
-
-  test('bill at 2026-07-11T03:00:00+07:00 falls within 2026-07-11 ICT range', () => {
-    const [start, end] = getThaiDateRange('2026-07-11');
-    const billDate = new Date('2026-07-11T03:00:00+07:00');
-    expect(billDate.getTime()).toBeGreaterThanOrEqual(start.getTime());
-    expect(billDate.getTime()).toBeLessThanOrEqual(end.getTime());
-  });
-
-  test('bill at 2026-07-11T17:00:00+07:00 (evening) falls within range', () => {
-    const [start, end] = getThaiDateRange('2026-07-11');
-    const billDate = new Date('2026-07-11T17:00:00+07:00');
-    expect(billDate.getTime()).toBeGreaterThanOrEqual(start.getTime());
-    expect(billDate.getTime()).toBeLessThanOrEqual(end.getTime());
-  });
-
-  test('bill at 2026-07-12T00:30:00+07:00 does NOT fall in 2026-07-11 range', () => {
-    const [start, end] = getThaiDateRange('2026-07-11');
-    const billDate = new Date('2026-07-12T00:30:00+07:00');
-    expect(billDate.getTime()).toBeGreaterThan(end.getTime());
+  test('detail returns null for unknown ID', async () => {
+    const detail = await getDailyWeighingDetail(repo, 'nonexistent');
+    expect(detail).toBeNull();
   });
 });

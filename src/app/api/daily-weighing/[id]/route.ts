@@ -1,7 +1,10 @@
-import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { hasDailyPurchaseWeighingPermission } from '@/lib/daily-weighing-permission';
+import { PrismaDailyPurchaseWeighingRepository } from '@/lib/daily-weighing-prisma-adapter';
+import { getDailyWeighingDetail } from '@/lib/daily-purchase-weighing-service';
+
+const repo = new PrismaDailyPurchaseWeighingRepository();
 
 // GET /api/daily-weighing/[id] — get a single session
 export async function GET(
@@ -18,12 +21,7 @@ export async function GET(
   }
 
   const { id } = await params;
-  const session = await db.dailyPurchaseWeighingSession.findUnique({
-    where: { id },
-    include: {
-      items: { include: { product: { select: { id: true, name: true } } } },
-    },
-  });
+  const session = await getDailyWeighingDetail(repo, id);
 
   if (!session) {
     return NextResponse.json({ error: 'ไม่พบรายการ' }, { status: 404 });
