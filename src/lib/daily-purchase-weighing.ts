@@ -197,3 +197,139 @@ export async function aggregateDailyPurchases(
     items,
   };
 }
+
+// ============ POST input validation ============
+
+export interface WeighingPostItem {
+  productId: string;
+  actualWeighedWeight: number | null;
+  note?: string;
+}
+
+export interface WeighingPostInput {
+  weighingDate: string;
+  category: string;
+  note?: string;
+  items: WeighingPostItem[];
+}
+
+export type ValidationResult =
+  | { valid: true; input: WeighingPostInput }
+  | { valid: false; error: string; status: number };
+
+/**
+ * Validate POST input for daily weighing session.
+ * Pure function — no DB access, no side effects.
+ *
+ * This is the SAME function used by the production POST route.
+ */
+export function validateWeighingPostInput(body: unknown): ValidationResult {
+  if (!body || typeof body !== 'object') {
+    return { valid: false, error: 'Invalid request body', status: 400 };
+  }
+
+  const { weighingDate, category, items } = body as Record<string, unknown>;
+
+  if (!weighingDate || typeof weighingDate !== 'string' || !isValidWeighingDate(weighingDate)) {
+    return { valid: false, error: 'รูปแบบวันที่ไม่ถูกต้อง', status: 400 };
+  }
+  if (!category || typeof category !== 'string' || !isValidWeighingCategory(category)) {
+    return { valid: false, error: 'หมวดหมู่ต้องเป็น ทองแดง หรือ ทองเหลือง', status: 400 };
+  }
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return { valid: false, error: 'กรุณาเพิ่มรายการอย่างน้อย 1 รายการ', status: 400 };
+  }
+
+  // Reject duplicate productId + validate each item
+  const seenProductIds = new Set<string>();
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      return { valid: false, error: 'รายการต้องเป็น object', status: 400 };
+    }
+    const { productId, actualWeighedWeight } = item as Record<string, unknown>;
+    if (!productId || typeof productId !== 'string') {
+      return { valid: false, error: 'รายการต้องมี productId', status: 400 };
+    }
+    if (seenProductIds.has(productId)) {
+      return { valid: false, error: `productId ซ้ำ: ${productId}`, status: 400 };
+    }
+    seenProductIds.add(productId);
+
+    if (!isValidActualWeighedWeight(actualWeighedWeight)) {
+      return { valid: false, error: `น้ำหนักชั่งจริงไม่ถูกต้องสำหรับ productId: ${productId}`, status: 400 };
+    }
+  }
+
+  return {
+    valid: true,
+    input: {
+      weighingDate,
+      category,
+      note: (body as Record<string, unknown>).note as string | undefined,
+      items: items.map((item: Record<string, unknown>) => ({
+        productId: item.productId as string,
+        actualWeighedWeight: (item.actualWeighedWeight as number | null) ?? null,
+        note: item.note as string | undefined,
+      })),
+    },
+  };
+}
+
+// ============ Session item builder (server recomputation) ============
+
+export interface SessionItemData {
+  productId: string;
+  purchasedWeight: number;
+  purchaseBillCount: number;
+  actualWeighedWeight: number | null;
+  differenceWeight: number | null;
+  status: string;
+  note: string | null;
+}
+
+/**
+ * Build session items from server aggregation + client input.
+ *
+ * SERVER controls: purchasedWeight, purchaseBillCount, differenceWeight, status
+ * CLIENT controls: actualWeighedWeight, note
+ *
+ * Blocks productIds that don't exist in the aggregation.
+ * Pure function — no DB access.
+ *
+ * This is the SAME function used by the production POST route.
+ */
+export function buildSessionItems(
+  aggregation: AggregationResult,
+  clientItems: WeighingPostItem[]
+): { ok: true; items: SessionItemData[] } | { ok: false; error: string; status: number } {
+  const validProducts = new Map(aggregation.items.map(item => [item.productId, item]));
+
+  // Block productIds that don't have purchase bills
+  for (const item of clientItems) {
+    if (!validProducts.has(item.productId)) {
+      return {
+        ok: false,
+        error: `สินค้า ${item.productId} ไม่มียอดซื้อในวันที่และหมวดที่เลือก`,
+        status: 400,
+      };
+    }
+  }
+
+  const sessionItems: SessionItemData[] = clientItems.map(item => {
+    const agg = validProducts.get(item.productId)!;
+    const actual = item.actualWeighedWeight ?? null;
+    const { difference, status } = calculateWeighingStatus(actual, agg.purchasedWeight);
+
+    return {
+      productId: item.productId,
+      purchasedWeight: agg.purchasedWeight,       // server-computed
+      purchaseBillCount: agg.purchaseBillCount,    // server-computed
+      actualWeighedWeight: actual,
+      differenceWeight: difference,                // server-computed
+      status,                                      // server-computed
+      note: item.note || null,
+    };
+  });
+
+  return { ok: true, items: sessionItems };
+}

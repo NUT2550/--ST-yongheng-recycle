@@ -1,11 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-
-function hasWeighingPermission(payload: { role: string; permissions?: Record<string, boolean> }): boolean {
-  if (payload.role === 'admin') return true;
-  return payload.permissions?.['dailyPurchaseWeighing'] === true;
-}
+import { hasDailyPurchaseWeighingPermission } from '@/lib/daily-weighing-permission';
 
 // GET /api/daily-weighing/[id] — get a single session
 export async function GET(
@@ -17,7 +13,7 @@ export async function GET(
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
 
-  if (!hasWeighingPermission(payload)) {
+  if (!hasDailyPurchaseWeighingPermission(payload)) {
     return NextResponse.json({ error: 'ไม่มีสิทธิ์ใช้งานการชั่งยอดซื้อ' }, { status: 403 });
   }
 
