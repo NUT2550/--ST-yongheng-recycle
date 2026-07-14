@@ -3114,3 +3114,39 @@ Test file: `ซื้อ 11-7-2569 แบบละเอียด.xls`
 - ✅ No database/stock changes
 - ✅ No merge (Draft PR)
 - ✅ No deploy
+
+---
+
+## Task ID: 96 (ST-35 — Real service tests with injectable repository)
+## Agent: Main
+## Task: Extract repository service, add fake repository with real rollback, rewrite tests
+
+### Production changes
+1. NEW `src/lib/daily-weighing-repository.ts` — Repository interface (17 methods)
+2. NEW `src/lib/daily-weighing-prisma-adapter.ts` — Prisma adapter (production)
+3. NEW `src/lib/daily-purchase-weighing-service.ts` — Service functions:
+   - aggregateDailyPurchasesWithRepository()
+   - saveDailyPurchaseWeighing()
+   - getDailyWeighingHistory()
+   - getDailyWeighingDetail()
+4. Routes import and call service functions (thin orchestration)
+
+### Test changes
+5. NEW `tests/st35-fake-repository.ts` — Fake repository with:
+   - Real transaction commit/rollback (cloned state)
+   - StockLot/StockMovement/STOCK_ADJUSTMENT tracking
+   - Configurable AuditLog failure
+6. REWRITTEN `tests/st35-integration.test.ts` — 49 tests calling production service:
+   - 16 aggregation tests (fake bills, category isolation, cancelled, A/D prefix, ICT boundary)
+   - 11 save service tests (server recomputation, trust boundary, validation)
+   - 4 duplicate session tests (conflict, same date diff category, diff date)
+   - 2 AuditLog rollback tests (failure → 0 sessions/items/audit, success → 1 each)
+   - 5 stock invariant tests (before/after for StockLot, StockMovement, STOCK_ADJUSTMENT)
+   - 1 Legacy Apply test (actual route handler → 403)
+   - 3 history/detail tests
+7. Removed worklog.md changes from PR (reverted to origin/main)
+
+### Commit: a30b955
+### Tests: 168 pass, 0 fail
+### CI: All 5 checks pass ✅
+### PR #3: Draft, mergeable, clean, 20 changed files
