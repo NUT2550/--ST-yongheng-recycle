@@ -99,6 +99,14 @@ export class FakeDailyPurchaseWeighingRepository implements DailyPurchaseWeighin
     return this.state.stockAdjustmentAuditLogs.length;
   }
 
+  getItemCount(): number {
+    let count = 0;
+    for (const session of this.state.sessions.values()) {
+      count += session.items.length;
+    }
+    return count;
+  }
+
   getSessions(): DailyWeighingSessionRow[] {
     return Array.from(this.state.sessions.values());
   }
