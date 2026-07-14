@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { hasDailyPurchaseWeighingPermission } from '@/lib/daily-weighing-permission';
 import { PrismaDailyPurchaseWeighingRepository } from '@/lib/daily-weighing-prisma-adapter';
 import {
-  aggregateDailyPurchasesWithRepository,
-  saveDailyPurchaseWeighing,
-  getDailyWeighingHistory,
-} from '@/lib/daily-purchase-weighing-service';
-import { isValidWeighingDate, isValidWeighingCategory } from '@/lib/daily-purchase-weighing';
+  getAggregationController,
+  getHistoryController,
+  postSaveController,
+  type AuthPayload,
+} from '@/lib/daily-weighing-controller';
 
 const repo = new PrismaDailyPurchaseWeighingRepository();
 
@@ -18,9 +17,12 @@ export async function GET(request: NextRequest) {
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
 
-  if (!hasDailyPurchaseWeighingPermission(payload)) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์ใช้งานการชั่งยอดซื้อ' }, { status: 403 });
-  }
+  const authPayload: AuthPayload = {
+    userId: payload.userId,
+    name: payload.name,
+    role: payload.role,
+    permissions: payload.permissions,
+  };
 
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'list';
@@ -28,32 +30,14 @@ export async function GET(request: NextRequest) {
   if (action === 'aggregate') {
     const dateStr = searchParams.get('date');
     const category = searchParams.get('category');
-    if (!dateStr || !category) {
-      return NextResponse.json({ error: 'กรุณาระบุวันที่และหมวดหมู่' }, { status: 400 });
-    }
-    if (!isValidWeighingDate(dateStr)) {
-      return NextResponse.json({ error: 'รูปแบบวันที่ไม่ถูกต้อง' }, { status: 400 });
-    }
-    if (!isValidWeighingCategory(category)) {
-      return NextResponse.json({ error: 'หมวดหมู่ต้องเป็น ทองแดง หรือ ทองเหลือง' }, { status: 400 });
-    }
-
-    try {
-      const result = await aggregateDailyPurchasesWithRepository(repo, dateStr, category);
-      return NextResponse.json(result);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'unknown';
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
+    const result = await getAggregationController(repo, authPayload, dateStr, category);
+    return NextResponse.json(result.data, { status: result.status });
   }
 
-  // Default: list sessions (paginated)
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
   const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
-  const skip = (page - 1) * limit;
-
-  const { sessions, total } = await getDailyWeighingHistory(repo, skip, limit);
-  return NextResponse.json({ sessions, total });
+  const result = await getHistoryController(repo, authPayload, page, limit);
+  return NextResponse.json(result.data, { status: result.status });
 }
 
 // POST /api/daily-weighing — save a daily weighing session
@@ -63,19 +47,17 @@ export async function POST(request: NextRequest) {
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
 
-  if (!hasDailyPurchaseWeighingPermission(payload)) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์บันทึกผลชั่ง' }, { status: 403 });
-  }
+  const authPayload: AuthPayload = {
+    userId: payload.userId,
+    name: payload.name,
+    role: payload.role,
+    permissions: payload.permissions,
+  };
 
   try {
     const body = await request.json();
-    const result = await saveDailyPurchaseWeighing(repo, body, payload.userId, payload.name);
-
-    if (result.success) {
-      return NextResponse.json({ session: result.session }, { status: 201 });
-    } else {
-      return NextResponse.json({ error: result.error }, { status: result.status });
-    }
+    const result = await postSaveController(repo, authPayload, body);
+    return NextResponse.json(result.data, { status: result.status });
   } catch (error) {
     console.error('Error creating daily weighing:', error);
     const message = error instanceof Error ? error.message : 'unknown';

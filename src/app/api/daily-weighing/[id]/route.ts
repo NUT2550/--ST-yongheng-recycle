@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { hasDailyPurchaseWeighingPermission } from '@/lib/daily-weighing-permission';
 import { PrismaDailyPurchaseWeighingRepository } from '@/lib/daily-weighing-prisma-adapter';
-import { getDailyWeighingDetail } from '@/lib/daily-purchase-weighing-service';
+import { getDetailController, type AuthPayload } from '@/lib/daily-weighing-controller';
 
 const repo = new PrismaDailyPurchaseWeighingRepository();
 
@@ -16,16 +15,14 @@ export async function GET(
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
 
-  if (!hasDailyPurchaseWeighingPermission(payload)) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์ใช้งานการชั่งยอดซื้อ' }, { status: 403 });
-  }
+  const authPayload: AuthPayload = {
+    userId: payload.userId,
+    name: payload.name,
+    role: payload.role,
+    permissions: payload.permissions,
+  };
 
   const { id } = await params;
-  const session = await getDailyWeighingDetail(repo, id);
-
-  if (!session) {
-    return NextResponse.json({ error: 'ไม่พบรายการ' }, { status: 404 });
-  }
-
-  return NextResponse.json({ session });
+  const result = await getDetailController(repo, authPayload, id);
+  return NextResponse.json(result.data, { status: result.status });
 }

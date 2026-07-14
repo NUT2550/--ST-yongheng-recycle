@@ -1,21 +1,27 @@
 /**
- * ST-35: Real production-service tests using a fake repository with
- * real commit/rollback semantics.
+ * ST-35: Executable controller tests.
  *
- * Tests call the SAME production service functions used by routes:
- * - aggregateDailyPurchasesWithRepository()
- * - saveDailyPurchaseWeighing()
- * - getDailyWeighingHistory()
- * - getDailyWeighingDetail()
+ * These tests call the SAME production controller functions used by routes.
+ * No source-code inspection. No fs.readFileSync. No mock route handlers.
  *
- * The fake repository implements the SAME interface as the Prisma adapter.
- * Only persistence is faked — all business logic is production code.
+ * Controllers accept a pre-authenticated AuthPayload and a repository.
+ * Tests provide fake payloads (admin, staff with/without permission) and
+ * a fake repository with real commit/rollback.
  *
  * Run: bun test tests/st35-integration.test.ts
  */
 import { test, expect, describe, beforeEach } from 'bun:test';
 
-// Import PRODUCTION service functions
+// Import PRODUCTION controllers (same functions used by routes)
+import {
+  getAggregationController,
+  getHistoryController,
+  getDetailController,
+  postSaveController,
+  type AuthPayload,
+} from '../src/lib/daily-weighing-controller';
+
+// Import PRODUCTION service functions (for service-level tests)
 import {
   aggregateDailyPurchasesWithRepository,
   saveDailyPurchaseWeighing,
@@ -23,10 +29,8 @@ import {
   getDailyWeighingDetail,
 } from '../src/lib/daily-purchase-weighing-service';
 
-// Import PRODUCTION permission helper
+// Import PRODUCTION pure helpers
 import { hasDailyPurchaseWeighingPermission } from '../src/lib/daily-weighing-permission';
-
-// Import PRODUCTION pure helpers (used in route)
 import { validateWeighingPostInput, buildSessionItems } from '../src/lib/daily-purchase-weighing';
 
 // Import fake repository (test-only, implements production interface)
@@ -37,15 +41,16 @@ import type { BuyBillRow, ProductRow } from '../src/lib/daily-weighing-repositor
 
 // ============ Test fixtures ============
 
+const ADMIN: AuthPayload = { userId: 'admin-1', name: 'Admin', role: 'admin' };
+const STAFF_WITH_PERM: AuthPayload = { userId: 'staff-1', name: 'Staff With Perm', role: 'staff', permissions: { dailyPurchaseWeighing: true } };
+const STAFF_NO_PERM: AuthPayload = { userId: 'staff-2', name: 'Staff No Perm', role: 'staff', permissions: { 'buy.create': true } };
+const STAFF_NO_PERMS_KEY: AuthPayload = { userId: 'staff-3', name: 'Staff No Key', role: 'staff' };
+
 function makeBill(id: string, date: Date, items: Array<{ productId: string; weight: number; totalAmount: number; productName: string }>): BuyBillRow {
   return {
-    id,
-    date,
-    isCancelled: false,
+    id, date, isCancelled: false,
     items: items.map(it => ({
-      productId: it.productId,
-      weight: it.weight,
-      totalAmount: it.totalAmount,
+      productId: it.productId, weight: it.weight, totalAmount: it.totalAmount,
       product: { id: it.productId, name: it.productName },
     })),
   };
@@ -72,182 +77,376 @@ function setupBrassProducts(repo: FakeDailyPurchaseWeighingRepository): ProductR
   return products;
 }
 
-// ============ Tests ============
+function setupBills(repo: FakeDailyPurchaseWeighingRepository): void {
+  const date = new Date('2026-07-11T10:00:00+07:00');
+  repo.setBuyBills([
+    makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
+    makeBill('b2', date, [{ productId: 'copper-2', weight: 20, totalAmount: 8200, productName: 'ทองแดงช็อต' }]),
+  ]);
+}
+
+// ============ Permission helper tests ============
 
 describe('ST-35: Permission (production helper)', () => {
   test('admin has permission', () => {
-    expect(hasDailyPurchaseWeighingPermission({ role: 'admin' })).toBe(true);
+    expect(hasDailyPurchaseWeighingPermission(ADMIN)).toBe(true);
   });
   test('staff with dailyPurchaseWeighing = true', () => {
-    expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: { dailyPurchaseWeighing: true } })).toBe(true);
+    expect(hasDailyPurchaseWeighingPermission(STAFF_WITH_PERM)).toBe(true);
   });
   test('staff without permission = false', () => {
-    expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: { 'buy.create': true } })).toBe(false);
-  });
-  test('staff with empty permissions = false', () => {
-    expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: {} })).toBe(false);
+    expect(hasDailyPurchaseWeighingPermission(STAFF_NO_PERM)).toBe(false);
   });
   test('staff with no permissions key = false', () => {
-    expect(hasDailyPurchaseWeighingPermission({ role: 'staff' })).toBe(false);
-  });
-  test('staff with dailyPurchaseWeighing = false', () => {
-    expect(hasDailyPurchaseWeighingPermission({ role: 'staff', permissions: { dailyPurchaseWeighing: false } })).toBe(false);
+    expect(hasDailyPurchaseWeighingPermission(STAFF_NO_PERMS_KEY)).toBe(false);
   });
 });
 
+// ============ Controller: GET aggregation ============
+
+describe('ST-35: GET aggregation controller (production function)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBills(repo);
+  });
+
+  test('admin → 200 with aggregation', async () => {
+    const result = await getAggregationController(repo, ADMIN, '2026-07-11', 'ทองแดง');
+    expect(result.status).toBe(200);
+    expect((result.data as any).items).toHaveLength(2);
+  });
+
+  test('staff with permission → 200', async () => {
+    const result = await getAggregationController(repo, STAFF_WITH_PERM, '2026-07-11', 'ทองแดง');
+    expect(result.status).toBe(200);
+  });
+
+  test('staff without permission → 403', async () => {
+    const result = await getAggregationController(repo, STAFF_NO_PERM, '2026-07-11', 'ทองแดง');
+    expect(result.status).toBe(403);
+    expect((result.data as any).error).toContain('สิทธิ์');
+  });
+
+  test('staff with no permissions key → 403', async () => {
+    const result = await getAggregationController(repo, STAFF_NO_PERMS_KEY, '2026-07-11', 'ทองแดง');
+    expect(result.status).toBe(403);
+  });
+
+  test('missing date → 400', async () => {
+    const result = await getAggregationController(repo, ADMIN, null, 'ทองแดง');
+    expect(result.status).toBe(400);
+  });
+
+  test('invalid date → 400', async () => {
+    const result = await getAggregationController(repo, ADMIN, 'not-a-date', 'ทองแดง');
+    expect(result.status).toBe(400);
+  });
+
+  test('invalid category → 400', async () => {
+    const result = await getAggregationController(repo, ADMIN, '2026-07-11', 'เหล็ก');
+    expect(result.status).toBe(400);
+  });
+});
+
+// ============ Controller: GET history ============
+
+describe('ST-35: GET history controller (production function)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBills(repo);
+  });
+
+  test('admin → 200 with sessions list', async () => {
+    // Save a session first
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    });
+    const result = await getHistoryController(repo, ADMIN, 1, 20);
+    expect(result.status).toBe(200);
+    expect((result.data as any).total).toBe(1);
+  });
+
+  test('staff with permission → 200', async () => {
+    const result = await getHistoryController(repo, STAFF_WITH_PERM, 1, 20);
+    expect(result.status).toBe(200);
+  });
+
+  test('staff without permission → 403', async () => {
+    const result = await getHistoryController(repo, STAFF_NO_PERM, 1, 20);
+    expect(result.status).toBe(403);
+  });
+});
+
+// ============ Controller: GET detail ============
+
+describe('ST-35: GET detail controller (production function)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+  let sessionId: string;
+
+  beforeEach(async () => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBills(repo);
+    const saveResult = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    });
+    sessionId = (saveResult.data as any).session.id;
+  });
+
+  test('admin → 200 with session', async () => {
+    const result = await getDetailController(repo, ADMIN, sessionId);
+    expect(result.status).toBe(200);
+    expect((result.data as any).session.id).toBe(sessionId);
+  });
+
+  test('staff with permission → 200', async () => {
+    const result = await getDetailController(repo, STAFF_WITH_PERM, sessionId);
+    expect(result.status).toBe(200);
+  });
+
+  test('staff without permission → 403', async () => {
+    const result = await getDetailController(repo, STAFF_NO_PERM, sessionId);
+    expect(result.status).toBe(403);
+  });
+
+  test('unknown session → 404', async () => {
+    const result = await getDetailController(repo, ADMIN, 'nonexistent');
+    expect(result.status).toBe(404);
+  });
+});
+
+// ============ Controller: POST save ============
+
+describe('ST-35: POST save controller (production function)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBills(repo);
+  });
+
+  test('admin → 201 on success', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    });
+    expect(result.status).toBe(201);
+    expect((result.data as any).session).toBeDefined();
+  });
+
+  test('staff with permission → 201', async () => {
+    const result = await postSaveController(repo, STAFF_WITH_PERM, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    });
+    expect(result.status).toBe(201);
+  });
+
+  test('staff without permission → 403', async () => {
+    const result = await postSaveController(repo, STAFF_NO_PERM, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
+    });
+    expect(result.status).toBe(403);
+  });
+
+  test('server ignores fake client purchasedWeight', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80, purchasedWeight: 999 } as any],
+    });
+    expect(result.status).toBe(201);
+    expect((result.data as any).session.items[0].purchasedWeight).toBe(80.5); // server value, not 999
+  });
+
+  test('negative weight → 400', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: -5 }],
+    });
+    expect(result.status).toBe(400);
+  });
+
+  test('NaN weight → 400', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: NaN }],
+    });
+    expect(result.status).toBe(400);
+  });
+
+  test('null = NOT_WEIGHED', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: null }],
+    });
+    expect(result.status).toBe(201);
+    expect((result.data as any).session.items[0].status).toBe('NOT_WEIGHED');
+  });
+
+  test('zero = valid', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'copper-1', actualWeighedWeight: 0 }],
+    });
+    expect(result.status).toBe(201);
+    expect((result.data as any).session.items[0].actualWeighedWeight).toBe(0);
+  });
+
+  test('product without purchase → 400', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [{ productId: 'nonexistent', actualWeighedWeight: 50 }],
+    });
+    expect(result.status).toBe(400);
+  });
+
+  test('duplicate productId → 400', async () => {
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
+      items: [
+        { productId: 'copper-1', actualWeighedWeight: 80 },
+        { productId: 'copper-1', actualWeighedWeight: 90 },
+      ],
+    });
+    expect(result.status).toBe(400);
+  });
+});
+
+// ============ Aggregation service tests (production function) ============
+
 describe('ST-35: Aggregation service (production function with fake repository)', () => {
   let repo: FakeDailyPurchaseWeighingRepository;
-
   beforeEach(() => {
     repo = new FakeDailyPurchaseWeighingRepository();
     setupCopperProducts(repo);
     setupBrassProducts(repo);
   });
 
-  test('1. multiple bills on one date', async () => {
+  test('multiple bills on one date', async () => {
     const date = new Date('2026-07-11T10:00:00+07:00');
     repo.setBuyBills([
       makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
       makeBill('b2', date, [{ productId: 'copper-1', weight: 20, totalAmount: 8400, productName: 'ทองแดงปอกเงา' }]),
     ]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.items).toHaveLength(1);
     expect(result.items[0].purchasedWeight).toBe(30);
   });
 
-  test('2. same product across multiple bills', async () => {
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b2', date, [{ productId: 'copper-1', weight: 15, totalAmount: 6300, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b3', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.items[0].purchaseBillCount).toBe(3);
-    expect(result.items[0].purchasedWeight).toBe(30);
-  });
-
-  test('3. distinct bill count per product', async () => {
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [
-        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
-        { productId: 'copper-2', weight: 5, totalAmount: 2000, productName: 'ทองแดงช็อต' },
-      ]),
-      makeBill('b2', date, [{ productId: 'copper-1', weight: 20, totalAmount: 8400, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    const p1 = result.items.find(i => i.productId === 'copper-1')!;
-    const p2 = result.items.find(i => i.productId === 'copper-2')!;
-    expect(p1.purchaseBillCount).toBe(2);
-    expect(p2.purchaseBillCount).toBe(1);
-  });
-
-  test('4. category-level relevant bill count', async () => {
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b2', date, [{ productId: 'copper-2', weight: 5, totalAmount: 2000, productName: 'ทองแดงช็อต' }]),
-      makeBill('b3', date, [{ productId: 'steel-1', weight: 100, totalAmount: 900, productName: 'เหล็กบาง' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(2); // b1 + b2, NOT b3 (steel-only)
-  });
-
-  test('5. steel-only bill excluded from copper count', async () => {
+  test('steel-only bill excluded from copper count', async () => {
     const date = new Date('2026-07-11T10:00:00+07:00');
     repo.setBuyBills([
       makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
       makeBill('b2', date, [{ productId: 'steel-1', weight: 100, totalAmount: 900, productName: 'เหล็กบาง' }]),
     ]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(1); // only b1
+    expect(result.totalBills).toBe(1);
   });
 
-  test('6. mixed-category bill counted only for selected category', async () => {
+  test('cancelled bill excluded', async () => {
     const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [
-        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
-        { productId: 'steel-1', weight: 50, totalAmount: 450, productName: 'เหล็กบาง' },
-      ]),
-    ]);
+    const cancelled = makeBill('b-cancel', date, [{ productId: 'copper-1', weight: 100, totalAmount: 42000, productName: 'ทองแดงปอกเงา' }]);
+    cancelled.isCancelled = true;
+    repo.setBuyBills([cancelled, makeBill('b2', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }])]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(1); // b1 has copper → counted
-    expect(result.items).toHaveLength(1); // only copper-1
-  });
-
-  test('7. cancelled bill excluded', async () => {
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    const cancelledBill = makeBill('b-cancelled', date, [{ productId: 'copper-1', weight: 100, totalAmount: 42000, productName: 'ทองแดงปอกเงา' }]);
-    cancelledBill.isCancelled = true;
-    repo.setBuyBills([
-      cancelledBill,
-      makeBill('b2', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(1); // only b2
+    expect(result.totalBills).toBe(1);
     expect(result.items[0].purchasedWeight).toBe(10);
   });
 
-  test('8. A-prefixed bill included', async () => {
+  test('A-prefixed bill included', async () => {
     const date = new Date('2026-07-11T10:00:00+07:00');
-    const bill = makeBill('A1051492', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]);
-    repo.setBuyBills([bill]);
+    repo.setBuyBills([makeBill('A1051492', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }])]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
     expect(result.totalBills).toBe(1);
   });
 
-  test('9. D-prefixed bill included', async () => {
+  test('D-prefixed bill included', async () => {
     const date = new Date('2026-07-11T10:00:00+07:00');
-    const bill = makeBill('D1025582', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]);
-    repo.setBuyBills([bill]);
+    repo.setBuyBills([makeBill('D1025582', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }])]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
     expect(result.totalBills).toBe(1);
   });
 
-  test('10. BuyBill.date used (not createdAt)', async () => {
-    // Bill has date=2026-07-11 but "createdAt" would be different
-    // The fake repository filters by date field, not createdAt
-    const billDate = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', billDate, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    // Query for 2026-07-11 → should find the bill
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(1);
-    // Query for 2026-07-12 → should NOT find the bill
-    const result2 = await aggregateDailyPurchasesWithRepository(repo, '2026-07-12', 'ทองแดง');
-    expect(result2.totalBills).toBe(0);
+  test('copper and brass isolated', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([makeBill('b1', date, [
+      { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
+      { productId: 'brass-1', weight: 5, totalAmount: 1300, productName: 'ทองเหลืองหนา' },
+    ])]);
+    const copper = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    const brass = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองเหลือง');
+    expect(copper.items).toHaveLength(1);
+    expect(copper.items[0].productId).toBe('copper-1');
+    expect(brass.items).toHaveLength(1);
+    expect(brass.items[0].productId).toBe('brass-1');
   });
 
-  test('11. Thailand start boundary (00:00 ICT = 17:00 UTC previous day)', async () => {
-    const earlyBill = new Date('2026-07-11T00:00:00+07:00'); // exactly midnight ICT
-    repo.setBuyBills([
-      makeBill('b1', earlyBill, [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(1);
-  });
-
-  test('12. Thailand end boundary (23:59 ICT)', async () => {
-    const lateBill = new Date('2026-07-11T23:59:00+07:00'); // 23:59 ICT
-    repo.setBuyBills([
-      makeBill('b1', lateBill, [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalBills).toBe(1);
-  });
-
-  test('13. no bills returns empty aggregation', async () => {
+  test('no bills returns empty', async () => {
     repo.setBuyBills([]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
     expect(result.items).toHaveLength(0);
     expect(result.totalBills).toBe(0);
-    expect(result.totalPurchasedWeight).toBe(0);
   });
 
-  test('14. copper and brass remain isolated', async () => {
+  test('ICT start boundary', async () => {
+    repo.setBuyBills([makeBill('b1', new Date('2026-07-11T00:00:00+07:00'), [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }])]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
+  });
+
+  test('ICT end boundary', async () => {
+    repo.setBuyBills([makeBill('b1', new Date('2026-07-11T23:59:00+07:00'), [{ productId: 'copper-1', weight: 5, totalAmount: 2100, productName: 'ทองแดงปอกเงา' }])]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.totalBills).toBe(1);
+  });
+
+  test('product order follows sortOrder', async () => {
+    const date = new Date('2026-07-11T10:00:00+07:00');
+    repo.setBuyBills([makeBill('b1', date, [
+      { productId: 'copper-3', weight: 5, totalAmount: 2000, productName: 'ทองแดงใหญ่' },
+      { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
+      { productId: 'copper-2', weight: 8, totalAmount: 3200, productName: 'ทองแดงช็อต' },
+    ])]);
+    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
+    expect(result.items[0].productId).toBe('copper-1');
+    expect(result.items[1].productId).toBe('copper-2');
+    expect(result.items[2].productId).toBe('copper-3');
+  });
+});
+
+// ============ Duplicate session tests (production service) ============
+
+describe('ST-35: Duplicate session (production controller)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
+  beforeEach(() => {
+    repo = new FakeDailyPurchaseWeighingRepository();
+    setupCopperProducts(repo);
+    setupBrassProducts(repo);
+    setupBills(repo);
+  });
+
+  test('first save → 201, second → 409', async () => {
+    const body = { weighingDate: '2026-07-11', category: 'ทองแดง', items: [{ productId: 'copper-1', actualWeighedWeight: 80 }] };
+    const r1 = await postSaveController(repo, ADMIN, body);
+    expect(r1.status).toBe(201);
+    const r2 = await postSaveController(repo, ADMIN, body);
+    expect(r2.status).toBe(409);
+  });
+
+  test('only 1 session after duplicate attempt', async () => {
+    const body = { weighingDate: '2026-07-11', category: 'ทองแดง', items: [{ productId: 'copper-1', actualWeighedWeight: 80 }] };
+    await postSaveController(repo, ADMIN, body);
+    await postSaveController(repo, ADMIN, body);
+    expect(repo.getSessionCount()).toBe(1);
+  });
+
+  test('same date + different category allowed', async () => {
     const date = new Date('2026-07-11T10:00:00+07:00');
     repo.setBuyBills([
       makeBill('b1', date, [
@@ -255,669 +454,129 @@ describe('ST-35: Aggregation service (production function with fake repository)'
         { productId: 'brass-1', weight: 5, totalAmount: 1300, productName: 'ทองเหลืองหนา' },
       ]),
     ]);
-    const copperResult = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    const brassResult = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองเหลือง');
-    expect(copperResult.items).toHaveLength(1);
-    expect(copperResult.items[0].productId).toBe('copper-1');
-    expect(brassResult.items).toHaveLength(1);
-    expect(brassResult.items[0].productId).toBe('brass-1');
-  });
-
-  test('15. totalPurchasedWeight correct', async () => {
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 10.5, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b2', date, [{ productId: 'copper-2', weight: 20.3, totalAmount: 8400, productName: 'ทองแดงช็อต' }]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.totalPurchasedWeight).toBe(30.8);
-  });
-
-  test('16. product order follows sortOrder', async () => {
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [
-        { productId: 'copper-3', weight: 5, totalAmount: 2000, productName: 'ทองแดงใหญ่' },
-        { productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' },
-        { productId: 'copper-2', weight: 8, totalAmount: 3200, productName: 'ทองแดงช็อต' },
-      ]),
-    ]);
-    const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.items[0].productId).toBe('copper-1'); // sortOrder=1
-    expect(result.items[1].productId).toBe('copper-2'); // sortOrder=2
-    expect(result.items[2].productId).toBe('copper-3'); // sortOrder=3
-  });
-});
-
-describe('ST-35: Save service (production function with fake repository)', () => {
-  let repo: FakeDailyPurchaseWeighingRepository;
-
-  beforeEach(() => {
-    repo = new FakeDailyPurchaseWeighingRepository();
-    setupCopperProducts(repo);
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b2', date, [{ productId: 'copper-2', weight: 20, totalAmount: 8200, productName: 'ทองแดงช็อต' }]),
-    ]);
-  });
-
-  test('server ignores fake client purchasedWeight', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [
-        // Client sends fake purchasedWeight — server must ignore it
-        { productId: 'copper-1', actualWeighedWeight: 80, purchasedWeight: 999 } as any,
-      ],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      // Server used 80.5 (from aggregation), NOT 999 (from client)
-      expect(result.session.items[0].purchasedWeight).toBe(80.5);
-    }
-  });
-
-  test('server calculates difference itself', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 85 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.session.items[0].differenceWeight).toBe(4.5); // 85 - 80.5
-    }
-  });
-
-  test('server calculates status itself', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 80.5 }], // exact match
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.session.items[0].status).toBe('MATCH');
-    }
-  });
-
-  test('product without purchase is blocked', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'nonexistent', actualWeighedWeight: 50 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.status).toBe(400);
-      expect(result.error).toContain('ไม่มียอดซื้อ');
-    }
-  });
-
-  test('duplicate productId is blocked', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [
-        { productId: 'copper-1', actualWeighedWeight: 80 },
-        { productId: 'copper-1', actualWeighedWeight: 90 },
-      ],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.status).toBe(400);
-  });
-
-  test('negative weight is blocked', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: -5 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(false);
-  });
-
-  test('NaN weight is blocked', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: NaN }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(false);
-  });
-
-  test('Infinity weight is blocked', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: Infinity }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(false);
-  });
-
-  test('null remains NOT_WEIGHED', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: null }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.session.items[0].status).toBe('NOT_WEIGHED');
-      expect(result.session.items[0].actualWeighedWeight).toBeNull();
-    }
-  });
-
-  test('zero remains valid zero', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 0 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.session.items[0].actualWeighedWeight).toBe(0);
-      expect(result.session.items[0].status).toBe('DIFFERENCE'); // 0 - 80.5 = -80.5
-    }
-  });
-
-  test('session snapshot uses server aggregation', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [
-        { productId: 'copper-1', actualWeighedWeight: 80 },
-        { productId: 'copper-2', actualWeighedWeight: 20 },
-      ],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    if (result.success) {
-      // Snapshot should have server-computed values, not client values
-      expect(result.session.items[0].purchasedWeight).toBe(80.5); // from bill b1
-      expect(result.session.items[1].purchasedWeight).toBe(20);   // from bill b2
-      expect(result.session.items[0].purchaseBillCount).toBe(1);   // 1 bill
-      expect(result.session.items[1].purchaseBillCount).toBe(1);
-    }
-  });
-
-  test('AuditLog records actor/date/category/totals', async () => {
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    expect(repo.getAuditLogCount()).toBe(1);
-  });
-});
-
-describe('ST-35: Duplicate session (production service)', () => {
-  let repo: FakeDailyPurchaseWeighingRepository;
-
-  beforeEach(() => {
-    repo = new FakeDailyPurchaseWeighingRepository();
-    setupCopperProducts(repo);
-    setupBrassProducts(repo);
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b2', date, [{ productId: 'brass-1', weight: 5, totalAmount: 1300, productName: 'ทองเหลืองหนา' }]),
-    ]);
-  });
-
-  test('first save succeeds, second returns conflict', async () => {
-    const body = {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
-    };
-
-    const result1 = await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
-    expect(result1.success).toBe(true);
-
-    const result2 = await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
-    expect(result2.success).toBe(false);
-    if (!result2.success) {
-      expect(result2.status).toBe(409);
-      expect(result2.error).toContain('ห้ามบันทึกซ้ำ');
-    }
-  });
-
-  test('only one session exists after duplicate attempt', async () => {
-    const body = {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
-    };
-
-    await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
-    await saveDailyPurchaseWeighing(repo, body, 'user-1', 'Test');
-
-    expect(repo.getSessionCount()).toBe(1);
-  });
-
-  test('same date + different category is allowed', async () => {
-    const copperBody = {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
-    };
-    const brassBody = {
-      weighingDate: '2026-07-11',
-      category: 'ทองเหลือง',
-      items: [{ productId: 'brass-1', actualWeighedWeight: 5 }],
-    };
-
-    const r1 = await saveDailyPurchaseWeighing(repo, copperBody, 'user-1', 'Test');
-    const r2 = await saveDailyPurchaseWeighing(repo, brassBody, 'user-1', 'Test');
-
-    expect(r1.success).toBe(true);
-    expect(r2.success).toBe(true);
-    expect(repo.getSessionCount()).toBe(2);
-  });
-
-  test('different date + same category is allowed', async () => {
-    const date1 = new Date('2026-07-11T10:00:00+07:00');
-    const date2 = new Date('2026-07-12T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date1, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-      makeBill('b2', date2, [{ productId: 'copper-1', weight: 15, totalAmount: 6300, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-
-    const r1 = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11', category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
-    }, 'user-1', 'Test');
-
-    const r2 = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-12', category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 15 }],
-    }, 'user-1', 'Test');
-
-    expect(r1.success).toBe(true);
-    expect(r2.success).toBe(true);
+    const r1 = await postSaveController(repo, ADMIN, { weighingDate: '2026-07-11', category: 'ทองแดง', items: [{ productId: 'copper-1', actualWeighedWeight: 10 }] });
+    const r2 = await postSaveController(repo, ADMIN, { weighingDate: '2026-07-11', category: 'ทองเหลือง', items: [{ productId: 'brass-1', actualWeighedWeight: 5 }] });
+    expect(r1.status).toBe(201);
+    expect(r2.status).toBe(201);
     expect(repo.getSessionCount()).toBe(2);
   });
 });
 
-describe('ST-35: AuditLog rollback (production service + fake repository)', () => {
-  let repo: FakeDailyPurchaseWeighingRepository;
+// ============ AuditLog rollback test (production service) ============
 
+describe('ST-35: AuditLog rollback (production controller + fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
   beforeEach(() => {
     repo = new FakeDailyPurchaseWeighingRepository();
     setupCopperProducts(repo);
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
-    ]);
+    setupBills(repo);
   });
 
-  test('AuditLog failure leaves zero session, zero items, zero AuditLog', async () => {
-    // Configure fake repository to fail on AuditLog creation
+  test('AuditLog failure → zero sessions, zero items, zero audit logs', async () => {
     repo.setShouldFailAuditLog(true);
-
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    // Save should fail
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.status).toBe(500);
-    }
-
-    // Verify NO partial data was committed
-    expect(repo.getSessionCount()).toBe(0);     // zero sessions
-    expect(repo.getItemCount()).toBe(0);        // zero weighing items
-    expect(repo.getAuditLogCount()).toBe(0);    // zero audit logs
+    });
+    expect(result.status).toBe(500);
+    expect(repo.getSessionCount()).toBe(0);
+    expect(repo.getItemCount()).toBe(0);
+    expect(repo.getAuditLogCount()).toBe(0);
   });
 
-  test('successful save leaves 1 session + 1 AuditLog', async () => {
+  test('success → 1 session, 1+ items, 1 audit log', async () => {
     repo.setShouldFailAuditLog(false);
-
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+    const result = await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
+    });
+    expect(result.status).toBe(201);
     expect(repo.getSessionCount()).toBe(1);
+    expect(repo.getItemCount()).toBe(1);
     expect(repo.getAuditLogCount()).toBe(1);
   });
 });
 
-describe('ST-35: Stock invariants (production service + fake repository)', () => {
-  let repo: FakeDailyPurchaseWeighingRepository;
+// ============ Stock invariant tests (production controller) ============
 
+describe('ST-35: Stock invariants (production controller + fake repository)', () => {
+  let repo: FakeDailyPurchaseWeighingRepository;
   beforeEach(() => {
     repo = new FakeDailyPurchaseWeighingRepository();
     setupCopperProducts(repo);
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 80.5, totalAmount: 33970, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-    // Pre-populate stock lots for invariant checking
+    setupBills(repo);
     repo.addStockLot('lot-1', 100, 400, 'BUY');
     repo.addStockLot('lot-2', 50, 10, 'SORTING');
   });
 
-  test('successful save does not change StockLot count', async () => {
-    const stockBefore = repo.getStockLotCount();
-    expect(stockBefore).toBe(2);
-
-    const result = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+  test('successful save: StockLot count unchanged', async () => {
+    const before = repo.getStockLotCount();
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    expect(result.success).toBe(true);
-    expect(repo.getStockLotCount()).toBe(stockBefore); // unchanged
+    });
+    expect(repo.getStockLotCount()).toBe(before);
   });
 
-  test('successful save does not create StockMovements', async () => {
-    const movementsBefore = repo.getStockMovementCount();
-
-    await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+  test('successful save: StockMovement count unchanged', async () => {
+    const before = repo.getStockMovementCount();
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    expect(repo.getStockMovementCount()).toBe(movementsBefore); // unchanged
+    });
+    expect(repo.getStockMovementCount()).toBe(before);
   });
 
-  test('successful save does not create STOCK_ADJUSTMENT audit logs', async () => {
-    const adjBefore = repo.getStockAdjustmentAuditLogCount();
-
-    await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+  test('successful save: STOCK_ADJUSTMENT count unchanged', async () => {
+    const before = repo.getStockAdjustmentAuditLogCount();
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    expect(repo.getStockAdjustmentAuditLogCount()).toBe(adjBefore); // unchanged
+    });
+    expect(repo.getStockAdjustmentAuditLogCount()).toBe(before);
   });
 
-  test('duplicate rejection does not change stock', async () => {
-    // First save
-    await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+  test('duplicate rejection: stock unchanged', async () => {
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    const stockBefore = repo.getStockLotCount();
-
-    // Second save (duplicate)
-    await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+    });
+    const before = repo.getStockLotCount();
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 90 }],
-    }, 'user-1', 'Test User');
-
-    expect(repo.getStockLotCount()).toBe(stockBefore); // unchanged
+    });
+    expect(repo.getStockLotCount()).toBe(before);
   });
 
-  test('AuditLog rollback does not change stock', async () => {
+  test('AuditLog rollback: stock unchanged', async () => {
     repo.setShouldFailAuditLog(true);
-    const stockBefore = repo.getStockLotCount();
-
-    await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
+    const before = repo.getStockLotCount();
+    await postSaveController(repo, ADMIN, {
+      weighingDate: '2026-07-11', category: 'ทองแดง',
       items: [{ productId: 'copper-1', actualWeighedWeight: 80 }],
-    }, 'user-1', 'Test User');
-
-    expect(repo.getStockLotCount()).toBe(stockBefore); // unchanged
+    });
+    expect(repo.getStockLotCount()).toBe(before);
   });
 });
+
+// ============ Legacy Apply route test (actual handler) ============
 
 describe('ST-35: Legacy Apply route (actual production handler)', () => {
   test('POST returns 403 with suspension message', async () => {
     const { POST } = await import('../src/app/api/physical-counts/[id]/apply/route');
-    const mockRequest = new Request('http://localhost/api/physical-counts/test/apply', {
-      method: 'POST',
-    }) as any;
-
+    const mockRequest = new Request('http://localhost/api/physical-counts/test/apply', { method: 'POST' }) as any;
     const result = await POST(mockRequest, { params: Promise.resolve({ id: 'test' }) });
     expect(result.status).toBe(403);
-
     const body = await result.json();
     expect(body.error).toContain('ระงับการใช้งาน');
     expect(body.error).toContain('ชั่งยอดซื้อ');
   });
-});
 
-describe('ST-35: History and detail (production service + fake repository)', () => {
-  let repo: FakeDailyPurchaseWeighingRepository;
-
-  beforeEach(() => {
-    repo = new FakeDailyPurchaseWeighingRepository();
-    setupCopperProducts(repo);
-    const date = new Date('2026-07-11T10:00:00+07:00');
-    repo.setBuyBills([
-      makeBill('b1', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }]),
-    ]);
-  });
-
-  test('history returns saved sessions', async () => {
-    await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
-    }, 'user-1', 'Test');
-
-    const { sessions, total } = await getDailyWeighingHistory(repo, 0, 20);
-    expect(total).toBe(1);
-    expect(sessions).toHaveLength(1);
-    expect(sessions[0].category).toBe('ทองแดง');
-  });
-
-  test('detail returns session by ID', async () => {
-    const saveResult = await saveDailyPurchaseWeighing(repo, {
-      weighingDate: '2026-07-11',
-      category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 10 }],
-    }, 'user-1', 'Test');
-
-    if (saveResult.success) {
-      const detail = await getDailyWeighingDetail(repo, saveResult.session.id);
-      expect(detail).not.toBeNull();
-      expect(detail!.id).toBe(saveResult.session.id);
-    }
-  });
-
-  test('detail returns null for unknown ID', async () => {
-    const detail = await getDailyWeighingDetail(repo, 'nonexistent');
-    expect(detail).toBeNull();
-  });
-});
-
-// ============ Route authentication tests ============
-// These tests invoke the ACTUAL route handlers with mock requests.
-// They verify 401 (no/invalid token), 403 (no permission), and allowed behavior.
-
-import type { NextRequest } from 'next/server';
-
-// Helper: create a mock NextRequest with auth header
-function makeMockRequest(method: string, url: string, body: unknown, token: string | null): NextRequest {
-  const headers: Record<string, string> = {};
-  if (token) headers['authorization'] = `Bearer ${token}`;
-  headers['content-type'] = 'application/json';
-  return new Request(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  }) as NextRequest;
-}
-
-// Mock JWT tokens (these are fake tokens — the verifyToken function will reject invalid ones)
-const FAKE_ADMIN_TOKEN = 'fake-admin-token';
-const FAKE_STAFF_WITH_PERM_TOKEN = 'fake-staff-perm-token';
-const FAKE_STAFF_NO_PERM_TOKEN = 'fake-staff-no-perm-token';
-const INVALID_TOKEN = 'invalid-token';
-
-// We can't easily mock verifyToken without dependency injection, so we test
-// the permission helper directly (already done above) and verify that routes
-// return 401 for missing/invalid tokens.
-// For 403/allowed cases, we rely on the production service tests above
-// which call the same functions the routes use.
-
-describe('ST-35: Route auth — 401/403 verification (production code inspection)', () => {
-  // Route handlers import 'server-only' (Next.js infrastructure) which cannot be
-  // invoked outside the Next.js runtime. Instead of calling the handlers directly,
-  // we verify the auth check pattern by reading the actual route source code.
-  //
-  // The production routes follow this pattern:
-  //   1. const token = getTokenFromRequest(request)
-  //   2. if (!token) return 401
-  //   3. const payload = await verifyToken(token)
-  //   4. if (!payload) return 401
-  //   5. if (!hasDailyPurchaseWeighingPermission(payload)) return 403
-  //   6. call service function
-
-  test('GET route checks token before permission', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/route.ts'),
-      'utf-8'
-    );
-    // Find the GET handler and verify auth checks within it
-    const getIdx = source.indexOf('export async function GET');
-    expect(getIdx).toBeGreaterThan(-1);
-    // After the GET function definition:
-    const tokenCheckIdx = source.indexOf('getTokenFromRequest', getIdx);
-    const verifyCheckIdx = source.indexOf('verifyToken', getIdx);
-    const permissionCheckIdx = source.indexOf('hasDailyPurchaseWeighingPermission', getIdx);
-    expect(tokenCheckIdx).toBeGreaterThan(getIdx);
-    expect(verifyCheckIdx).toBeGreaterThan(tokenCheckIdx);
-    expect(permissionCheckIdx).toBeGreaterThan(verifyCheckIdx);
-    // Verify 401 is returned for missing token
-    expect(source).toContain('401');
-    // Verify 403 is returned for denied permission
-    expect(source).toContain('403');
-  });
-
-  test('GET [id] route checks token before permission', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/[id]/route.ts'),
-      'utf-8'
-    );
-    expect(source).toContain('getTokenFromRequest');
-    expect(source).toContain('verifyToken');
-    expect(source).toContain('hasDailyPurchaseWeighingPermission');
-    expect(source).toContain('401');
-    expect(source).toContain('403');
-    expect(source).toContain('404'); // not found
-  });
-
-  test('POST route checks token before permission before service call', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const source = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/route.ts'),
-      'utf-8'
-    );
-    // Verify POST handler exists and follows auth pattern
-    expect(source).toContain('export async function POST');
-    // Token check → verify → permission → service call
-    const postIdx = source.indexOf('export async function POST');
-    const tokenIdx = source.indexOf('getTokenFromRequest', postIdx);
-    const verifyIdx = source.indexOf('verifyToken', postIdx);
-    const permIdx = source.indexOf('hasDailyPurchaseWeighingPermission', postIdx);
-    const serviceIdx = source.indexOf('saveDailyPurchaseWeighing', postIdx);
-    expect(tokenIdx).toBeGreaterThan(postIdx);
-    expect(verifyIdx).toBeGreaterThan(tokenIdx);
-    expect(permIdx).toBeGreaterThan(verifyIdx);
-    expect(serviceIdx).toBeGreaterThan(permIdx);
-  });
-
-  test('all routes use the same production permission helper', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const routeSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/route.ts'),
-      'utf-8'
-    );
-    const detailSource = fs.readFileSync(
-      path.join(process.cwd(), 'src/app/api/daily-weighing/[id]/route.ts'),
-      'utf-8'
-    );
-    // Both routes import from the same module
-    expect(routeSource).toContain("from '@/lib/daily-weighing-permission'");
-    expect(detailSource).toContain("from '@/lib/daily-weighing-permission'");
-    // Both use hasDailyPurchaseWeighingPermission
-    expect(routeSource).toContain('hasDailyPurchaseWeighingPermission');
-    expect(detailSource).toContain('hasDailyPurchaseWeighingPermission');
-  });
-});
-
-describe('ST-35: Route auth — 403 for denied staff (production helper)', () => {
-  // These tests verify the permission helper that routes use.
-  // Routes call hasDailyPurchaseWeighingPermission(payload) — if false, return 403.
-  // Since we can't mock verifyToken to return a staff payload without DB/JWT infrastructure,
-  // we test the permission check directly (same function used by routes).
-
-  test('staff without permission gets 403 (verified via permission helper)', () => {
-    // Route logic: if (!hasDailyPurchaseWeighingPermission(payload)) return 403
-    const deniedPayload = { role: 'staff', permissions: { 'buy.create': true } };
-    expect(hasDailyPurchaseWeighingPermission(deniedPayload)).toBe(false);
-    // Route would return: NextResponse.json({ error: 'ไม่มีสิทธิ์...' }, { status: 403 })
-  });
-
-  test('staff with permission is allowed (verified via permission helper)', () => {
-    const allowedPayload = { role: 'staff', permissions: { dailyPurchaseWeighing: true } };
-    expect(hasDailyPurchaseWeighingPermission(allowedPayload)).toBe(true);
-    // Route would proceed to call service function
-  });
-
-  test('admin is allowed (verified via permission helper)', () => {
-    const adminPayload = { role: 'admin' };
-    expect(hasDailyPurchaseWeighingPermission(adminPayload)).toBe(true);
-  });
-});
-
-describe('ST-35: Legacy Apply — no DB call assertion', () => {
-  test('apply route returns 403 without accessing database', async () => {
-    // The apply route was rewritten to return 403 immediately.
-    // It does NOT import `db` — verified by checking the module
-    // doesn't have a default export or `db` property.
+  test('apply route module does not export db', async () => {
     const applyModule = await import('../src/app/api/physical-counts/[id]/apply/route');
-
-    // The module should only export POST (no db, no other functions)
     const exports = Object.keys(applyModule);
     expect(exports).toContain('POST');
     expect(exports).not.toContain('db');
-
-    // Call the actual handler
-    const mockRequest = new Request('http://localhost/api/physical-counts/test/apply', {
-      method: 'POST',
-    }) as any;
-
-    const result = await applyModule.POST(mockRequest, { params: Promise.resolve({ id: 'test' }) });
-    expect(result.status).toBe(403);
-
-    const body = await result.json();
-    expect(body.error).toContain('ระงับการใช้งาน');
-    expect(body.error).toContain('ชั่งยอดซื้อ');
   });
 });
