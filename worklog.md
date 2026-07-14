@@ -3114,3 +3114,35 @@ Test file: `ซื้อ 11-7-2569 แบบละเอียด.xls`
 - ✅ No database/stock changes
 - ✅ No merge (Draft PR)
 - ✅ No deploy
+
+---
+
+## Task ID: 94 (ST-35 — Final integration tests, atomic audit, PR body)
+## Agent: Main
+## Task: Fix atomic audit, add integration tests, update PR body
+
+### Changes
+1. **Atomic $transaction**: Replaced non-atomic (create session → try AuditLog → ignore failure) with `db.$transaction(async (tx) => { session.create + auditLog.create })`. If AuditLog fails, entire transaction rolls back.
+2. **49 integration tests** (st35-integration.test.ts): Permission, POST trust boundary, duplicate prevention, legacy Apply 403, stock invariants, atomic rollback, category isolation, ICT timezone.
+3. **PR body updated**: Now accurately states 15 files, 168 tests, atomic $transaction, server-side recomputation, migration plan.
+
+### Commits
+- `f3f1771` — fix(weighing): make session+items+AuditLog atomic via $transaction (ST-35)
+
+### Test results
+| Category | Count |
+|---|---:|
+| ST-20 FIFO validation | 25 |
+| ST-16 report04 bill prefix | 67 |
+| ST-35 pure helpers | 27 |
+| ST-35 integration | 49 |
+| **Total** | **168 pass, 0 fail** |
+
+### CI: All 5 checks pass ✅
+- Lint ✅ | Typecheck ✅ | Tests ✅ 168 pass | Build ✅ | Vercel ✅
+
+### PR #3 status
+- State: open, Draft (not merged)
+- Head SHA: f3f1771
+- Mergeable: true, clean
+- Changed files: 15
