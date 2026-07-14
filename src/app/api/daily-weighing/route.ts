@@ -173,41 +173,44 @@ export async function POST(request: NextRequest) {
       };
     });
 
-    // Create session + items (pgbouncer-safe sequential, no $transaction)
-    const session = await db.dailyPurchaseWeighingSession.create({
-      data: {
-        weighingDate: date,
-        category,
-        status: 'SAVED',
-        note: note || null,
-        createdById: payload.userId,
-        items: { create: sessionItems },
-      },
-      include: { items: { include: { product: { select: { name: true } } } } },
-    });
+    // ST-35: Atomic save — session + items + AuditLog in a single $transaction.
+    // $transaction is supported on Production Supabase (verified: buy-bills, sell-bills,
+    // stock-transfers all use it). If AuditLog fails, the entire transaction rolls back,
+    // leaving zero session, zero items, zero partial data.
+    const session = await db.$transaction(async (tx) => {
+      const created = await tx.dailyPurchaseWeighingSession.create({
+        data: {
+          weighingDate: date,
+          category,
+          status: 'SAVED',
+          note: note || null,
+          createdById: payload.userId,
+          items: { create: sessionItems },
+        },
+        include: { items: { include: { product: { select: { name: true } } } } },
+      });
 
-    // Audit log (best-effort — non-fatal if fails, but session is already saved)
-    try {
-      await db.auditLog.create({
+      // AuditLog — if this throws, the entire transaction rolls back
+      await tx.auditLog.create({
         data: {
           action: 'CREATE',
           entityType: 'DAILY_WEIGHING',
-          entityId: session.id,
+          entityId: created.id,
           userId: payload.userId,
           userName: payload.name,
           details: JSON.stringify({
-            weighingDate: session.weighingDate,
-            category: session.category,
-            itemCount: session.items.length,
+            weighingDate: created.weighingDate,
+            category: created.category,
+            itemCount: created.items.length,
             totalBills: aggregation.totalBills,
             totalPurchasedWeight: aggregation.totalPurchasedWeight,
-            note: session.note,
+            note: created.note,
           }),
         },
       });
-    } catch (auditErr) {
-      console.error('ST-35: AuditLog write failed (non-fatal):', auditErr);
-    }
+
+      return created;
+    });
 
     return NextResponse.json({ session }, { status: 201 });
   } catch (error) {
