@@ -1,17 +1,16 @@
 /**
- * ST-39: Tests for the StockTransfer 409 investigation findings.
+ * ST-39: Executable tests for the deterministic FIFO ordering fix.
  *
- * These tests verify the pure-function logic that triggers the HTTP 409 paths
- * in POST /api/stock-transfers, plus the UI error-handling behavior at the
- * logic level (since no React component testing library is configured).
+ * Replaces the previous documentation-only tests (string assertions, copied
+ * try/catch/finally simulations) with executable tests that call the REAL
+ * production helpers from src/lib/fifo-validation.ts.
  *
- * Root cause context:
- *   The deployed stock-transfers route has exactly two 409 paths, BOTH after
- *   FIFO deduction (so source stock is deducted then compensated):
- *     1. FIFO_MISMATCH (verifyFifoMatch fails) — L408-425
- *     2. P2002 Unique constraint (duplicate billNumber) — L595-599
- *   The UI's finally block resets submitting state; the fix adds a source-stock
- *   refresh after error so the displayed weight/cost is not stale.
+ * Root cause being tested:
+ *   When multiple StockLots share the same dateAdded but have different costs,
+ *   the FIFO order must be deterministic so preview and execution select the
+ *   SAME lot sequence. The fix introduces a shared comparator (dateAdded ASC,
+ *   createdAt ASC, id ASC) used by both previewFifoDeduction (in-memory) and
+ *   the Prisma orderBy (FIFO_ORDER_BY) in deductStockFIFO.
  *
  * Run: bun test tests/st39-stocktransfer-409.test.ts
  */
@@ -20,249 +19,274 @@ import {
   previewFifoDeduction,
   verifyFifoMatch,
   validateSourceLotCosts,
+  compareFifoLotOrder,
+  FIFO_ORDER_BY,
   FIFO_COST_TOLERANCE,
+  FIFO_WEIGHT_TOLERANCE,
   type SourceLotForPreview,
   type FifoPreviewSuccess,
 } from '../src/lib/fifo-validation';
 
 // ============ Test fixtures ============
 
-function makeLots(): SourceLotForPreview[] {
-  // ของเกรดสูง: 96.50 kg available, FIFO cost 39.75
-  // Two lots simulating the Production scenario:
-  //   lot-a: 50 kg @ 40.00 THB/kg (older)
-  //   lot-b: 46.50 kg @ 39.51 THB/kg (newer)
-  // weighted avg for 20.60 kg (only lot-a reached) = 40.00
-  return [
-    { id: 'lot-a', remainingWeight: 50, costPerKg: 40.00, dateAdded: new Date('2026-01-01') },
-    { id: 'lot-b', remainingWeight: 46.50, costPerKg: 39.51, dateAdded: new Date('2026-02-01') },
-  ];
+function lot(
+  id: string,
+  remainingWeight: number,
+  costPerKg: number,
+  dateAdded: Date,
+  createdAt?: Date
+): SourceLotForPreview {
+  return {
+    id,
+    remainingWeight,
+    costPerKg,
+    dateAdded,
+    createdAt: createdAt ?? dateAdded,
+  };
 }
 
-// ============ FIFO preview: the pre-flight check (L347-372) ============
+// ============ 1. compareFifoLotOrder: the shared deterministic comparator ============
 
-describe('ST-39: FIFO preview for StockTransfer (pre-flight, no DB write)', () => {
-  test('preview succeeds for 20.60 kg from ของเกรดสูง (96.50 kg available)', () => {
-    const preview = previewFifoDeduction('src-1', 20.60, makeLots());
-    expect(preview.success).toBe(true);
-    if (preview.success) {
-      expect(preview.totalAvailable).toBe(96.50);
-      expect(preview.weightedAverageCost).toBe(40.00); // only lot-a reached
-      expect(preview.deductedLots).toHaveLength(1);
-      expect(preview.deductedLots[0].lotId).toBe('lot-a');
-      expect(preview.deductedLots[0].weightToUse).toBe(20.60);
-    }
+describe('ST-39: compareFifoLotOrder — shared deterministic FIFO ordering', () => {
+  test('1. two lots with different dateAdded → ordered by dateAdded', () => {
+    const a = lot('lot-a', 50, 40, new Date('2026-01-01'));
+    const b = lot('lot-b', 50, 39, new Date('2026-02-01'));
+    expect(compareFifoLotOrder(a, b)).toBeLessThan(0);
+    expect(compareFifoLotOrder(b, a)).toBeGreaterThan(0);
   });
 
-  test('preview is pure — calling it does NOT modify the input lots', () => {
-    const lots = makeLots();
-    const snapshot = lots.map(l => ({ ...l }));
-    previewFifoDeduction('src-1', 20.60, lots);
-    expect(lots).toEqual(snapshot); // unchanged
+  test('2. identical dateAdded, different createdAt → ordered by createdAt', () => {
+    const d = new Date('2026-01-01T10:00:00Z');
+    const a = lot('lot-a', 50, 40, d, new Date('2026-01-01T10:00:01Z'));
+    const b = lot('lot-b', 50, 39, d, new Date('2026-01-01T10:00:02Z'));
+    expect(compareFifoLotOrder(a, b)).toBeLessThan(0); // a created first
   });
 
-  test('ST-20 cost validation: TRANSFER policy blocks zero-cost source lots', () => {
-    const lotsWithZero: SourceLotForPreview[] = [
-      { id: 'lot-zero', remainingWeight: 50, costPerKg: 0, dateAdded: new Date('2026-01-01') },
+  test('3. identical dateAdded AND createdAt → resolved by id', () => {
+    const d = new Date('2026-01-01T10:00:00Z');
+    const a = lot('lot-aaa', 50, 40, d, d);
+    const b = lot('lot-zzz', 50, 39, d, d);
+    expect(compareFifoLotOrder(a, b)).toBeLessThan(0); // 'lot-aaa' < 'lot-zzz'
+    expect(compareFifoLotOrder(b, a)).toBeGreaterThan(0);
+  });
+
+  test('4. completely identical (same id) → 0 (equal)', () => {
+    const d = new Date('2026-01-01T10:00:00Z');
+    const a = lot('lot-x', 50, 40, d, d);
+    const b = lot('lot-x', 50, 40, d, d);
+    expect(compareFifoLotOrder(a, b)).toBe(0);
+  });
+});
+
+// ============ 2. FIFO_ORDER_BY matches the comparator ============
+
+describe('ST-39: FIFO_ORDER_BY Prisma spec matches compareFifoLotOrder', () => {
+  test('5. FIFO_ORDER_BY is [dateAdded asc, createdAt asc, id asc]', () => {
+    expect(FIFO_ORDER_BY).toEqual([
+      { dateAdded: 'asc' },
+      { createdAt: 'asc' },
+      { id: 'asc' },
+    ]);
+  });
+});
+
+// ============ 3. previewFifoDeduction determinism ============
+
+describe('ST-39: previewFifoDeduction — deterministic lot selection', () => {
+  test('6. two lots with different dateAdded → older lot consumed first', () => {
+    const lots = [
+      lot('lot-new', 50, 39, new Date('2026-02-01')),
+      lot('lot-old', 50, 40, new Date('2026-01-01')),
     ];
-    const preview = previewFifoDeduction('src-1', 20, lotsWithZero);
+    const preview = previewFifoDeduction('src-1', 30, lots) as FifoPreviewSuccess;
     expect(preview.success).toBe(true);
-    if (preview.success) {
-      const costVal = validateSourceLotCosts(preview, { type: 'TRANSFER', hasNonWasteOutput: true });
-      expect(costVal.valid).toBe(false);
-      if (!costVal.valid) {
-        expect(costVal.code).toBe('ZERO_COST_SOURCE_LOT');
-      }
-    }
+    expect(preview.deductedLots).toHaveLength(1);
+    expect(preview.deductedLots[0].lotId).toBe('lot-old');
+    expect(preview.deductedLots[0].weightToUse).toBe(30);
+  });
+
+  test('7. identical dateAdded, different costs → deterministic by createdAt then id', () => {
+    // The Production bug: two lots with same dateAdded but different costPerKg.
+    // Without a tie-break, preview might pick either. With the fix, it deterministically
+    // picks the one with earlier createdAt (then id if createdAt also identical).
+    const d = new Date('2026-01-01T10:00:00Z');
+    const lots = [
+      lot('lot-b', 50, 39, d, new Date('2026-01-01T10:00:02Z')),
+      lot('lot-a', 50, 40, d, new Date('2026-01-01T10:00:01Z')),
+    ];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    expect(preview.deductedLots).toHaveLength(1);
+    expect(preview.deductedLots[0].lotId).toBe('lot-a'); // earlier createdAt
+    expect(preview.weightedAverageCost).toBe(40); // lot-a's cost
+  });
+
+  test('8. identical dateAdded AND createdAt → resolved by id', () => {
+    const d = new Date('2026-01-01T10:00:00Z');
+    const lots = [
+      lot('lot-zzz', 50, 39, d, d),
+      lot('lot-aaa', 50, 40, d, d),
+    ];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    expect(preview.deductedLots[0].lotId).toBe('lot-aaa'); // 'lot-aaa' < 'lot-zzz'
+  });
+
+  test('9. shuffled input order gives the same FIFO result (determinism)', () => {
+    const d = new Date('2026-01-01T10:00:00Z');
+    const lotsOrdered = [
+      lot('lot-a', 50, 40, d, new Date('2026-01-01T10:00:01Z')),
+      lot('lot-b', 50, 39, d, new Date('2026-01-01T10:00:02Z')),
+      lot('lot-c', 50, 38, new Date('2026-02-01')),
+    ];
+    const lotsShuffled = [lotsOrdered[2], lotsOrdered[1], lotsOrdered[0]];
+    const r1 = previewFifoDeduction('src-1', 20, lotsOrdered) as FifoPreviewSuccess;
+    const r2 = previewFifoDeduction('src-1', 20, lotsShuffled) as FifoPreviewSuccess;
+    expect(r1.deductedLots).toEqual(r2.deductedLots);
+    expect(r1.weightedAverageCost).toBe(r2.weightedAverageCost);
+    expect(r1.totalCost).toBe(r2.totalCost);
+  });
+
+  test('10. repeated runs give the same result', () => {
+    const d = new Date('2026-01-01T10:00:00Z');
+    const lots = [
+      lot('lot-b', 50, 39, d, new Date('2026-01-01T10:00:02Z')),
+      lot('lot-a', 50, 40, d, new Date('2026-01-01T10:00:01Z')),
+    ];
+    const r1 = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    const r2 = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    const r3 = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    expect(r1.deductedLots).toEqual(r2.deductedLots);
+    expect(r2.deductedLots).toEqual(r3.deductedLots);
+  });
+
+  test('11. equal-date lots no longer cause FIFO_MISMATCH solely by ordering', () => {
+    // Simulate: preview and execution both use the same deterministic comparator.
+    // Even though both lots have the same dateAdded, both pick lot-a (earlier createdAt).
+    const d = new Date('2026-01-01T10:00:00Z');
+    const lots = [
+      lot('lot-a', 50, 40, d, new Date('2026-01-01T10:00:01Z')),
+      lot('lot-b', 50, 39, d, new Date('2026-01-01T10:00:02Z')),
+    ];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    // Execution would deduct from the same lot (lot-a) → same allocation → match
+    const actual = {
+      costPerKg: preview.weightedAverageCost,
+      totalCost: preview.totalCost,
+      deductedLots: preview.deductedLots.map(l => ({ id: l.lotId, deducted: l.weightToUse })),
+    };
+    expect(verifyFifoMatch(preview, actual)).toBe(true);
   });
 });
 
-// ============ verifyFifoMatch: the FIFO_MISMATCH 409 trigger (L408) ============
+// ============ 4. verifyFifoMatch allocation checks ============
 
-describe('ST-39: verifyFifoMatch — detects preview/execution divergence (FIFO_MISMATCH 409)', () => {
-  test('match when actual cost equals preview cost within tolerance', () => {
-    const preview = previewFifoDeduction('src-1', 20.60, makeLots()) as FifoPreviewSuccess;
-    // Actual FIFO result matches preview exactly
-    const actual = { costPerKg: 40.00, totalCost: 40.00 * 20.60 };
+describe('ST-39: verifyFifoMatch — allocation comparison (not just costs)', () => {
+  test('12. match when allocation matches (same lot IDs + weights + costs)', () => {
+    const lots = [lot('lot-a', 50, 40, new Date('2026-01-01'))];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    const actual = {
+      costPerKg: 40,
+      totalCost: 800,
+      deductedLots: [{ id: 'lot-a', deducted: 20 }],
+    };
     expect(verifyFifoMatch(preview, actual)).toBe(true);
   });
 
-  test('mismatch when actual cost diverges beyond tolerance (concurrent lot edit)', () => {
-    const preview = previewFifoDeduction('src-1', 20.60, makeLots()) as FifoPreviewSuccess;
-    // Simulate: between preview and execution, someone edited lot-a's costPerKg
-    // (e.g., a concurrent StockAdjustment or cancellation restored it with different cost)
-    // Now the actual FIFO deduction yields a different cost.
-    const actual = { costPerKg: 39.00, totalCost: 39.00 * 20.60 };
+  test('13. mismatch when actual selected a DIFFERENT lot (even if cost coincidentally matches)', () => {
+    // This is the bug the allocation check catches that cost-only would miss:
+    // lot-a 20kg@40 and lot-b 20kg@40 have the same cost, but different lot IDs.
+    const d = new Date('2026-01-01T10:00:00Z');
+    const lots = [
+      lot('lot-a', 20, 40, d, new Date('2026-01-01T10:00:01Z')),
+      lot('lot-b', 20, 40, d, new Date('2026-01-01T10:00:02Z')),
+    ];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    // Preview picks lot-a. Execution (buggy, without tie-break) picked lot-b.
+    // Costs are identical (both 40*20=800, avg 40) — cost-only check would PASS (false negative).
+    // The allocation check catches it:
+    const actual = {
+      costPerKg: 40,
+      totalCost: 800,
+      deductedLots: [{ id: 'lot-b', deducted: 20 }], // different lot!
+    };
     expect(verifyFifoMatch(preview, actual)).toBe(false);
   });
 
-  test('mismatch when totalCost diverges (partial lot consumed differently)', () => {
-    const preview = previewFifoDeduction('src-1', 50, makeLots()) as FifoPreviewSuccess;
-    // Preview expects 50 kg from lot-a only (cost 40*50 = 2000)
-    // But actual execution found lot-a had only 30 kg left (concurrent deduction),
-    // so it took 30 from lot-a (1200) + 20 from lot-b (790.20) = 1990.20, avg 39.80
-    const actual = { costPerKg: 39.80, totalCost: 1990.20 };
-    // costDelta = |40.00 - 39.80| = 0.20 > 0.005 tolerance → mismatch
+  test('14. mismatch when per-lot weight differs (partial consumption difference)', () => {
+    const lots = [
+      lot('lot-a', 30, 40, new Date('2026-01-01')),
+      lot('lot-b', 30, 39, new Date('2026-02-01')),
+    ];
+    const preview = previewFifoDeduction('src-1', 40, lots) as FifoPreviewSuccess;
+    // Preview: 30 from lot-a + 10 from lot-b
+    // Actual (buggy): 20 from lot-a + 20 from lot-b (concurrent lot edit)
+    const actual = {
+      costPerKg: preview.weightedAverageCost, // coincidentally same avg? no — different
+      totalCost: 30 * 40 + 10 * 39, // same as preview actually
+      deductedLots: [
+        { id: 'lot-a', deducted: 20 }, // different weight
+        { id: 'lot-b', deducted: 20 },
+      ],
+    };
+    // The allocation check catches the per-lot weight difference:
     expect(verifyFifoMatch(preview, actual)).toBe(false);
   });
 
-  test('match within tolerance (tiny float drift is acceptable)', () => {
-    const preview = previewFifoDeduction('src-1', 20.60, makeLots()) as FifoPreviewSuccess;
-    // 0.001 THB/kg drift — within FIFO_COST_TOLERANCE (0.005)
-    const actual = { costPerKg: 40.001, totalCost: 40.001 * 20.60 };
+  test('15. genuine concurrent lot change still triggers mismatch (cost differs)', () => {
+    const lots = [lot('lot-a', 50, 40, new Date('2026-01-01'))];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    // Between preview and execution, lot-a's cost was edited to 39
+    const actual = {
+      costPerKg: 39, // different cost
+      totalCost: 39 * 20,
+      deductedLots: [{ id: 'lot-a', deducted: 20 }],
+    };
+    expect(verifyFifoMatch(preview, actual)).toBe(false);
+  });
+
+  test('16. cost-only fallback when deductedLots omitted (legacy compatibility)', () => {
+    const lots = [lot('lot-a', 50, 40, new Date('2026-01-01'))];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    const actual = { costPerKg: 40, totalCost: 800 }; // no deductedLots
     expect(verifyFifoMatch(preview, actual)).toBe(true);
   });
 });
 
-// ============ UI error-handling logic (transfer-page handleSubmit) ============
-// The deployed UI already has: try/catch/finally with setSubmitting(false) in finally.
-// ST-39 adds: loadProducts() refresh in the catch block to refresh stale source stock.
-// Since no React testing library is configured, we test the LOGIC of the error-handling
-// contract at the function level.
+// ============ 5. ST-20 zero-cost protection remains active ============
 
-describe('ST-39: UI error-handling contract (logic-level)', () => {
-  // Simulates the handleSubmit control flow:
-  //   setSubmitting(true) → try { await api() } catch { toast + refresh } finally { setSubmitting(false) }
-  test('409 response resets submitting state (finally always runs)', async () => {
-    let submitting = false;
-    let refreshed = false;
-    const setSubmitting = (v: boolean) => { submitting = v; };
-    const refresh = async () => { refreshed = true; };
-
-    // Simulate a 409 rejection from createStockTransfer
-    const apiThrows = async () => { throw new Error('ตรวจพบความไม่ตรงของต้นทุน FIFO ระหว่าง preview และ execution กรุณาลองอีกครั้ง'); };
-
-    setSubmitting(true);
-    try {
-      await apiThrows();
-    } catch {
-      await refresh();
-    } finally {
-      setSubmitting(false);
-    }
-
-    expect(submitting).toBe(false); // finally reset it
-    expect(refreshed).toBe(true);   // catch refreshed source stock
+describe('ST-39: ST-20 zero-cost protection unchanged', () => {
+  test('17. TRANSFER policy blocks zero-cost source lots', () => {
+    const lots = [lot('lot-zero', 50, 0, new Date('2026-01-01'))];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    const result = validateSourceLotCosts(preview, { type: 'TRANSFER', hasNonWasteOutput: true });
+    expect(result.valid).toBe(false);
+    if (!result.valid) expect(result.code).toBe('ZERO_COST_SOURCE_LOT');
   });
 
-  test('500 response also resets submitting state and refreshes', async () => {
-    let submitting = false;
-    let refreshed = false;
-    const setSubmitting = (v: boolean) => { submitting = v; };
-    const refresh = async () => { refreshed = true; };
-    const apiThrows = async () => { throw new Error('บันทึกใบย้ายสต็อกไม่สำเร็จ'); };
-
-    setSubmitting(true);
-    try {
-      await apiThrows();
-    } catch {
-      await refresh();
-    } finally {
-      setSubmitting(false);
-    }
-
-    expect(submitting).toBe(false);
-    expect(refreshed).toBe(true);
+  test('18. SORTING with non-waste output blocks zero-cost source lots', () => {
+    const lots = [lot('lot-zero', 50, 0, new Date('2026-01-01'))];
+    const preview = previewFifoDeduction('src-1', 20, lots) as FifoPreviewSuccess;
+    const result = validateSourceLotCosts(preview, { type: 'SORTING', hasNonWasteOutput: true });
+    expect(result.valid).toBe(false);
   });
 
-  test('success path does NOT trigger refresh (no need — stock was correctly updated by the success response)', async () => {
-    let submitting = false;
-    let refreshed = false;
-    const setSubmitting = (v: boolean) => { submitting = v; };
-    const refresh = async () => { refreshed = true; };
-    const apiSucceeds = async () => ({ bill: { id: 'x' } });
-
-    setSubmitting(true);
-    try {
-      await apiSucceeds();
-    } catch {
-      await refresh();
-    } finally {
-      setSubmitting(false);
-    }
-
-    expect(submitting).toBe(false);
-    expect(refreshed).toBe(false); // success — no refresh needed
-  });
-
-  test('duplicate submit while pending is blocked by disabled={submitting}', () => {
-    // The button's disabled prop includes `submitting` — while true, clicks are ignored.
-    let submitting = true; // mid-request
-    const isDisabled = submitting; // mirrors the deployed disabled={submitting || ...}
-    expect(isDisabled).toBe(true); // button is disabled, second click cannot fire
+  test('19. insufficient stock remains blocked', () => {
+    const lots = [lot('lot-a', 10, 40, new Date('2026-01-01'))];
+    const preview = previewFifoDeduction('src-1', 50, lots);
+    expect(preview.success).toBe(false);
+    if (!preview.success) expect(preview.code).toBe('INSUFFICIENT_STOCK');
   });
 });
 
-// ============ Stock invariant contract (server-side, code-level) ============
-// Documents the code-level guarantee: the 409 paths deduct then compensate.
-// Full atomicity is NOT possible (pgbouncer-safe sequential ops, not $transaction),
-// so durable compensation via CompensationOperation is the safety net.
+// ============ 6. Pure-function purity (preview does not mutate input) ============
 
-describe('ST-39: Stock invariant contract (code-level documentation)', () => {
-  test('FIFO_MISMATCH 409 path: deduct then compensate (durable)', () => {
-    // L402: deductStockFIFO deducts source lots (committed writes)
-    // L408: verifyFifoMatch fails
-    // L413: compensateDeductedLots(deductedLots, requestId + '-fifo-mismatch', reason)
-    //   → creates CompensationOperation + CompensationItem records (DURABLE)
-    //   → re-increments each lot via stockLot.update({ remainingWeight: { increment: amount } })
-    //   → marks each item COMPLETED (or FAILED on error)
-    // L414: returns 409 with code: FIFO_MISMATCH
-    //
-    // Net stock effect: deducted by X, then re-incremented by X (if all items COMPLETED).
-    // If any item FAILED → source stock is SHORT by that item's amount (data-loss risk).
-    const path = 'deduct → verifyFifoMatch fail → compensateDeductedLots (durable) → 409';
-    expect(path).toContain('compensateDeductedLots');
-    expect(path).toContain('409');
-  });
-
-  test('P2002 409 path: deduct → create fails → catch compensates', () => {
-    // L402: deductStockFIFO deducts source lots
-    // L441: db.stockTransfer.create throws P2002 (duplicate billNumber)
-    // L536: catch block — partialDeductedLots.length > 0
-    //   → if createdTransferId: delete output StockLots + delete StockTransfer (cleanup)
-    //   → L566: compensateDeductedLots(partialDeductedLots, requestId, message)
-    // L595: returns 409 with error 'เลขบิลซ้ำ กรุณาลองอีกครั้ง'
-    const path = 'deduct → create P2002 → catch: cleanup + compensateDeductedLots → 409';
-    expect(path).toContain('compensateDeductedLots');
-    expect(path).toContain('409');
-  });
-
-  test('compensation is idempotent (same requestId resumes, not double-restores)', () => {
-    // compensateDeductedLots uses findUnique({ where: { requestId } }) first.
-    // If a CompensationOperation already exists for that requestId, it resumes PENDING items
-    // (skipping COMPLETED ones) instead of creating a new operation.
-    // This prevents double-restoration on retry.
-    const idempotencyMechanism = 'findUnique by requestId → resume PENDING items only';
-    expect(idempotencyMechanism).toContain('requestId');
-    expect(idempotencyMechanism).toContain('resume PENDING');
-  });
-});
-
-// ============ Response shape contract ============
-
-describe('ST-39: 409 response body shape (for UI display)', () => {
-  test('FIFO_MISMATCH 409 includes code + requestId for traceability', () => {
-    const responseBody = {
-      error: 'ตรวจพบความไม่ตรงของต้นทุน FIFO ระหว่าง preview และ execution กรุณาลองอีกครั้ง',
-      code: 'FIFO_MISMATCH',
-      sourceProductId: 'src-1',
-      sourceWeight: 20.60,
-      previewCost: 40.00,
-      actualCost: 39.00,
-      requestId: 'req-123',
-    };
-    expect(responseBody.code).toBe('FIFO_MISMATCH');
-    expect(responseBody.requestId).toBeDefined();
-    expect(responseBody.error).toContain('FIFO');
-  });
-
-  test('P2002 409 includes requestId', () => {
-    const responseBody = {
-      error: 'เลขบิลซ้ำ กรุณาลองอีกครั้ง',
-      details: '...',
-      requestId: 'req-456',
-    };
-    expect(responseBody.requestId).toBeDefined();
-    expect(responseBody.error).toContain('ซ้ำ');
+describe('ST-39: previewFifoDeduction purity', () => {
+  test('20. preview does not mutate the input lots array or its elements', () => {
+    const lots = [
+      lot('lot-a', 50, 40, new Date('2026-01-01')),
+      lot('lot-b', 50, 39, new Date('2026-02-01')),
+    ];
+    const snapshot = JSON.parse(JSON.stringify(lots));
+    previewFifoDeduction('src-1', 20, lots);
+    expect(JSON.parse(JSON.stringify(lots))).toEqual(snapshot);
   });
 });

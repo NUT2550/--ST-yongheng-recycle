@@ -9,6 +9,7 @@ import {
   validateSourceLotCosts,
   verifyFifoMatch,
   buildFifoAuditDetails,
+  FIFO_ORDER_BY,
 } from '@/lib/fifo-validation';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
@@ -25,7 +26,7 @@ async function deductStockFIFO(
       productId,
       remainingWeight: { gt: 0 },
     },
-    orderBy: { dateAdded: 'asc' },
+    orderBy: FIFO_ORDER_BY,
   });
 
   const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
@@ -331,6 +332,7 @@ export async function POST(request: NextRequest) {
     // 8. Pre-validate source stock availability
     const sourceLots = await db.stockLot.findMany({
       where: { productId: sourceProductId, remainingWeight: { gt: 0 } },
+      orderBy: FIFO_ORDER_BY,
     });
     const totalAvailable = sourceLots.reduce((sum, l) => sum + l.remainingWeight, 0);
     if (totalAvailable < sourceWeight) {
@@ -352,6 +354,7 @@ export async function POST(request: NextRequest) {
         remainingWeight: l.remainingWeight,
         costPerKg: l.costPerKg,
         dateAdded: l.dateAdded,
+        createdAt: l.createdAt,
       }))
     );
 
@@ -405,7 +408,7 @@ export async function POST(request: NextRequest) {
     const sourceTotalCost = fifoResult.totalCost;
 
     // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
-    if (!verifyFifoMatch(fifoPreview, fifoResult)) {
+    if (!verifyFifoMatch(fifoPreview, { ...fifoResult, deductedLots: fifoResult.deductedLots })) {
       console.error(
         `[ST-20] StockTransfer FIFO mismatch | requestId=${requestId} | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`
       );

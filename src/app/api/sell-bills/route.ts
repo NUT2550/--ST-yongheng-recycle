@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
 import { isRealFormula } from '@/lib/safe-math';
+import { FIFO_ORDER_BY } from '@/lib/fifo-validation';
 
 // Helper: Deduct stock using FIFO and return weighted average cost
 async function deductStockFIFO(
@@ -16,7 +17,7 @@ async function deductStockFIFO(
       productId,
       remainingWeight: { gt: 0 },
     },
-    orderBy: { dateAdded: 'asc' },
+    orderBy: FIFO_ORDER_BY,
   });
 
   // Check total available stock
@@ -96,6 +97,7 @@ export async function POST(request: NextRequest) {
           productId: item.productId,
           remainingWeight: { gt: 0 },
         },
+        orderBy: FIFO_ORDER_BY,
       });
       const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
       if (totalAvailable < item.weight) {
