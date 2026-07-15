@@ -26,14 +26,19 @@
 
 export const YIELD_WEIGHT_TOLERANCE = 0.01 // kg — output within this of source is "exact"
 
-// ST-40: Stored costPerKg precision.
-// StockLot.costPerKg and StockTransferItem.costPerKg are stored with 6 decimal places
-// (NOT 2) so that round(weight × costPerKg, 2) === totalCost within 1 cent.
-// Rounding to 2 decimals causes reconstruction drift (e.g. 826.80 → 826.81).
-// 6 decimals guarantees the invariant for weights up to 10,000 kg:
-//   max error = 10000 × 0.5 × 10^-6 = 0.005 < 0.01 tolerance.
-// totalCost remains the authoritative 2-decimal allocation amount (in cents).
-export const COST_PER_KG_DECIMALS = 6
+// ST-40: Cost-conservation tolerance.
+// costPerKg is stored as the UNROUNDED ratio totalCost / weight (full DOUBLE PRECISION).
+// No manual rounding is applied to costPerKg before storage — PostgreSQL DOUBLE PRECISION
+// (Prisma Float) preserves ~15-17 significant digits, which is sufficient for all
+// realistic business weights and costs.
+//
+// totalCost remains the authoritative 2-decimal document amount (in cents).
+// UI display rounds to 2 decimals for human readability, but storage and FIFO
+// calculations use the full stored precision.
+//
+// The reconstruction invariant (round(weight × costPerKg, 2) === totalCost within 1 cent)
+// holds for all valid weights because the unrounded ratio preserves the exact relationship.
+// No arbitrary maximum weight is assumed or enforced.
 export const COST_RECONSTRUCTION_TOLERANCE = 0.01 // 1 cent — acceptable drift for reconstruction
 
 export interface GainLossResult {
@@ -148,18 +153,17 @@ export function allocateOutputCosts(
     const cents = itemCostsCents[nonWasteIdx]
     nonWasteIdx++
     const totalCost = cents / 100
+    // ST-40: Store costPerKg as the UNROUNDED ratio (full DOUBLE PRECISION).
+    // No manual rounding — the exact ratio preserves the totalCost/weight relationship
+    // for all valid weights. Manual rounding (2 or 6 decimals) introduces reconstruction
+    // drift that accumulates across multiple outputs. totalCost (2 decimals, cents)
+    // remains the authoritative allocation amount.
     const costPerKg = i.weight > 0 ? totalCost / i.weight : 0
     return {
       productId: i.productId,
       weight: i.weight,
       isWaste: i.isWaste,
-      // ST-40: Store costPerKg with 6 decimal places (NOT 2) so that
-      // round(weight × costPerKg, 2) === totalCost within 1 cent.
-      // Rounding to 2 decimals causes reconstruction drift (e.g. 826.80 → 826.81).
-      // 6 decimals guarantees the invariant for weights up to 10,000 kg:
-      // max error = 10000 × 0.5 × 10^-6 = 0.005 < 0.01 tolerance.
-      // totalCost remains the authoritative 2-decimal allocation amount.
-      costPerKg: Math.round(costPerKg * 1000000) / 1000000,
+      costPerKg, // unrounded — full precision
       totalCost: Math.round(totalCost * 100) / 100,
     }
   })

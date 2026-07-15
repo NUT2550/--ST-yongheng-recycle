@@ -13,7 +13,6 @@ import {
   verifyCostConservation,
   verifyLotReconstruction,
   verifyOverallLotReconstruction,
-  COST_PER_KG_DECIMALS,
   COST_RECONSTRUCTION_TOLERANCE,
 } from '../src/lib/transfer-cost-allocation';
 
@@ -240,23 +239,222 @@ describe('ST-40 cost precision: future FIFO deduction', () => {
   });
 });
 
-// ============ 8. Constants + documentation ============
+// ============ 8. Constants + unrounded-precision proof ============
 
-describe('ST-40 cost precision: constants', () => {
-  test('18. COST_PER_KG_DECIMALS is 6', () => {
-    expect(COST_PER_KG_DECIMALS).toBe(6);
-  });
-
-  test('19. COST_RECONSTRUCTION_TOLERANCE is 0.01 (1 cent)', () => {
+describe('ST-40 cost precision: unrounded ratio (no max weight assumption)', () => {
+  test('18. COST_RECONSTRUCTION_TOLERANCE is 0.01 (1 cent)', () => {
     expect(COST_RECONSTRUCTION_TOLERANCE).toBe(0.01);
   });
 
-  test('20. 6-decimal precision guarantees reconstruction for 10,000 kg', () => {
-    // Mathematical proof: max error from 6-decimal rounding = 0.5 × 10^-6
-    // For weight up to 10,000 kg: 10000 × 0.5 × 10^-6 = 0.005 < 0.01 tolerance
-    const maxWeight = 10000;
-    const maxRoundingError = 0.5 * Math.pow(10, -COST_PER_KG_DECIMALS);
-    const maxReconstructionError = maxWeight * maxRoundingError;
-    expect(maxReconstructionError).toBeLessThanOrEqual(COST_RECONSTRUCTION_TOLERANCE);
+  test('19. costPerKg is NOT manually rounded (full precision stored)', () => {
+    // 826.80 / 24.60 = 33.60975609756097... — must have more than 6 decimals
+    const result = allocateOutputCosts(826.80, [
+      { productId: 'out', weight: 24.60, isWaste: false },
+    ]);
+    const cpk = result.items[0].costPerKg;
+    // The stored value should be the full-precision ratio, NOT rounded to 6 decimals
+    // 33.60975609756097... vs 33.609756 (6-decimal) — they differ
+    expect(cpk).not.toBe(Math.round(cpk * 1000000) / 1000000);
+  });
+});
+
+// ============ 9. Adversarial: large weights (no enforced max) ============
+
+describe('ST-40 cost precision: adversarial large weights', () => {
+  test('20. 28,000 kg output → reconstruction within tolerance', () => {
+    const sourceTotalCost = 1000000.00; // 1M THB
+    const weight = 28000.00;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight, isWaste: false },
+    ]);
+    const item = result.items[0];
+    expect(verifyLotReconstruction(item.weight, item.costPerKg, item.totalCost)).toBe(true);
+    const reconstructed = Math.round(weight * item.costPerKg * 100) / 100;
+    expect(Math.abs(reconstructed - sourceTotalCost)).toBeLessThanOrEqual(0.01);
+  });
+
+  test('21. 50,000 kg output → reconstruction within tolerance', () => {
+    const sourceTotalCost = 2500000.00;
+    const weight = 50000.00;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight, isWaste: false },
+    ]);
+    expect(verifyLotReconstruction(result.items[0].weight, result.items[0].costPerKg, result.items[0].totalCost)).toBe(true);
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('22. 100,000 kg output → reconstruction within tolerance', () => {
+    const sourceTotalCost = 5000000.00;
+    const weight = 100000.00;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight, isWaste: false },
+    ]);
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('23. fractional weight above 10,000 kg (12,345.678 kg) → reconstruction within tolerance', () => {
+    const sourceTotalCost = 500000.00;
+    const weight = 12345.678;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight, isWaste: false },
+    ]);
+    expect(verifyLotReconstruction(result.items[0].weight, result.items[0].costPerKg, result.items[0].totalCost)).toBe(true);
+  });
+});
+
+// ============ 10. Adversarial: many output items ============
+
+describe('ST-40 cost precision: many output items', () => {
+  function makeNItems(n: number, weight: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      productId: `out-${i}`,
+      weight,
+      isWaste: false,
+    }));
+  }
+
+  test('24. 10 output items → all reconstruct + overall conserved', () => {
+    const sourceTotalCost = 1000.00;
+    const items = makeNItems(10, 10);
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    for (const item of result.items) {
+      expect(verifyLotReconstruction(item.weight, item.costPerKg, item.totalCost)).toBe(true);
+    }
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('25. 50 output items → all reconstruct + overall conserved', () => {
+    const sourceTotalCost = 5000.00;
+    const items = makeNItems(50, 10);
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    for (const item of result.items) {
+      expect(verifyLotReconstruction(item.weight, item.costPerKg, item.totalCost)).toBe(true);
+    }
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('26. 100 output items → all reconstruct + overall conserved', () => {
+    const sourceTotalCost = 10000.00;
+    const items = makeNItems(100, 10);
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    for (const item of result.items) {
+      expect(verifyLotReconstruction(item.weight, item.costPerKg, item.totalCost)).toBe(true);
+    }
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+});
+
+// ============ 11. Adversarial: aligned rounding errors ============
+
+describe('ST-40 cost precision: aligned-error adversarial cases', () => {
+  test('27. many outputs where rounding errors could align positive → still conserved', () => {
+    // Use a cost that produces repeating decimals across many items
+    // 100.00 / 7 items = 14.285714... each — all round up → potential positive drift
+    const sourceTotalCost = 100.00;
+    const items = Array.from({ length: 7 }, (_, i) => ({
+      productId: `out-${i}`,
+      weight: 1,
+      isWaste: false,
+    }));
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    expect(verifyCostConservation(sourceTotalCost, result.items)).toBe(true);
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('28. many outputs where rounding errors could align negative → still conserved', () => {
+    // 100.00 / 3 items = 33.333... each — all round down → potential negative drift
+    const sourceTotalCost = 100.00;
+    const items = Array.from({ length: 3 }, (_, i) => ({
+      productId: `out-${i}`,
+      weight: 1,
+      isWaste: false,
+    }));
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    expect(verifyCostConservation(sourceTotalCost, result.items)).toBe(true);
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('29. uneven weights with repeating decimal ratios → conserved', () => {
+    // Weights that produce repeating costPerKg: 1/3, 1/7, 1/11 of total
+    const sourceTotalCost = 1000.00;
+    const items = [
+      { productId: 'a', weight: 100, isWaste: false },
+      { productId: 'b', weight: 300, isWaste: false },
+      { productId: 'c', weight: 700, isWaste: false },
+    ];
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    expect(verifyOverallLotReconstruction(sourceTotalCost, result.items)).toBe(true);
+  });
+
+  test('30. very small fractional output weights → conserved', () => {
+    // 0.001 kg items — tiny weights, costPerKg is very large
+    const sourceTotalCost = 10.00;
+    const items = [
+      { productId: 'a', weight: 0.001, isWaste: false },
+      { productId: 'b', weight: 0.001, isWaste: false },
+      { productId: 'c', weight: 0.001, isWaste: false },
+    ];
+    const result = allocateOutputCosts(sourceTotalCost, items);
+    expect(verifyCostConservation(sourceTotalCost, result.items)).toBe(true);
+    for (const item of result.items) {
+      expect(verifyLotReconstruction(item.weight, item.costPerKg, item.totalCost)).toBe(true);
+    }
+  });
+});
+
+// ============ 12. Future FIFO: full + partial + sequence ============
+
+describe('ST-40 cost precision: future FIFO deduction (full + partial)', () => {
+  test('31. full FIFO consumption returns sourceTotalCost within tolerance', () => {
+    // Create a lot, then simulate full FIFO deduction
+    const sourceTotalCost = 826.80;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight: 24.60, isWaste: false },
+    ]);
+    const lot = result.items[0];
+    // Full consumption: weight × costPerKg
+    const fifoTotalCost = Math.round(lot.weight * lot.costPerKg * 100) / 100;
+    expect(Math.abs(fifoTotalCost - sourceTotalCost)).toBeLessThanOrEqual(0.01);
+  });
+
+  test('32. multiple partial FIFO consumptions reconcile to original lot total', () => {
+    // Deduct 10kg, then 10kg, then 4.60kg — sum should equal original
+    const sourceTotalCost = 826.80;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight: 24.60, isWaste: false },
+    ]);
+    const lot = result.items[0];
+    const d1 = Math.round(10 * lot.costPerKg * 100) / 100;
+    const d2 = Math.round(10 * lot.costPerKg * 100) / 100;
+    const d3 = Math.round(4.60 * lot.costPerKg * 100) / 100;
+    expect(Math.abs(d1 + d2 + d3 - sourceTotalCost)).toBeLessThanOrEqual(0.01);
+  });
+
+  test('33. partial consumptions in different sequences reconcile', () => {
+    // Deduct in different order: 4.60, then 10, then 10
+    const sourceTotalCost = 826.80;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight: 24.60, isWaste: false },
+    ]);
+    const lot = result.items[0];
+    const d1 = Math.round(4.60 * lot.costPerKg * 100) / 100;
+    const d2 = Math.round(10 * lot.costPerKg * 100) / 100;
+    const d3 = Math.round(10 * lot.costPerKg * 100) / 100;
+    expect(Math.abs(d1 + d2 + d3 - sourceTotalCost)).toBeLessThanOrEqual(0.01);
+  });
+
+  test('34. remainder lot retains correct cost after partial consumption', () => {
+    // After deducting 10kg from a 24.60kg lot, the remaining 14.60kg should
+    // reconstruct the remaining cost
+    const sourceTotalCost = 826.80;
+    const result = allocateOutputCosts(sourceTotalCost, [
+      { productId: 'out', weight: 24.60, isWaste: false },
+    ]);
+    const lot = result.items[0];
+    const deducted = Math.round(10 * lot.costPerKg * 100) / 100;
+    const remainingWeight = 24.60 - 10;
+    const remainingCost = Math.round(remainingWeight * lot.costPerKg * 100) / 100;
+    // deducted + remaining = original (within 1 cent)
+    expect(Math.abs(deducted + remainingCost - sourceTotalCost)).toBeLessThanOrEqual(0.01);
   });
 });
