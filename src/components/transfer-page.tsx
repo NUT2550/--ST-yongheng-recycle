@@ -65,18 +65,21 @@ export function TransferPage() {
   const [editIsWaste, setEditIsWaste] = useState(false);
 
   // Fetch products on mount
-  useEffect(() => {
-    async function loadProducts() {
-      try {
-        const res = await fetchProducts();
-        const data = res as unknown as { products: Product[] };
-        setProducts(data.products || (res as unknown as Product[]));
-      } catch {
-        toast.error('ไม่สามารถโหลดข้อมูลสินค้าได้');
-      } finally {
-        setLoading(false);
-      }
+  // ST-39: loadProducts is reusable so we can refresh source stock after a 409/500
+  // (the backend may have deducted then compensated source lots, leaving the UI stale).
+  const loadProducts = async () => {
+    try {
+      const res = await fetchProducts();
+      const data = res as unknown as { products: Product[] };
+      setProducts(data.products || (res as unknown as Product[]));
+    } catch {
+      toast.error('ไม่สามารถโหลดข้อมูลสินค้าได้');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadProducts();
   }, []);
 
@@ -334,6 +337,11 @@ export function TransferPage() {
       // ST-13: Show error with longer duration for complex messages (includes request ID + guidance).
       // toast.error with 8s duration so user can read the full guidance + request ID.
       toast.error(`บันทึกไม่สำเร็จ: ${message}`, { duration: 8000 });
+      // ST-39: After a failed save, refresh source stock because the backend may have
+      // deducted then compensated source lots (FIFO_MISMATCH 409, P2002 409, or any 500
+      // after deduction). The displayed source weight / cost may be stale until refreshed.
+      // This is non-blocking — if the refresh fails, the user can still see the error toast.
+      loadProducts().catch(() => {});
     } finally {
       setSubmitting(false);
     }
