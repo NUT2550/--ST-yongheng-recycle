@@ -1,24 +1,25 @@
 /**
- * ST-35: Production service for daily purchase weighing.
+ * ST-35 / ST-38: Production service for daily purchase weighing.
  *
  * Contains all DB-dependent orchestration. Both production routes
  * and tests call these SAME functions — no duplicated logic.
  *
  * Production uses PrismaDailyPurchaseWeighingRepository.
  * Tests use FakeDailyPurchaseWeighingRepository (in tests/st35-fake-repository.ts).
+ *
+ * ST-38: aggregation now pulls BuyBills + SortingBills + StockTransfers via the
+ * repository and computes per-product totals across all three sources. The save
+ * flow, duplicate-check, and atomic rollback semantics are UNCHANGED from ST-35.
  */
 
 import {
   isValidWeighingDate,
   isValidWeighingCategory,
-  isValidActualWeighedWeight,
-  calculateWeighingStatus,
   getThaiDateRange,
   validateWeighingPostInput,
   buildSessionItems,
+  aggregateFromSources,
   type AggregationResult,
-  type WeighingPostInput,
-  type SessionItemData,
 } from './daily-purchase-weighing';
 import type {
   DailyPurchaseWeighingRepository,
@@ -45,6 +46,10 @@ export type SaveOutcome = SaveResult | SaveError;
  * This is the production aggregation function. Tests call this with
  * a fake repository — the aggregation LOGIC is production code,
  * only the DATA source is different.
+ *
+ * ST-38: now includes SortingBills (isWaste=false) and StockTransfers
+ * (isWaste=false, businessType 'คัดแยก' → sorting bucket, 'แกะของ'/null
+ * → dismantling bucket) in addition to BuyBills.
  */
 export async function aggregateDailyPurchasesWithRepository(
   repo: DailyPurchaseWeighingRepository,
@@ -68,61 +73,21 @@ export async function aggregateDailyPurchasesWithRepository(
   const productsInCategory = await repo.findProductsByCategory(cat.id);
   const productIdsInCategory = new Set(productsInCategory.map(p => p.id));
 
-  const bills = await repo.findBuyBillsByDateRange(startDate, endDate);
+  const [bills, sortingBills, transfers] = await Promise.all([
+    repo.findBuyBillsByDateRange(startDate, endDate),
+    repo.findSortingBillsByDateRange(startDate, endDate),
+    repo.findStockTransfersByDateRange(startDate, endDate),
+  ]);
 
-  // Aggregate by product — SAME logic as production
-  const aggMap = new Map<string, {
-    purchasedWeight: number;
-    totalAmount: number;
-    billIds: Set<string>;
-  }>();
-
-  const allRelevantBillIds = new Set<string>();
-
-  for (const bill of bills) {
-    for (const item of bill.items) {
-      if (!productIdsInCategory.has(item.productId)) continue;
-      allRelevantBillIds.add(bill.id);
-
-      if (!aggMap.has(item.productId)) {
-        aggMap.set(item.productId, { purchasedWeight: 0, totalAmount: 0, billIds: new Set() });
-      }
-      const agg = aggMap.get(item.productId)!;
-      agg.purchasedWeight += item.weight;
-      agg.totalAmount += item.totalAmount;
-      agg.billIds.add(bill.id);
-    }
-  }
-
-  // Build result — sorted by product sortOrder
-  const items: AggregationResult['items'] = [];
-  let totalPurchasedWeight = 0;
-
-  for (const product of productsInCategory) {
-    const agg = aggMap.get(product.id);
-    if (!agg || agg.purchasedWeight <= 0) continue;
-
-    const purchasedWeight = Math.round(agg.purchasedWeight * 100) / 100;
-    const totalAmount = Math.round(agg.totalAmount * 100) / 100;
-
-    items.push({
-      productId: product.id,
-      productName: product.name,
-      purchasedWeight,
-      purchaseBillCount: agg.billIds.size,
-      totalAmount,
-    });
-    totalPurchasedWeight += purchasedWeight;
-  }
-
-  return {
-    date: dateStr,
+  return aggregateFromSources(
+    dateStr,
     category,
-    totalBills: allRelevantBillIds.size,
-    productCount: items.length,
-    totalPurchasedWeight: Math.round(totalPurchasedWeight * 100) / 100,
-    items,
-  };
+    productsInCategory,
+    productIdsInCategory,
+    bills,
+    sortingBills,
+    transfers,
+  );
 }
 
 /**
@@ -144,6 +109,10 @@ export async function findDuplicateDailyWeighing(
  *
  * Tests call this with a fake repository to verify all steps including
  * transaction rollback on AuditLog failure.
+ *
+ * ST-38: session items now carry all source-breakdown fields
+ * (purchaseWeight, sortingOutputWeight, dismantlingOutputWeight,
+ * expectedTotalWeight, etc.). The client payload shape is UNCHANGED.
  */
 export async function saveDailyPurchaseWeighing(
   repo: DailyPurchaseWeighingRepository,
@@ -167,7 +136,7 @@ export async function saveDailyPurchaseWeighing(
   }
 
   if (aggregation.items.length === 0) {
-    return { success: false, error: `ไม่มีใบซื้อ${category}ของวันที่ ${weighingDate}`, status: 400 };
+    return { success: false, error: `ไม่มียอด${category}ของวันที่ ${weighingDate}`, status: 400 };
   }
 
   // 3. Build session items — server controls all computed fields
@@ -200,8 +169,13 @@ export async function saveDailyPurchaseWeighing(
         createdById: userId,
         items: sessionItems.map(item => ({
           productId: item.productId,
-          purchasedWeight: item.purchasedWeight,
+          purchaseWeight: item.purchaseWeight,
           purchaseBillCount: item.purchaseBillCount,
+          sortingOutputWeight: item.sortingOutputWeight,
+          sortingBillCount: item.sortingBillCount,
+          dismantlingOutputWeight: item.dismantlingOutputWeight,
+          dismantlingRecordCount: item.dismantlingRecordCount,
+          expectedTotalWeight: item.expectedTotalWeight,
           actualWeighedWeight: item.actualWeighedWeight,
           differenceWeight: item.differenceWeight,
           status: item.status,
@@ -220,7 +194,10 @@ export async function saveDailyPurchaseWeighing(
           category: created.category,
           itemCount: created.items.length,
           totalBills: aggregation.totalBills,
-          totalPurchasedWeight: aggregation.totalPurchasedWeight,
+          totalPurchaseWeight: aggregation.totalPurchaseWeight,
+          totalSortingWeight: aggregation.totalSortingWeight,
+          totalDismantlingWeight: aggregation.totalDismantlingWeight,
+          totalExpectedWeight: aggregation.totalExpectedWeight,
           note: created.note,
         }),
       });

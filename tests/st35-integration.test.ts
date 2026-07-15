@@ -256,13 +256,13 @@ describe('ST-35: POST save controller (production function)', () => {
     expect(result.status).toBe(403);
   });
 
-  test('server ignores fake client purchasedWeight', async () => {
+  test('server ignores fake client purchaseWeight', async () => {
     const result = await postSaveController(repo, ADMIN, {
       weighingDate: '2026-07-11', category: 'ทองแดง',
-      items: [{ productId: 'copper-1', actualWeighedWeight: 80, purchasedWeight: 999 } as any],
+      items: [{ productId: 'copper-1', actualWeighedWeight: 80, purchaseWeight: 999 } as any],
     });
     expect(result.status).toBe(201);
-    expect((result.data as any).session.items[0].purchasedWeight).toBe(80.5); // server value, not 999
+    expect((result.data as any).session.items[0].purchaseWeight).toBe(80.5); // server value, not 999
   });
 
   test('negative weight → 400', async () => {
@@ -336,7 +336,7 @@ describe('ST-35: Aggregation service (production function with fake repository)'
       makeBill('b2', date, [{ productId: 'copper-1', weight: 20, totalAmount: 8400, productName: 'ทองแดงปอกเงา' }]),
     ]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
-    expect(result.items[0].purchasedWeight).toBe(30);
+    expect(result.items[0].purchaseWeight).toBe(30);
   });
 
   test('steel-only bill excluded from copper count', async () => {
@@ -356,7 +356,7 @@ describe('ST-35: Aggregation service (production function with fake repository)'
     repo.setBuyBills([cancelled, makeBill('b2', date, [{ productId: 'copper-1', weight: 10, totalAmount: 4200, productName: 'ทองแดงปอกเงา' }])]);
     const result = await aggregateDailyPurchasesWithRepository(repo, '2026-07-11', 'ทองแดง');
     expect(result.totalBills).toBe(1);
-    expect(result.items[0].purchasedWeight).toBe(10);
+    expect(result.items[0].purchaseWeight).toBe(10);
   });
 
   test('A-prefixed bill included', async () => {

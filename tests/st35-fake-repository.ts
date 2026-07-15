@@ -1,5 +1,5 @@
 /**
- * ST-35: Fake repository with real commit/rollback semantics.
+ * ST-35 / ST-38: Fake repository with real commit/rollback semantics.
  *
  * Implements the SAME DailyPurchaseWeighingRepository interface as the
  * Prisma adapter. Tests call production service functions with this fake.
@@ -12,6 +12,10 @@
  *
  * This means: if AuditLog.create throws inside the transaction,
  * the session and items are NOT persisted — just like Prisma $transaction.
+ *
+ * ST-38: now also stages SortingBills and StockTransfers (with date-range
+ * filtering + isCancelled filter matching the Prisma adapter) and persists
+ * the new source-breakdown fields on each session item.
  */
 
 import type {
@@ -20,6 +24,8 @@ import type {
   CategoryRow,
   ProductRow,
   BuyBillRow,
+  SortingBillRow,
+  StockTransferRow,
   DailyWeighingSessionRow,
   SessionCreateData,
   AuditLogCreateData,
@@ -38,6 +44,8 @@ export class FakeDailyPurchaseWeighingRepository implements DailyPurchaseWeighin
   private categories: Map<string, CategoryRow> = new Map();
   private products: Map<string, ProductRow[]> = new Map(); // by categoryId
   private bills: BuyBillRow[] = [];
+  private sortingBills: SortingBillRow[] = [];
+  private transfers: StockTransferRow[] = [];
   private nextId = 1;
   private shouldFailAuditLog = false;
 
@@ -67,6 +75,14 @@ export class FakeDailyPurchaseWeighingRepository implements DailyPurchaseWeighin
 
   setBuyBills(bills: BuyBillRow[]): void {
     this.bills = bills;
+  }
+
+  setSortingBills(bills: SortingBillRow[]): void {
+    this.sortingBills = bills;
+  }
+
+  setStockTransfers(transfers: StockTransferRow[]): void {
+    this.transfers = transfers;
   }
 
   setShouldFailAuditLog(fail: boolean): void {
@@ -129,6 +145,22 @@ export class FakeDailyPurchaseWeighingRepository implements DailyPurchaseWeighin
     );
   }
 
+  async findSortingBillsByDateRange(startDate: Date, endDate: Date): Promise<SortingBillRow[]> {
+    return this.sortingBills.filter(b =>
+      !b.isCancelled &&
+      b.date.getTime() >= startDate.getTime() &&
+      b.date.getTime() <= endDate.getTime()
+    );
+  }
+
+  async findStockTransfersByDateRange(startDate: Date, endDate: Date): Promise<StockTransferRow[]> {
+    return this.transfers.filter(t =>
+      !t.isCancelled &&
+      t.date.getTime() >= startDate.getTime() &&
+      t.date.getTime() <= endDate.getTime()
+    );
+  }
+
   async findExistingSession(weighingDate: Date, category: string): Promise<DailyWeighingSessionRow | null> {
     for (const session of this.state.sessions.values()) {
       if (session.weighingDate.getTime() === weighingDate.getTime() && session.category === category) {
@@ -185,8 +217,13 @@ export class FakeDailyPurchaseWeighingRepository implements DailyPurchaseWeighin
           items: data.items.map((item, idx) => ({
             id: `fake-item-${this.nextId++}`,
             productId: item.productId,
-            purchasedWeight: item.purchasedWeight,
+            purchaseWeight: item.purchaseWeight,
             purchaseBillCount: item.purchaseBillCount,
+            sortingOutputWeight: item.sortingOutputWeight,
+            sortingBillCount: item.sortingBillCount,
+            dismantlingOutputWeight: item.dismantlingOutputWeight,
+            dismantlingRecordCount: item.dismantlingRecordCount,
+            expectedTotalWeight: item.expectedTotalWeight,
             actualWeighedWeight: item.actualWeighedWeight,
             differenceWeight: item.differenceWeight,
             status: item.status,
