@@ -19,6 +19,7 @@ const VALID_PERMISSIONS = [
   'transfer.create',
   'history.edit',
   'physical-count.apply',
+  'dailyPurchaseWeighing',
   'product.manage',
 ] as const
 

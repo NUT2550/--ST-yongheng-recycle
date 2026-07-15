@@ -36,7 +36,8 @@ const PERMISSION_KEYS = [
   { key: 'sort.create', label: 'สร้างใบคัดแยก' },
   { key: 'transfer.create', label: 'สร้างใบย้ายสต็อก' },
   { key: 'history.edit', label: 'แก้ไข/ยกเลิกบิลในประวัติ' },
-  { key: 'physical-count.apply', label: 'Apply การชั่งสต็อกจริง' },
+  { key: 'physical-count.apply', label: 'Apply การชั่งสต็อกจริง (Legacy)' },
+  { key: 'dailyPurchaseWeighing', label: 'ชั่งยอดซื้อทองแดง/ทองเหลือง' },
   { key: 'product.manage', label: 'จัดการสินค้า' },
 ] as const
 
