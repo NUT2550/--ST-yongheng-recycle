@@ -11,6 +11,12 @@ import {
   buildFifoAuditDetails,
   FIFO_ORDER_BY,
 } from '@/lib/fifo-validation';
+import {
+  calculateGainLoss,
+  allocateOutputCosts,
+  isPositiveYieldAllowed,
+  YIELD_WEIGHT_TOLERANCE,
+} from '@/lib/transfer-cost-allocation';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
 // ST-11: deductStockFIFO now attaches partial deductedLots to the error if it throws mid-loop,
@@ -213,6 +219,7 @@ export async function POST(request: NextRequest) {
       weighedTotal,
       weighedTotalExpression,
       note,
+      gainReason,
       items,
       businessType,
     } = body as {
@@ -226,6 +233,7 @@ export async function POST(request: NextRequest) {
       weighedTotal?: number;
       weighedTotalExpression?: string;
       note?: string;
+      gainReason?: string; // ST-40: required when gain > 0
       businessType?: string; // คัดแยก | แกะของ | undefined (default = แกะของ)
       items: Array<{
         productId: string;
@@ -290,15 +298,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. HARD RULE: output total must not exceed source weight
+    // ST-40: Positive yield (output > source) is allowed for แกะของ (dismantling).
+    // คัดแยก retains the hard block (output must not exceed source).
     const itemsTotalWeight = items.reduce((s, i) => s + i.weight, 0);
-    if (itemsTotalWeight > sourceWeight + 0.01) {
-      return NextResponse.json(
-        {
-          error: `น้ำหนัก output รวม (${itemsTotalWeight.toFixed(2)} กก.) เกินน้ำหนักต้นทาง (${sourceWeight} กก.)`,
-        },
-        { status: 400 }
-      );
+    const effectiveBusinessType = businessType?.trim() || null; // null/blank defaults to แกะของ
+    const yieldResult = calculateGainLoss(sourceWeight, itemsTotalWeight);
+
+    if (yieldResult.gainWeight > YIELD_WEIGHT_TOLERANCE) {
+      // Positive yield — check if allowed for this business type
+      if (!isPositiveYieldAllowed(effectiveBusinessType)) {
+        return NextResponse.json(
+          {
+            error: `น้ำหนัก output รวม (${itemsTotalWeight.toFixed(2)} กก.) เกินน้ำหนักต้นทาง (${sourceWeight} กก.) — ไม่อนุญาตสำหรับ businessType คัดแยก`,
+            code: 'POSITIVE_YIELD_NOT_ALLOWED',
+          },
+          { status: 400, headers: { 'X-Request-ID': requestId } }
+        );
+      }
+      // Require a meaningful reason for positive yield
+      const gainReasonTrimmed = (gainReason || '').trim();
+      if (!gainReasonTrimmed) {
+        return NextResponse.json(
+          {
+            error: `น้ำหนัก output มากกว่าต้นทาง ${yieldResult.gainWeight.toFixed(2)} กก. กรุณาระบุเหตุผล เช่น หักน้ำหนักประเมินตอนซื้อ`,
+            code: 'GAIN_REASON_REQUIRED',
+            gainWeight: yieldResult.gainWeight,
+          },
+          { status: 400, headers: { 'X-Request-ID': requestId } }
+        );
+      }
     }
 
     // 6. Verify source product exists
@@ -428,9 +456,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 3: Calculate loss and profitability
-    const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
+    // Step 3: Calculate gain/loss/variance (ST-40: positive yield supported)
+    // yieldResult was computed during validation (above)
+    const lossWeight = yieldResult.lossWeight;
+    const gainWeight = yieldResult.gainWeight;
+    const weightVariance = yieldResult.weightVariance;
     const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
+    const gainReasonValue = gainWeight > YIELD_WEIGHT_TOLERANCE ? (gainReason || '').trim() : null;
+
+    // ST-40: Cost conservation — allocate sourceTotalCost across non-waste outputs
+    // proportionally by weight. This prevents cost inflation when output > source.
+    // (Previously: costPerKg = sourceCostPerKg for all items → output total cost
+    //  could exceed sourceTotalCost when output weight > source weight.)
+    const costAllocation = allocateOutputCosts(sourceTotalCost, items);
+    const allocatedItems = costAllocation.items; // has costPerKg + totalCost per item
 
     const srcPricePerKg = sourcePricePerKg || 0;
     const labor = laborCost || 0;
@@ -464,15 +503,18 @@ export async function POST(request: NextRequest) {
           : null,
         lossWeight,
         lossCost,
+        gainWeight,
+        weightVariance,
+        gainReason: gainReasonValue,
         note: note || null,
         items: {
-          create: items.map((item) => ({
+          create: items.map((item, idx) => ({
             productId: item.productId,
             weight: item.weight,
             weightExpression: isRealFormula(item.weightExpression) ? item.weightExpression!.trim() : null,
             isWaste: item.isWaste,
-            costPerKg: item.isWaste ? 0 : sourceCostPerKg,
-            totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
+            costPerKg: allocatedItems[idx].costPerKg,
+            totalCost: allocatedItems[idx].totalCost,
             outputPricePerKg: item.isWaste ? 0 : (item.outputPricePerKg || 0),
           })),
         },
@@ -486,13 +528,15 @@ export async function POST(request: NextRequest) {
     createdTransferId = created.id;
 
     // Step 5: Create StockLots for non-waste output items (sequential, pgbouncer-safe)
-    for (const item of items) {
+    // ST-40: use allocated costPerKg (proportional) not sourceCostPerKg — prevents cost inflation
+    for (let idx = 0; idx < items.length; idx++) {
+      const item = items[idx];
       if (!item.isWaste && item.weight > 0) {
         await db.stockLot.create({
           data: {
             productId: item.productId,
             remainingWeight: item.weight,
-            costPerKg: sourceCostPerKg,
+            costPerKg: allocatedItems[idx].costPerKg,
             dateAdded: new Date(date),
             source: 'TRANSFER',
             sourceId: created.id,
@@ -521,6 +565,11 @@ export async function POST(request: NextRequest) {
           sourceTotalCost,
           lossWeight,
           lossCost,
+          gainWeight,
+          weightVariance,
+          gainReason: gainReasonValue,
+          allocatedOutputTotalCost: costAllocation.allocatedTotalCost,
+          costConserved: costAllocation.allocatedTotalCost === sourceTotalCost,
           itemCount: created.items.length,
           nonWasteItemCount: items.filter((i) => !i.isWaste).length,
           // ST-20 Phase 2: FIFO audit details (provides sourceProductId, sourceWeight, etc.)
