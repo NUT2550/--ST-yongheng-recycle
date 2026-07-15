@@ -11,29 +11,29 @@ datasource db {
 model ProductCategory {
   id        String    @id @default(cuid())
   name      String    @unique
-  type      String    // STEEL, METAL
+  type      String // STEEL, METAL
   sortOrder Int       @default(0)
   products  Product[]
 }
 
 model Product {
-  id              String          @id @default(cuid())
-  name            String          @unique
-  categoryId      String
-  category        ProductCategory @relation(fields: [categoryId], references: [id])
-  defaultBuyPrice Float           @default(0)
-  sortOrder       Int             @default(0)
-  stockLots       StockLot[]
-  buyItems        BuyBillItem[]
-  sellItems       SellBillItem[]
-  sortingSource   SortingBill[]   @relation("SortingSource")
-  sortingItems    SortingBillItem[]
-  transferSource   StockTransfer[]    @relation("TransferSource")
-  transferItems    StockTransferItem[]
+  id                 String                      @id @default(cuid())
+  name               String                      @unique
+  categoryId         String
+  category           ProductCategory             @relation(fields: [categoryId], references: [id])
+  defaultBuyPrice    Float                       @default(0)
+  sortOrder          Int                         @default(0)
+  stockLots          StockLot[]
+  buyItems           BuyBillItem[]
+  sellItems          SellBillItem[]
+  sortingSource      SortingBill[]               @relation("SortingSource")
+  sortingItems       SortingBillItem[]
+  transferSource     StockTransfer[]             @relation("TransferSource")
+  transferItems      StockTransferItem[]
   physicalCountItems PhysicalCountItem[]
-  dailyWeighingItems  DailyPurchaseWeighingItem[]
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  dailyWeighingItems DailyPurchaseWeighingItem[]
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
 }
 
 model StockLot {
@@ -43,27 +43,27 @@ model StockLot {
   remainingWeight Float
   costPerKg       Float
   dateAdded       DateTime @default(now())
-  source          String   // BUY, SORTING
+  source          String // BUY, SORTING
   sourceId        String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }
 
 model BuyBill {
-  id                String        @id @default(cuid())
-  billNumber        String?       @unique
-  externalBillNumber String?      @unique // เลขบิลจากระบบเดิม (Excel import)
-  date              DateTime      @default(now())
-  isCredit          Boolean       @default(false)
-  note              String?
-  items             BuyBillItem[]
-  totalAmount       Float         @default(0)
-  isCancelled       Boolean       @default(false)
-  cancelledAt       DateTime?
-  cancelledBy       String?
-  cancelReason      String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id                 String        @id @default(cuid())
+  billNumber         String?       @unique
+  externalBillNumber String?       @unique // เลขบิลจากระบบเดิม (Excel import)
+  date               DateTime      @default(now())
+  isCredit           Boolean       @default(false)
+  note               String?
+  items              BuyBillItem[]
+  totalAmount        Float         @default(0)
+  isCancelled        Boolean       @default(false)
+  cancelledAt        DateTime?
+  cancelledBy        String?
+  cancelReason       String?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 }
 
 model BuyBillItem {
@@ -105,7 +105,7 @@ model SellBillItem {
   productId        String
   product          Product  @relation(fields: [productId], references: [id])
   weight           Float
-  weightExpression String?  // สูตรที่ผู้ใช้พิมพ์ เช่น "860-3"
+  weightExpression String? // สูตรที่ผู้ใช้พิมพ์ เช่น "860-3"
   pricePerKg       Float
   totalAmount      Float
   costPerKg        Float    @default(0)
@@ -119,13 +119,13 @@ model SortingBill {
   sourceProductId        String
   sourceProduct          Product           @relation("SortingSource", fields: [sourceProductId], references: [id])
   sourceWeight           Float
-  sourceWeightExpression String?           // สูตรน้ำหนักต้นทาง เช่น "68.4-0.2"
+  sourceWeightExpression String? // สูตรน้ำหนักต้นทาง เช่น "68.4-0.2"
   sourcePricePerKg       Float             @default(0) // ราคารับซื้อสินค้าต้นทาง (พนักงานใส่, ใช้คิดโบนัส)
   weighedTotal           Float             @default(0)
-  weighedTotalExpression String?           // สูตรน้ำหนักชั่งรวม
+  weighedTotalExpression String? // สูตรน้ำหนักชั่งรวม
   lossWeight             Float             @default(0)
   lossCost               Float             @default(0)
-  roomNumber             String?           // เลขห้อง (dedicated field; do not use note for room)
+  roomNumber             String? // เลขห้อง (dedicated field; do not use note for room)
   note                   String?
   items                  SortingBillItem[]
   bonuses                SortingBonus[]
@@ -138,68 +138,68 @@ model SortingBill {
 }
 
 model SortingBillItem {
-  id               String       @id @default(cuid())
+  id               String      @id @default(cuid())
   sortingBillId    String
-  sortingBill      SortingBill  @relation(fields: [sortingBillId], references: [id], onDelete: Cascade)
+  sortingBill      SortingBill @relation(fields: [sortingBillId], references: [id], onDelete: Cascade)
   productId        String
-  product          Product      @relation(fields: [productId], references: [id])
+  product          Product     @relation(fields: [productId], references: [id])
   weight           Float
-  weightExpression String?      // สูตรน้ำหนักที่คัดแยกได้ เช่น "22-0.2"
-  isWaste          Boolean      @default(false)
-  costPerKg        Float        @default(0) // ต้นทุน FIFO (บัญชี)
-  totalCost        Float        @default(0)
-  sortedPricePerKg Float        @default(0) // ราคารับซื้อสินค้าที่คัดได้ (พนักงานใส่)
-  bonusAmount      Float        @default(0) // โบนัส = (sortedPricePerKg - sourcePricePerKg) * weight * 10%
+  weightExpression String? // สูตรน้ำหนักที่คัดแยกได้ เช่น "22-0.2"
+  isWaste          Boolean     @default(false)
+  costPerKg        Float       @default(0) // ต้นทุน FIFO (บัญชี)
+  totalCost        Float       @default(0)
+  sortedPricePerKg Float       @default(0) // ราคารับซื้อสินค้าที่คัดได้ (พนักงานใส่)
+  bonusAmount      Float       @default(0) // โบนัส = (sortedPricePerKg - sourcePricePerKg) * weight * 10%
 }
 
 // แกะของ/ย้ายสต็อก — consume 1 source product, produce N output products.
 // Structurally similar to SortingBill but has NO bonus fields/relations.
 // Keeps bonus-calculation logic fully isolated.
 model StockTransfer {
-  id                     String               @id @default(cuid())
-  billNumber             String?              @unique
-  date                   DateTime             @default(now())
-  roomNumber             String?              // เลขห้อง (dedicated field; do not use note for room)
-  businessType           String?              // คัดแยก | แกะของ | null — business classification for History tab display (null/empty = แกะของ default)
+  id                     String              @id @default(cuid())
+  billNumber             String?             @unique
+  date                   DateTime            @default(now())
+  roomNumber             String? // เลขห้อง (dedicated field; do not use note for room)
+  businessType           String? // คัดแยก | แกะของ | null — business classification for History tab display (null/empty = แกะของ default)
   // Source (consumed via FIFO)
   sourceProductId        String
-  sourceProduct          Product              @relation("TransferSource", fields: [sourceProductId], references: [id])
+  sourceProduct          Product             @relation("TransferSource", fields: [sourceProductId], references: [id])
   sourceWeight           Float
-  sourceWeightExpression String?              // สูตรน้ำหนักต้นทาง เช่น "100-0.5"
-  sourceCostPerKg        Float                @default(0) // FIFO weighted-avg cost of consumed lots (stored for audit)
-  sourceTotalCost        Float                @default(0) // sourceWeight * sourceCostPerKg (FIFO accounting cost)
+  sourceWeightExpression String? // สูตรน้ำหนักต้นทาง เช่น "100-0.5"
+  sourceCostPerKg        Float               @default(0) // FIFO weighted-avg cost of consumed lots (stored for audit)
+  sourceTotalCost        Float               @default(0) // sourceWeight * sourceCostPerKg (FIFO accounting cost)
   // Profitability analysis fields (manually entered, separate from FIFO stock cost)
-  sourcePricePerKg       Float                @default(0) // ราคาต้นทาง/กก. (manual entry for profitability)
-  laborCost              Float                @default(0) // เวลา/ค่าแรง (manual entry)
-  outputTotalValue       Float                @default(0) // sum(outputWeight * outputPricePerKg) — calculated
-  profitLoss             Float                @default(0) // outputTotalValue - (sourceWeight * sourcePricePerKg) - laborCost
+  sourcePricePerKg       Float               @default(0) // ราคาต้นทาง/กก. (manual entry for profitability)
+  laborCost              Float               @default(0) // เวลา/ค่าแรง (manual entry)
+  outputTotalValue       Float               @default(0) // sum(outputWeight * outputPricePerKg) — calculated
+  profitLoss             Float               @default(0) // outputTotalValue - (sourceWeight * sourcePricePerKg) - laborCost
   // Outputs summary
-  weighedTotal           Float                @default(0) // optional manual weighed total (cross-check)
+  weighedTotal           Float               @default(0) // optional manual weighed total (cross-check)
   weighedTotalExpression String?
-  lossWeight             Float                @default(0) // sourceWeight - sum(output weights)
-  lossCost               Float                @default(0) // lossWeight * sourceCostPerKg
+  lossWeight             Float               @default(0) // sourceWeight - sum(output weights)
+  lossCost               Float               @default(0) // lossWeight * sourceCostPerKg
   note                   String?
   items                  StockTransferItem[]
-  isCancelled            Boolean              @default(false)
+  isCancelled            Boolean             @default(false)
   cancelledAt            DateTime?
   cancelledBy            String?
   cancelReason           String?
-  createdAt              DateTime             @default(now())
-  updatedAt              DateTime             @updatedAt
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 }
 
 model StockTransferItem {
-  id               String         @id @default(cuid())
+  id               String        @id @default(cuid())
   stockTransferId  String
-  stockTransfer    StockTransfer  @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  stockTransfer    StockTransfer @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
   productId        String
-  product          Product        @relation(fields: [productId], references: [id])
+  product          Product       @relation(fields: [productId], references: [id])
   weight           Float
-  weightExpression String?        // สูตรน้ำหนัก output เช่น "20-0.1"
-  isWaste          Boolean        @default(false) // ขยะ/สูญเสีย row — no stock lot created
-  costPerKg        Float          @default(0) // allocated source cost (FIFO avg)
-  totalCost        Float          @default(0)
-  outputPricePerKg Float          @default(0) // ราคาปลายทาง/กก. (manual entry for profitability analysis)
+  weightExpression String? // สูตรน้ำหนัก output เช่น "20-0.1"
+  isWaste          Boolean       @default(false) // ขยะ/สูญเสีย row — no stock lot created
+  costPerKg        Float         @default(0) // allocated source cost (FIFO avg)
+  totalCost        Float         @default(0)
+  outputPricePerKg Float         @default(0) // ราคาปลายทาง/กก. (manual entry for profitability analysis)
   // NOTE: no bonusAmount — dismantle has no worker bonus
 }
 
@@ -215,12 +215,12 @@ model Customer {
 
 model CreditEntry {
   id            String          @id @default(cuid())
-  type          String          // RECEIVABLE (ค้างรับ), PAYABLE (ค้างจ่าย)
+  type          String // RECEIVABLE (ค้างรับ), PAYABLE (ค้างจ่าย)
   amount        Float
   paidAmount    Float           @default(0)
-  customerId    String?         // Only for RECEIVABLE
+  customerId    String? // Only for RECEIVABLE
   customer      Customer?       @relation(fields: [customerId], references: [id])
-  referenceType String          // BUY_BILL, SELL_BILL
+  referenceType String // BUY_BILL, SELL_BILL
   referenceId   String?
   description   String?
   date          DateTime        @default(now())
@@ -241,14 +241,14 @@ model CreditPayment {
 }
 
 model Employee {
-  id        String          @id @default(cuid())
+  id        String         @id @default(cuid())
   name      String
   phone     String?
-  hireDate  DateTime?       // วันเริ่มงาน (ใช้คำนวณสัดส่วนโบนัส)
-  isActive  Boolean         @default(true)
+  hireDate  DateTime? // วันเริ่มงาน (ใช้คำนวณสัดส่วนโบนัส)
+  isActive  Boolean        @default(true)
   bonuses   SortingBonus[]
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
 }
 
 model SortingBonus {
@@ -274,7 +274,7 @@ model User {
   password    String
   name        String
   role        String   @default("staff") // admin, staff
-  permissions String?  // JSON array of permission strings e.g. ["customer.create","buy.create"]; null = no extra permissions (admin gets all implicitly via role)
+  permissions String? // JSON array of permission strings e.g. ["customer.create","buy.create"]; null = no extra permissions (admin gets all implicitly via role)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -283,12 +283,12 @@ model User {
 // Audit log for tracking create/edit/delete/cancel actions on bills
 model AuditLog {
   id         String   @id @default(cuid())
-  action     String   // CREATE, UPDATE, DELETE, CANCEL
-  entityType String   // BUY_BILL, SELL_BILL, SORTING_BILL, STOCK_TRANSFER, PHYSICAL_COUNT, USER_PERMISSION
+  action     String // CREATE, UPDATE, DELETE, CANCEL
+  entityType String // BUY_BILL, SELL_BILL, SORTING_BILL, STOCK_TRANSFER, PHYSICAL_COUNT, USER_PERMISSION
   entityId   String
   userId     String?
   userName   String?
-  details    String?  // JSON string of changes/summary
+  details    String? // JSON string of changes/summary
   createdAt  DateTime @default(now())
 
   @@index([entityType, entityId])
@@ -299,17 +299,17 @@ model AuditLog {
 // crash-safe, retry-safe rollback. An Operation has multiple Items (one per lot).
 // Retry with same requestId resumes the existing Operation, skipping COMPLETED items.
 model CompensationOperation {
-  id              String    @id @default(cuid())
-  requestId       String    @unique // client/server request ID — one operation per request
-  operationType   String    // STOCK_TRANSFER_CREATE, PHYSICAL_COUNT_APPLY, etc.
-  sourceEntityId  String?   // optional: the bill/session ID that failed
-  status          String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
-  error           String?   // error message if FAILED
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  completedAt     DateTime? // set when status = COMPLETED
+  id             String    @id @default(cuid())
+  requestId      String    @unique // client/server request ID — one operation per request
+  operationType  String // STOCK_TRANSFER_CREATE, PHYSICAL_COUNT_APPLY, etc.
+  sourceEntityId String? // optional: the bill/session ID that failed
+  status         String    @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED, FAILED
+  error          String? // error message if FAILED
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime? // set when status = COMPLETED
 
-  items           CompensationItem[]
+  items CompensationItem[]
 
   @@index([requestId])
   @@index([status])
@@ -317,16 +317,16 @@ model CompensationOperation {
 
 // ST-14: Compensation Item — one per StockLot to restore. Tracks per-lot status.
 model CompensationItem {
-  id            String    @id @default(cuid())
-  operationId   String    // FK to CompensationOperation
-  operation     CompensationOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
-  lotId         String    // StockLot.id to restore
-  amount        Float     // weight to restore
-  beforeWeight  Float     // lot.remainingWeight before compensation (for audit)
-  afterWeight   Float?    // lot.remainingWeight after compensation (set when COMPLETED)
-  status        String    @default("PENDING") // PENDING, COMPLETED, FAILED
-  error         String?   // error message if FAILED
-  completedAt   DateTime? // set when status = COMPLETED
+  id           String                @id @default(cuid())
+  operationId  String // FK to CompensationOperation
+  operation    CompensationOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  lotId        String // StockLot.id to restore
+  amount       Float // weight to restore
+  beforeWeight Float // lot.remainingWeight before compensation (for audit)
+  afterWeight  Float? // lot.remainingWeight after compensation (set when COMPLETED)
+  status       String                @default("PENDING") // PENDING, COMPLETED, FAILED
+  error        String? // error message if FAILED
+  completedAt  DateTime? // set when status = COMPLETED
 
   @@unique([operationId, lotId]) // one item per lot per operation
   @@index([operationId])
@@ -336,20 +336,20 @@ model CompensationItem {
 
 // Physical count session for end-of-day stock verification
 model PhysicalCountSession {
-  id            String   @id @default(cuid())
-  countDate     DateTime
-  group         String   // ทองแดง, ทองเหลือง
-  status        String   @default("DRAFT") // DRAFT, APPLIED
-  note          String?
+  id           String              @id @default(cuid())
+  countDate    DateTime
+  group        String // ทองแดง, ทองเหลือง
+  status       String              @default("DRAFT") // DRAFT, APPLIED
+  note         String?
   // ST-9: Structured apply metadata (replaces note-based tracking)
-  appliedById   String?  // null = not applied; userId of who applied
-  appliedAt     DateTime? // null = not applied; timestamp of apply
-  appliedNote   String?  // optional note entered at apply time (separate from draft note)
+  appliedById  String? // null = not applied; userId of who applied
+  appliedAt    DateTime? // null = not applied; timestamp of apply
+  appliedNote  String? // optional note entered at apply time (separate from draft note)
   // ST-9: Reversal reference (for future reversal-adjustment feature)
-  reversalOfId  String?  // if this session is a reversal, points to original session ID
-  items         PhysicalCountItem[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  reversalOfId String? // if this session is a reversal, points to original session ID
+  items        PhysicalCountItem[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
   @@index([countDate])
   @@index([group])
@@ -357,19 +357,19 @@ model PhysicalCountSession {
 }
 
 model PhysicalCountItem {
-  id               String   @id @default(cuid())
+  id               String               @id @default(cuid())
   sessionId        String
   session          PhysicalCountSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   productId        String
-  product          Product  @relation(fields: [productId], references: [id])
+  product          Product              @relation(fields: [productId], references: [id])
   systemWeight     Float
-  physicalWeight   Float    @default(0)
-  differenceWeight Float    @default(0)
-  averageCost      Float    @default(0)
-  valueDifference  Float    @default(0)
+  physicalWeight   Float                @default(0)
+  differenceWeight Float                @default(0)
+  averageCost      Float                @default(0)
+  valueDifference  Float                @default(0)
   note             String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   @@index([sessionId])
   @@index([productId])
@@ -381,7 +381,7 @@ model PhysicalCountItem {
 model DailyPurchaseWeighingSession {
   id           String   @id @default(cuid())
   weighingDate DateTime
-  category     String   // ทองแดง, ทองเหลือง
+  category     String // ทองแดง, ทองเหลือง
   status       String   @default("SAVED") // SAVED (locked, cannot edit)
   note         String?
   createdById  String?
@@ -396,14 +396,18 @@ model DailyPurchaseWeighingSession {
 }
 
 model DailyPurchaseWeighingItem {
-  id                  String   @id @default(cuid())
-  sessionId           String
-  session             DailyPurchaseWeighingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  productId           String
-  product             Product  @relation(fields: [productId], references: [id])
+  id        String                       @id @default(cuid())
+  sessionId String
+  session   DailyPurchaseWeighingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product                      @relation(fields: [productId], references: [id])
 
-  // ST-38: source-breakdown snapshot at save time (server-computed, client never sends these)
-  purchaseWeight          Float @default(0) // Snapshot from BuyBill aggregation (renamed from purchasedWeight for clarity)
+  // ST-38: source-breakdown snapshot at save time (server-computed, client never sends these).
+  // The application-facing field is `purchaseWeight` (clearer than the original ST-35 name
+  // `purchasedWeight`), but the physical PostgreSQL column is kept as `purchasedWeight`
+  // via @map for zero-downtime backward compatibility with the currently-deployed ST-35 code.
+  // ST-38 migration only ADDs the 5 new source-breakdown columns; it does NOT rename.
+  purchaseWeight          Float @default(0) @map("purchasedWeight") // physical column retained for backward compat
   purchaseBillCount       Int   @default(0) // Snapshot: how many BuyBills had this product
   sortingOutputWeight     Float @default(0) // Snapshot from SortingBillItem (isWaste=false) + StockTransferItem (isWaste=false, businessType='คัดแยก')
   sortingBillCount        Int   @default(0) // Snapshot: how many SortingBills + sorting-type StockTransfers had this product
@@ -411,9 +415,9 @@ model DailyPurchaseWeighingItem {
   dismantlingRecordCount  Int   @default(0) // Snapshot: how many dismantling-type StockTransfers had this product
   expectedTotalWeight     Float @default(0) // Snapshot: purchaseWeight + sortingOutputWeight + dismantlingOutputWeight (basis for difference)
 
-  actualWeighedWeight Float?   // null = not weighed yet; 0 = weighed and got zero
-  differenceWeight    Float?   // null = not calculated; actual - expectedTotalWeight
-  status              String   // MATCH, DIFFERENCE, NOT_WEIGHED
+  actualWeighedWeight Float? // null = not weighed yet; 0 = weighed and got zero
+  differenceWeight    Float? // null = not calculated; actual - expectedTotalWeight
+  status              String // MATCH, DIFFERENCE, NOT_WEIGHED
   note                String?
 
   createdAt DateTime @default(now())
