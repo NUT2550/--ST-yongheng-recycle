@@ -8,6 +8,7 @@ import {
   validateSourceLotCosts,
   verifyFifoMatch,
   buildFifoAuditDetails,
+  FIFO_ORDER_BY,
 } from '@/lib/fifo-validation';
 
 // Helper: Deduct stock using FIFO and return weighted average cost
@@ -15,13 +16,13 @@ async function deductStockFIFO(
   productId: string,
   weightToDeduct: number,
   tx: Parameters<Parameters<typeof db.$transaction>[0]>[0]
-): Promise<{ costPerKg: number; totalCost: number }> {
+): Promise<{ costPerKg: number; totalCost: number; deductedLots: { id: string; deducted: number }[] }> {
   const lots = await tx.stockLot.findMany({
     where: {
       productId,
       remainingWeight: { gt: 0 },
     },
-    orderBy: { dateAdded: 'asc' },
+    orderBy: FIFO_ORDER_BY,
   });
 
   const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
@@ -33,6 +34,7 @@ async function deductStockFIFO(
 
   let remaining = weightToDeduct;
   let totalCost = 0;
+  const deductedLots: { id: string; deducted: number }[] = [];
 
   for (const lot of lots) {
     if (remaining <= 0) break;
@@ -45,12 +47,14 @@ async function deductStockFIFO(
       where: { id: lot.id },
       data: { remainingWeight: lot.remainingWeight - deductFromLot },
     });
+    deductedLots.push({ id: lot.id, deducted: deductFromLot });
   }
 
   const costPerKg = weightToDeduct > 0 ? totalCost / weightToDeduct : 0;
   return {
     costPerKg: Math.round(costPerKg * 100) / 100,
     totalCost: Math.round(totalCost * 100) / 100,
+    deductedLots,
   };
 }
 
@@ -138,6 +142,7 @@ export async function POST(request: NextRequest) {
         productId: sourceProductId,
         remainingWeight: { gt: 0 },
       },
+      orderBy: FIFO_ORDER_BY,
     });
     const totalAvailable = sourceLots.reduce((sum, l) => sum + l.remainingWeight, 0);
     if (totalAvailable < sourceWeight) {
@@ -172,6 +177,7 @@ export async function POST(request: NextRequest) {
         remainingWeight: l.remainingWeight,
         costPerKg: l.costPerKg,
         dateAdded: l.dateAdded,
+        createdAt: l.createdAt,
       }))
     );
 
@@ -220,7 +226,7 @@ export async function POST(request: NextRequest) {
 
     // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
     // (detects race conditions / concurrent modifications between preview and deduction)
-    if (!verifyFifoMatch(fifoPreview, fifoResult)) {
+    if (!verifyFifoMatch(fifoPreview, { ...fifoResult, deductedLots: fifoResult.deductedLots })) {
       // Mismatch — compensate by restoring deducted stock
       console.error(
         `[ST-20] FIFO mismatch detected | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`

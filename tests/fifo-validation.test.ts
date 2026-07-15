@@ -21,8 +21,9 @@ const makeLot = (
   id: string,
   remainingWeight: number,
   costPerKg: number,
-  dateAdded: Date = new Date('2026-01-01')
-) => ({ id, remainingWeight, costPerKg, dateAdded });
+  dateAdded: Date = new Date('2026-01-01'),
+  createdAt: Date = dateAdded
+) => ({ id, remainingWeight, costPerKg, dateAdded, createdAt });
 
 describe('previewFifoDeduction', () => {
   test('1. Normal sorting with valid source cost (>0) — single lot', () => {
