@@ -26,6 +26,16 @@
 
 export const YIELD_WEIGHT_TOLERANCE = 0.01 // kg — output within this of source is "exact"
 
+// ST-40: Stored costPerKg precision.
+// StockLot.costPerKg and StockTransferItem.costPerKg are stored with 6 decimal places
+// (NOT 2) so that round(weight × costPerKg, 2) === totalCost within 1 cent.
+// Rounding to 2 decimals causes reconstruction drift (e.g. 826.80 → 826.81).
+// 6 decimals guarantees the invariant for weights up to 10,000 kg:
+//   max error = 10000 × 0.5 × 10^-6 = 0.005 < 0.01 tolerance.
+// totalCost remains the authoritative 2-decimal allocation amount (in cents).
+export const COST_PER_KG_DECIMALS = 6
+export const COST_RECONSTRUCTION_TOLERANCE = 0.01 // 1 cent — acceptable drift for reconstruction
+
 export interface GainLossResult {
   outputTotalWeight: number
   lossWeight: number // always >= 0
@@ -143,7 +153,13 @@ export function allocateOutputCosts(
       productId: i.productId,
       weight: i.weight,
       isWaste: i.isWaste,
-      costPerKg: Math.round(costPerKg * 100) / 100,
+      // ST-40: Store costPerKg with 6 decimal places (NOT 2) so that
+      // round(weight × costPerKg, 2) === totalCost within 1 cent.
+      // Rounding to 2 decimals causes reconstruction drift (e.g. 826.80 → 826.81).
+      // 6 decimals guarantees the invariant for weights up to 10,000 kg:
+      // max error = 10000 × 0.5 × 10^-6 = 0.005 < 0.01 tolerance.
+      // totalCost remains the authoritative 2-decimal allocation amount.
+      costPerKg: Math.round(costPerKg * 1000000) / 1000000,
       totalCost: Math.round(totalCost * 100) / 100,
     }
   })
@@ -172,6 +188,47 @@ export function verifyCostConservation(
     .reduce((s, i) => s + Math.round(i.totalCost * 100), 0)
   const source = Math.round(sourceTotalCost * 100)
   return Math.abs(allocated - source) <= 1 // 1 cent tolerance
+}
+
+/**
+ * ST-40: Verify that a StockLot's stored costPerKg can reconstruct its totalCost.
+ *
+ * Required invariant:
+ *   abs(round(weight × storedCostPerKg, 2) - allocatedItemTotalCost) <= 0.01
+ *
+ * This catches the precision drift blocker: if costPerKg is rounded to 2 decimals,
+ * weight × costPerKg may not equal totalCost (e.g. 24.60 × 33.61 = 826.81 ≠ 826.80).
+ * With 6-decimal precision, the reconstruction is exact within 1 cent.
+ *
+ * Pure function — no DB, no side effects.
+ */
+export function verifyLotReconstruction(
+  weight: number,
+  storedCostPerKg: number,
+  allocatedTotalCost: number
+): boolean {
+  const reconstructed = Math.round(weight * storedCostPerKg * 100) / 100
+  return Math.abs(reconstructed - allocatedTotalCost) <= 0.01 // 1 cent tolerance
+}
+
+/**
+ * ST-40: Verify that ALL output StockLots reconstruct the sourceTotalCost.
+ *
+ * Overall invariant:
+ *   abs(round(sum(weight × storedCostPerKg), 2) - sourceTotalCost) <= 0.01
+ *
+ * Pure function — no DB, no side effects.
+ */
+export function verifyOverallLotReconstruction(
+  sourceTotalCost: number,
+  items: AllocatedItemCost[]
+): boolean {
+  const reconstructedSum = Math.round(
+    items
+      .filter((i) => !i.isWaste)
+      .reduce((s, i) => s + i.weight * i.costPerKg, 0) * 100
+  ) / 100
+  return Math.abs(reconstructedSum - sourceTotalCost) <= 0.01
 }
 
 /**
