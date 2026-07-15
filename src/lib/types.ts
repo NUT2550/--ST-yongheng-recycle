@@ -378,6 +378,7 @@ export interface CreateStockTransferRequest {
   weighedTotal?: number;
   weighedTotalExpression?: string;
   note?: string;
+  gainReason?: string; // ST-40: required when output > source
   items: Array<{
     productId: string;
     weight: number;

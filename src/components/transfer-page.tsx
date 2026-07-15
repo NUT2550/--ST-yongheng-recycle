@@ -56,6 +56,7 @@ export function TransferPage() {
   const [isWaste, setIsWaste] = useState(false);
   const [dateTime, setDateTime] = useState<string>(getCurrentDateForInput());
   const [note, setNote] = useState<string>('');
+  const [gainReason, setGainReason] = useState<string>(''); // ST-40: required when output > source
 
   // Edit state for output rows
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -125,15 +126,24 @@ export function TransferPage() {
     [transferCartItems]
   );
 
+  // ST-40: positive yield — output may exceed source for แกะของ (dismantling)
   const lossWeight = useMemo(
-    () => Math.round((transferSourceWeight - totalOutputWeight) * 100) / 100,
+    () => Math.round(Math.max(transferSourceWeight - totalOutputWeight, 0) * 100) / 100,
     [transferSourceWeight, totalOutputWeight]
   );
-
+  const gainWeight = useMemo(
+    () => Math.round(Math.max(totalOutputWeight - transferSourceWeight, 0) * 100) / 100,
+    [transferSourceWeight, totalOutputWeight]
+  );
+  const weightVariance = useMemo(
+    () => Math.round((totalOutputWeight - transferSourceWeight) * 100) / 100,
+    [transferSourceWeight, totalOutputWeight]
+  );
   const lossCost = useMemo(
     () => Math.round(lossWeight * sourceCostPerKg * 100) / 100,
     [lossWeight, sourceCostPerKg]
   );
+  const hasGain = gainWeight > 0.01;
 
   // Profitability analysis
   const outputTotalValue = useMemo(
@@ -271,9 +281,10 @@ export function TransferPage() {
       toast.error('กรุณากรอกน้ำหนักต้นทาง');
       return;
     }
-    if (totalOutputWeight > transferSourceWeight + 0.01) {
+    // ST-40: positive yield allowed for แกะของ — but require a reason
+    if (hasGain && !gainReason.trim()) {
       toast.error(
-        `น้ำหนัก output รวม (${formatWeight(totalOutputWeight)}) เกินน้ำหนักต้นทาง (${formatWeight(transferSourceWeight)})`
+        `น้ำหนัก output มากกว่าต้นทาง ${formatWeight(gainWeight)} กก. กรุณาระบุเหตุผล (เช่น หักน้ำหนักประเมินตอนซื้อ)`
       );
       return;
     }
@@ -308,6 +319,7 @@ export function TransferPage() {
         weighedTotal: transferWeighedTotal,
         weighedTotalExpression,
         note: note || undefined,
+        gainReason: hasGain ? gainReason.trim() : undefined,
         items: transferCartItems.map((item) => ({
           productId: item.productId,
           weight: item.weight,
@@ -327,6 +339,7 @@ export function TransferPage() {
       setWeighedTotalInput('');
       setDateTime(getCurrentDateForInput());
       setNote('');
+      setGainReason('');
 
       const profitMsg = ` | กำไร/ขาดทุน ${formatBaht(bill?.profitLoss ?? profitLoss)} บาท`;
       toast.success(
@@ -708,20 +721,26 @@ export function TransferPage() {
                     {formatWeight(lossWeight)} กก. ({formatBaht(lossCost)} บาท)
                   </span>
                 </div>
-              ) : lossWeight < 0 ? (
-                <div className="flex justify-between text-sm p-2 rounded bg-red-50 border border-red-200">
-                  <span className="text-red-700 font-medium flex items-center gap-1">
+              ) : gainWeight > 0 ? (
+                <div className="flex justify-between text-sm p-2 rounded bg-amber-50 border border-amber-300">
+                  <span className="text-amber-700 font-medium flex items-center gap-1">
                     <AlertTriangle className="h-3.5 w-3.5" />
-                    output เกินต้นทาง!
+                    เพิ่มจากการชั่งจริง
                   </span>
-                  <span className="font-bold text-red-700">
-                    +{formatWeight(Math.abs(lossWeight))} กก.
+                  <span className="font-bold text-amber-700">
+                    +{formatWeight(gainWeight)} กก.
                   </span>
                 </div>
               ) : (
                 <div className="flex justify-between text-sm">
                   <span className="text-green-600">สูญเสีย</span>
                   <span className="font-medium text-green-600">0.00 กก.</span>
+                </div>
+              )}
+              {gainWeight > 0 && (
+                <div className="text-[11px] text-amber-600 leading-tight">
+                  สต็อกต้นทางจะถูกหักเฉพาะ {formatWeight(transferSourceWeight)} กก.
+                  สต็อก output จะถูกเพิ่มตามน้ำหนักจริง {formatWeight(totalOutputWeight)} กก.
                 </div>
               )}
 
@@ -778,9 +797,26 @@ export function TransferPage() {
                 </div>
               )}
 
+              {hasGain && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-amber-700 font-medium">
+                    เหตุผลที่ output มากกว่าต้นทาง <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    type="text"
+                    placeholder="เช่น หักน้ำหนักประเมินตอนซื้อ"
+                    value={gainReason}
+                    onChange={(e) => setGainReason(e.target.value)}
+                    className="text-sm h-8 border-amber-300"
+                  />
+                  <p className="text-[10px] text-amber-600">
+                    ต้องระบุเหตุผลเมื่อน้ำหนัก output มากกว่าต้นทาง
+                  </p>
+                </div>
+              )}
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || lossWeight < 0 || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight}
+                disabled={submitting || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight || (hasGain && !gainReason.trim())}
                 className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
               >
                 {submitting ? (

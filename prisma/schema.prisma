@@ -176,8 +176,12 @@ model StockTransfer {
   // Outputs summary
   weighedTotal           Float               @default(0) // optional manual weighed total (cross-check)
   weighedTotalExpression String?
-  lossWeight             Float               @default(0) // sourceWeight - sum(output weights)
+  lossWeight             Float               @default(0) // max(sourceWeight - outputTotal, 0) — always >= 0
   lossCost               Float               @default(0) // lossWeight * sourceCostPerKg
+  // ST-40: positive yield (dismantling output exceeds estimated net source weight)
+  gainWeight             Float               @default(0) // max(outputTotal - sourceWeight, 0) — always >= 0
+  weightVariance         Float               @default(0) // signed: outputTotal - sourceWeight
+  gainReason             String? // required when gainWeight > 0 (e.g. หักน้ำหนักประเมินตอนซื้อ)
   note                   String?
   items                  StockTransferItem[]
   isCancelled            Boolean             @default(false)
