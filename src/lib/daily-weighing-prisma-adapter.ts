@@ -1,8 +1,12 @@
 /**
- * ST-35: Prisma adapter — production implementation of the repository interface.
+ * ST-35 / ST-38: Prisma adapter — production implementation of the repository interface.
  *
  * Uses the real Prisma `db` client. Tests use FakeDailyPurchaseWeighingRepository
  * which implements the same interface with in-memory collections.
+ *
+ * ST-38: now also fetches SortingBills and StockTransfers (with isWaste=false,
+ * non-cancelled) and passes the new source-breakdown fields through to
+ * DailyPurchaseWeighingItem at save time.
  */
 
 import { db } from '@/lib/db';
@@ -12,6 +16,8 @@ import type {
   CategoryRow,
   ProductRow,
   BuyBillRow,
+  SortingBillRow,
+  StockTransferRow,
   DailyWeighingSessionRow,
   SessionCreateData,
   AuditLogCreateData,
@@ -47,6 +53,47 @@ export class PrismaDailyPurchaseWeighingRepository implements DailyPurchaseWeigh
         productId: it.productId,
         weight: it.weight,
         totalAmount: it.totalAmount,
+        product: { id: it.product.id, name: it.product.name },
+      })),
+    }));
+  }
+
+  async findSortingBillsByDateRange(startDate: Date, endDate: Date): Promise<SortingBillRow[]> {
+    const bills = await db.sortingBill.findMany({
+      where: { isCancelled: false, date: { gte: startDate, lte: endDate } },
+      include: {
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+    return bills.map(b => ({
+      id: b.id,
+      date: b.date,
+      isCancelled: b.isCancelled,
+      items: b.items.map(it => ({
+        productId: it.productId,
+        weight: it.weight,
+        isWaste: it.isWaste,
+        product: { id: it.product.id, name: it.product.name },
+      })),
+    }));
+  }
+
+  async findStockTransfersByDateRange(startDate: Date, endDate: Date): Promise<StockTransferRow[]> {
+    const transfers = await db.stockTransfer.findMany({
+      where: { isCancelled: false, date: { gte: startDate, lte: endDate } },
+      include: {
+        items: { include: { product: { select: { id: true, name: true } } } },
+      },
+    });
+    return transfers.map(t => ({
+      id: t.id,
+      date: t.date,
+      isCancelled: t.isCancelled,
+      businessType: t.businessType,
+      items: t.items.map(it => ({
+        productId: it.productId,
+        weight: it.weight,
+        isWaste: it.isWaste,
         product: { id: it.product.id, name: it.product.name },
       })),
     }));
@@ -104,7 +151,22 @@ export class PrismaDailyPurchaseWeighingRepository implements DailyPurchaseWeigh
               status: data.status,
               note: data.note,
               createdById: data.createdById,
-              items: { create: data.items },
+              items: {
+                create: data.items.map(item => ({
+                  productId: item.productId,
+                  purchaseWeight: item.purchaseWeight,
+                  purchaseBillCount: item.purchaseBillCount,
+                  sortingOutputWeight: item.sortingOutputWeight,
+                  sortingBillCount: item.sortingBillCount,
+                  dismantlingOutputWeight: item.dismantlingOutputWeight,
+                  dismantlingRecordCount: item.dismantlingRecordCount,
+                  expectedTotalWeight: item.expectedTotalWeight,
+                  actualWeighedWeight: item.actualWeighedWeight,
+                  differenceWeight: item.differenceWeight,
+                  status: item.status,
+                  note: item.note,
+                })),
+              },
             },
             include: { items: { include: { product: { select: { id: true, name: true } } } } },
           });
@@ -121,8 +183,13 @@ export class PrismaDailyPurchaseWeighingRepository implements DailyPurchaseWeigh
             items: created.items.map(it => ({
               id: it.id,
               productId: it.productId,
-              purchasedWeight: it.purchasedWeight,
+              purchaseWeight: it.purchaseWeight,
               purchaseBillCount: it.purchaseBillCount,
+              sortingOutputWeight: it.sortingOutputWeight,
+              sortingBillCount: it.sortingBillCount,
+              dismantlingOutputWeight: it.dismantlingOutputWeight,
+              dismantlingRecordCount: it.dismantlingRecordCount,
+              expectedTotalWeight: it.expectedTotalWeight,
               actualWeighedWeight: it.actualWeighedWeight,
               differenceWeight: it.differenceWeight,
               status: it.status,
@@ -161,8 +228,13 @@ export class PrismaDailyPurchaseWeighingRepository implements DailyPurchaseWeigh
       items: s.items.map((it: any) => ({
         id: it.id,
         productId: it.productId,
-        purchasedWeight: it.purchasedWeight,
+        purchaseWeight: it.purchaseWeight,
         purchaseBillCount: it.purchaseBillCount,
+        sortingOutputWeight: it.sortingOutputWeight,
+        sortingBillCount: it.sortingBillCount,
+        dismantlingOutputWeight: it.dismantlingOutputWeight,
+        dismantlingRecordCount: it.dismantlingRecordCount,
+        expectedTotalWeight: it.expectedTotalWeight,
         actualWeighedWeight: it.actualWeighedWeight,
         differenceWeight: it.differenceWeight,
         status: it.status,

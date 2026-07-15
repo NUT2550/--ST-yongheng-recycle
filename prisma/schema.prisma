@@ -402,10 +402,17 @@ model DailyPurchaseWeighingItem {
   productId           String
   product             Product  @relation(fields: [productId], references: [id])
 
-  purchasedWeight     Float    // Snapshot from BuyBill aggregation at save time
-  purchaseBillCount   Int      // Snapshot: how many bills had this product
+  // ST-38: source-breakdown snapshot at save time (server-computed, client never sends these)
+  purchaseWeight          Float @default(0) // Snapshot from BuyBill aggregation (renamed from purchasedWeight for clarity)
+  purchaseBillCount       Int   @default(0) // Snapshot: how many BuyBills had this product
+  sortingOutputWeight     Float @default(0) // Snapshot from SortingBillItem (isWaste=false) + StockTransferItem (isWaste=false, businessType='คัดแยก')
+  sortingBillCount        Int   @default(0) // Snapshot: how many SortingBills + sorting-type StockTransfers had this product
+  dismantlingOutputWeight Float @default(0) // Snapshot from StockTransferItem (isWaste=false, businessType='แกะของ' or null/blank)
+  dismantlingRecordCount  Int   @default(0) // Snapshot: how many dismantling-type StockTransfers had this product
+  expectedTotalWeight     Float @default(0) // Snapshot: purchaseWeight + sortingOutputWeight + dismantlingOutputWeight (basis for difference)
+
   actualWeighedWeight Float?   // null = not weighed yet; 0 = weighed and got zero
-  differenceWeight    Float?   // null = not calculated; actual - purchased
+  differenceWeight    Float?   // null = not calculated; actual - expectedTotalWeight
   status              String   // MATCH, DIFFERENCE, NOT_WEIGHED
   note                String?
 

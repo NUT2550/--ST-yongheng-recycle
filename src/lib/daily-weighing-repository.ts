@@ -1,11 +1,16 @@
 /**
- * ST-35: Repository interface for daily purchase weighing.
+ * ST-35 / ST-38: Repository interface for daily purchase weighing.
  *
  * Production adapter uses Prisma `db`.
  * Test adapter uses in-memory collections with real commit/rollback.
  *
  * Both implement the SAME interface — production and tests share
  * the same service logic.
+ *
+ * ST-38: extended with SortingBill and StockTransfer rows so the
+ * aggregation service can include sorting outputs (SortingBills +
+ * StockTransfers with businessType='คัดแยก') and dismantling outputs
+ * (StockTransfers with businessType='แกะของ' or null/blank).
  */
 
 export interface BuyBillRow {
@@ -16,6 +21,31 @@ export interface BuyBillRow {
     productId: string;
     weight: number;
     totalAmount: number;
+    product: { id: string; name: string };
+  }>;
+}
+
+export interface SortingBillRow {
+  id: string;
+  date: Date;
+  isCancelled: boolean;
+  items: Array<{
+    productId: string;
+    weight: number;
+    isWaste: boolean;
+    product: { id: string; name: string };
+  }>;
+}
+
+export interface StockTransferRow {
+  id: string;
+  date: Date;
+  isCancelled: boolean;
+  businessType: string | null;
+  items: Array<{
+    productId: string;
+    weight: number;
+    isWaste: boolean;
     product: { id: string; name: string };
   }>;
 }
@@ -43,8 +73,13 @@ export interface DailyWeighingSessionRow {
   items: Array<{
     id: string;
     productId: string;
-    purchasedWeight: number;
+    purchaseWeight: number;
     purchaseBillCount: number;
+    sortingOutputWeight: number;
+    sortingBillCount: number;
+    dismantlingOutputWeight: number;
+    dismantlingRecordCount: number;
+    expectedTotalWeight: number;
     actualWeighedWeight: number | null;
     differenceWeight: number | null;
     status: string;
@@ -55,8 +90,13 @@ export interface DailyWeighingSessionRow {
 
 export interface DailyWeighingItemCreateData {
   productId: string;
-  purchasedWeight: number;
+  purchaseWeight: number;
   purchaseBillCount: number;
+  sortingOutputWeight: number;
+  sortingBillCount: number;
+  dismantlingOutputWeight: number;
+  dismantlingRecordCount: number;
+  expectedTotalWeight: number;
   actualWeighedWeight: number | null;
   differenceWeight: number | null;
   status: string;
@@ -89,6 +129,8 @@ export interface DailyPurchaseWeighingRepository {
   findCategoryByName(name: string): Promise<CategoryRow | null>;
   findProductsByCategory(categoryId: string): Promise<ProductRow[]>;
   findBuyBillsByDateRange(startDate: Date, endDate: Date): Promise<BuyBillRow[]>;
+  findSortingBillsByDateRange(startDate: Date, endDate: Date): Promise<SortingBillRow[]>;
+  findStockTransfersByDateRange(startDate: Date, endDate: Date): Promise<StockTransferRow[]>;
   findExistingSession(weighingDate: Date, category: string): Promise<DailyWeighingSessionRow | null>;
   listSessions(skip: number, take: number): Promise<{ sessions: DailyWeighingSessionRow[]; total: number }>;
   findSessionById(id: string): Promise<DailyWeighingSessionRow | null>;

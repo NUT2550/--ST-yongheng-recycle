@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
@@ -16,28 +15,59 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose,
 } from '@/components/ui/dialog';
-import { Scale, Loader2, Save, History, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Scale, Loader2, Save, History, RefreshCw } from 'lucide-react';
 import { getAuthToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatWeight } from '@/lib/helpers';
 
 const TOLERANCE = 0.10;
 
+// ST-38: client mirror of the server's AggregatedProduct shape.
 interface AggregateItem {
   productId: string;
   productName: string;
-  purchasedWeight: number;
+  purchaseWeight: number;
   purchaseBillCount: number;
+  sortingOutputWeight: number;
+  sortingBillCount: number;
+  dismantlingOutputWeight: number;
+  dismantlingRecordCount: number;
+  expectedTotalWeight: number;
   totalAmount: number;
 }
 
+// ST-38: client-side row state — only actualWeighedWeight + note are user-editable.
+// All source-breakdown fields are READ-ONLY (server-computed at save time).
 interface WeighingItem {
   productId: string;
   productName: string;
-  purchasedWeight: number;
+  purchaseWeight: number;
   purchaseBillCount: number;
+  sortingOutputWeight: number;
+  sortingBillCount: number;
+  dismantlingOutputWeight: number;
+  dismantlingRecordCount: number;
+  expectedTotalWeight: number;
   actualWeighedWeight: string;
   note: string;
+}
+
+// ST-38: session detail (read-only) — mirrors the new schema fields.
+interface SessionItem {
+  id: string;
+  productId: string;
+  purchaseWeight: number;
+  purchaseBillCount: number;
+  sortingOutputWeight: number;
+  sortingBillCount: number;
+  dismantlingOutputWeight: number;
+  dismantlingRecordCount: number;
+  expectedTotalWeight: number;
+  actualWeighedWeight: number | null;
+  differenceWeight: number | null;
+  status: string;
+  note: string | null;
+  product: { name: string };
 }
 
 interface Session {
@@ -47,17 +77,7 @@ interface Session {
   status: string;
   note: string | null;
   createdAt: string;
-  items: Array<{
-    id: string;
-    productId: string;
-    purchasedWeight: number;
-    purchaseBillCount: number;
-    actualWeighedWeight: number | null;
-    differenceWeight: number | null;
-    status: string;
-    note: string | null;
-    product: { name: string };
-  }>;
+  items: SessionItem[];
 }
 
 export default function DailyWeighingPage() {
@@ -96,19 +116,25 @@ export default function DailyWeighingPage() {
         toast.error(data.error || 'โหลดข้อมูลไม่สำเร็จ');
         return;
       }
-      setAggregateItems(data.items || []);
+      const items: AggregateItem[] = data.items || [];
+      setAggregateItems(items);
       setWeighingItems(
-        (data.items || []).map((item: AggregateItem) => ({
+        items.map((item) => ({
           productId: item.productId,
           productName: item.productName,
-          purchasedWeight: item.purchasedWeight,
+          purchaseWeight: item.purchaseWeight,
           purchaseBillCount: item.purchaseBillCount,
+          sortingOutputWeight: item.sortingOutputWeight,
+          sortingBillCount: item.sortingBillCount,
+          dismantlingOutputWeight: item.dismantlingOutputWeight,
+          dismantlingRecordCount: item.dismantlingRecordCount,
+          expectedTotalWeight: item.expectedTotalWeight,
           actualWeighedWeight: '',
           note: '',
         }))
       );
-      if ((data.items || []).length === 0) {
-        toast.info(`ไม่มีใบซื้อ${category}ของวันที่ ${toBuddhistDate(date)}`);
+      if (items.length === 0) {
+        toast.info(`ไม่มียอด${category}ของวันที่ ${toBuddhistDate(date)}`);
       }
     } catch {
       toast.error('โหลดข้อมูลไม่สำเร็จ');
@@ -140,8 +166,9 @@ export default function DailyWeighingPage() {
     setSaving(true);
     try {
       const token = getAuthToken();
-      // ST-35: Client sends ONLY productId, actualWeighedWeight, and note.
-      // Server recomputes purchasedWeight, purchaseBillCount, difference, status.
+      // ST-35/ST-38 trust boundary: client sends ONLY productId, actualWeighedWeight, note.
+      // Server recomputes ALL source totals (purchaseWeight, sortingOutputWeight,
+      // dismantlingOutputWeight, expectedTotalWeight, difference, status).
       const items = weighingItems.map(item => ({
         productId: item.productId,
         actualWeighedWeight: item.actualWeighedWeight === '' ? null : parseFloat(item.actualWeighedWeight),
@@ -185,9 +212,12 @@ export default function DailyWeighingPage() {
   }
 
   // Calculate totals
-  const totalPurchased = weighingItems.reduce((s, i) => s + i.purchasedWeight, 0);
+  const totalPurchase = weighingItems.reduce((s, i) => s + i.purchaseWeight, 0);
+  const totalSorting = weighingItems.reduce((s, i) => s + i.sortingOutputWeight, 0);
+  const totalDismantling = weighingItems.reduce((s, i) => s + i.dismantlingOutputWeight, 0);
+  const totalExpected = Math.round((totalPurchase + totalSorting + totalDismantling) * 100) / 100;
   const totalActual = weighingItems.reduce((s, i) => s + (parseFloat(i.actualWeighedWeight) || 0), 0);
-  const totalDiff = Math.round((totalActual - totalPurchased) * 100) / 100;
+  const totalDiff = Math.round((totalActual - totalExpected) * 100) / 100;
 
   return (
     <div className="space-y-4">
@@ -195,7 +225,7 @@ export default function DailyWeighingPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <Scale className="h-5 w-5" /> ชั่งยอดซื้อทองแดง/ทองเหลืองประจำวัน
+            <Scale className="h-5 w-5" /> ชั่งยอดทองแดง/ทองเหลืองประจำวัน
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -251,6 +281,11 @@ export default function DailyWeighingPage() {
               />
             </div>
           )}
+          {weighingItems.length > 0 && (
+            <p className="text-[11px] text-gray-500 mt-2">
+              รวมในระบบ = ซื้อเข้า + คัดแยก + แกะของ (คัดแยกรวมใบคัดแยกและโอนย้ายประเภท คัดแยก; แกะของรวมโอนย้ายประเภท แกะของ/ไม่ระบุ)
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -262,25 +297,32 @@ export default function DailyWeighingPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-40">รายการสินค้า</TableHead>
-                    <TableHead className="text-right">น้ำหนักตามใบซื้อ (กก.)</TableHead>
-                    <TableHead className="text-center">จำนวนบิล</TableHead>
-                    <TableHead className="text-right">น้ำหนักชั่งรวมจริง (กก.)</TableHead>
-                    <TableHead className="text-right">ส่วนต่าง (กก.)</TableHead>
-                    <TableHead className="text-center">สถานะ</TableHead>
-                    <TableHead className="w-32">หมายเหตุ</TableHead>
+                    <TableHead className="min-w-40">รายการสินค้า</TableHead>
+                    <TableHead className="text-right min-w-24">ซื้อเข้า (กก.)</TableHead>
+                    <TableHead className="text-right min-w-24">คัดแยก (กก.)</TableHead>
+                    <TableHead className="text-right min-w-24">แกะของ (กก.)</TableHead>
+                    <TableHead className="text-right min-w-28">รวมในระบบ (กก.)</TableHead>
+                    <TableHead className="text-center min-w-20">จำนวนเอกสาร</TableHead>
+                    <TableHead className="text-right min-w-28">น้ำหนักชั่งรวมจริง (กก.)</TableHead>
+                    <TableHead className="text-right min-w-24">ส่วนต่าง (กก.)</TableHead>
+                    <TableHead className="text-center min-w-20">สถานะ</TableHead>
+                    <TableHead className="min-w-32">หมายเหตุ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {weighingItems.map((item, idx) => {
                     const actual = parseFloat(item.actualWeighedWeight) || null;
-                    const diff = actual !== null ? Math.round((actual - item.purchasedWeight) * 100) / 100 : null;
+                    const diff = actual !== null ? Math.round((actual - item.expectedTotalWeight) * 100) / 100 : null;
                     const status = actual === null ? 'NOT_WEIGHED' : Math.abs(diff!) <= TOLERANCE ? 'MATCH' : 'DIFFERENCE';
+                    const totalDocCount = item.purchaseBillCount + item.sortingBillCount + item.dismantlingRecordCount;
                     return (
                       <TableRow key={item.productId}>
                         <TableCell className="font-medium text-sm">{item.productName}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.purchasedWeight)}</TableCell>
-                        <TableCell className="text-center text-sm">{item.purchaseBillCount}</TableCell>
+                        <TableCell className="text-right text-sm">{formatWeight(item.purchaseWeight)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputWeight)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatWeight(item.dismantlingOutputWeight)}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold">{formatWeight(item.expectedTotalWeight)}</TableCell>
+                        <TableCell className="text-center text-sm">{totalDocCount}</TableCell>
                         <TableCell className="text-right">
                           <Input
                             type="number"
@@ -316,7 +358,10 @@ export default function DailyWeighingPage() {
                   {/* Total row */}
                   <TableRow className="border-t-2 bg-gray-50">
                     <TableCell className="font-bold text-sm">รวม</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalPurchased)}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalPurchase)}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalSorting)}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalDismantling)}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalExpected)}</TableCell>
                     <TableCell className="text-center text-sm">—</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(totalActual)}</TableCell>
                     <TableCell className={`text-right font-bold text-sm ${Math.abs(totalDiff) <= TOLERANCE ? 'text-green-600' : 'text-red-600'}`}>
@@ -365,7 +410,7 @@ export default function DailyWeighingPage() {
 
       {/* Detail dialog */}
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>ผลชั่ง {detailSession && toBuddhistDate(detailSession.weighingDate)} — {detailSession?.category}</DialogTitle>
             <DialogDescription>
@@ -377,27 +422,48 @@ export default function DailyWeighingPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>สินค้า</TableHead>
-                    <TableHead className="text-right">น้ำหนักใบซื้อ</TableHead>
-                    <TableHead className="text-center">บิล</TableHead>
-                    <TableHead className="text-right">ชั่งจริง</TableHead>
-                    <TableHead className="text-right">ส่วนต่าง</TableHead>
-                    <TableHead className="text-center">สถานะ</TableHead>
+                    <TableHead className="min-w-40">สินค้า</TableHead>
+                    <TableHead className="text-right min-w-24">ซื้อเข้า</TableHead>
+                    <TableHead className="text-right min-w-24">คัดแยก</TableHead>
+                    <TableHead className="text-right min-w-24">แกะของ</TableHead>
+                    <TableHead className="text-right min-w-28">รวมในระบบ</TableHead>
+                    <TableHead className="text-center min-w-20">เอกสาร</TableHead>
+                    <TableHead className="text-right min-w-24">ชั่งจริง</TableHead>
+                    <TableHead className="text-right min-w-24">ส่วนต่าง</TableHead>
+                    <TableHead className="text-center min-w-20">สถานะ</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {detailSession.items.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="text-sm font-medium">{item.product.name}</TableCell>
-                      <TableCell className="text-right text-sm">{formatWeight(item.purchasedWeight)}</TableCell>
-                      <TableCell className="text-center text-sm">{item.purchaseBillCount}</TableCell>
-                      <TableCell className="text-right text-sm">{item.actualWeighedWeight === null ? '—' : formatWeight(item.actualWeighedWeight)}</TableCell>
-                      <TableCell className={`text-right text-sm ${item.differenceWeight === null ? 'text-gray-400' : Math.abs(item.differenceWeight) <= TOLERANCE ? 'text-green-600' : 'text-red-600'}`}>
-                        {item.differenceWeight === null ? '—' : (item.differenceWeight > 0 ? '+' : '') + item.differenceWeight}
-                      </TableCell>
-                      <TableCell className="text-center">{getStatusBadge(item.status)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {detailSession.items.map((item) => {
+                    const totalDocCount = item.purchaseBillCount + item.sortingBillCount + item.dismantlingRecordCount;
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell className="text-sm font-medium">{item.product.name}</TableCell>
+                        <TableCell className="text-right text-sm">{formatWeight(item.purchaseWeight)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputWeight)}</TableCell>
+                        <TableCell className="text-right text-sm">{formatWeight(item.dismantlingOutputWeight)}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold">{formatWeight(item.expectedTotalWeight)}</TableCell>
+                        <TableCell className="text-center text-sm">{totalDocCount}</TableCell>
+                        <TableCell className="text-right text-sm">{item.actualWeighedWeight === null ? '—' : formatWeight(item.actualWeighedWeight)}</TableCell>
+                        <TableCell className={`text-right text-sm ${item.differenceWeight === null ? 'text-gray-400' : Math.abs(item.differenceWeight) <= TOLERANCE ? 'text-green-600' : 'text-red-600'}`}>
+                          {item.differenceWeight === null ? '—' : (item.differenceWeight > 0 ? '+' : '') + item.differenceWeight}
+                        </TableCell>
+                        <TableCell className="text-center">{getStatusBadge(item.status)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {/* Detail total row */}
+                  <TableRow className="border-t-2 bg-gray-50">
+                    <TableCell className="font-bold text-sm">รวม</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.purchaseWeight, 0))}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.sortingOutputWeight, 0))}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.dismantlingOutputWeight, 0))}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.expectedTotalWeight, 0))}</TableCell>
+                    <TableCell className="text-center text-sm">—</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + (i.actualWeighedWeight ?? 0), 0))}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + (i.differenceWeight ?? 0), 0))}</TableCell>
+                    <TableCell className="text-center">—</TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </div>
