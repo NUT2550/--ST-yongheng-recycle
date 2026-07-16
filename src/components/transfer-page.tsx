@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useReducer } from 'react';
 import { useAppStore } from '@/lib/store';
 import { fetchProducts, createStockTransfer } from '@/lib/api';
 import {
@@ -13,6 +13,10 @@ import {
   isFutureThailandDate,
   formatThailandBuddhistDate,
 } from '@/lib/thailand-date';
+import {
+  transferFormReducer,
+  type TransferFormState,
+} from '@/lib/transfer-form-controller';
 import { Product, TransferCartItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -49,7 +53,14 @@ export function TransferPage() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+
+  // ST-41: form state (businessDate + submitting) managed by the tested reducer.
+  // Other state (cart, source product, etc.) stays as useState.
+  const [formState, dispatch] = useReducer(transferFormReducer, {
+    businessDate: '',
+    submitting: false,
+  } as TransferFormState);
+  const { businessDate } = formState;
 
   // Form state
   const [selectedProductId, setSelectedProductId] = useState<string>('');
@@ -58,8 +69,6 @@ export function TransferPage() {
   const [sourceWeightInput, setSourceWeightInput] = useState<string>('');
   const [weighedTotalInput, setWeighedTotalInput] = useState<string>('');
   const [isWaste, setIsWaste] = useState(false);
-  // ST-41: business date (YYYY-MM-DD) — date-only, defaults to Thailand today
-  const [businessDate, setBusinessDate] = useState<string>(getThailandTodayDateString());
   const [note, setNote] = useState<string>('');
   const [gainReason, setGainReason] = useState<string>(''); // ST-40: required when output > source
 
@@ -88,6 +97,11 @@ export function TransferPage() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  // ST-41: initialize the form reducer to today's Thailand date on mount.
+  useEffect(() => {
+    dispatch({ type: 'INIT' });
+  }, []);
 
   // Group ALL products by category
   const groupedProducts = useMemo(() => {
@@ -315,7 +329,7 @@ export function TransferPage() {
       return;
     }
 
-    setSubmitting(true);
+    dispatch({ type: 'SUBMIT_START' });
     try {
       const sourceWeightResult = parseWeightExpression(sourceWeightInput);
       const sourceWeightExpression = sourceWeightResult.isFormula ? sourceWeightResult.expression : undefined;
@@ -351,7 +365,8 @@ export function TransferPage() {
       clearTransferCart();
       setSourceWeightInput('');
       setWeighedTotalInput('');
-      setBusinessDate(getThailandTodayDateString()); // ST-41: reset to today only after successful save
+      // ST-41: dispatch SUBMIT_SUCCESS — reducer resets date to today + submitting=false
+      dispatch({ type: 'SUBMIT_SUCCESS' });
       setNote('');
       setGainReason('');
 
@@ -361,6 +376,8 @@ export function TransferPage() {
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
+      // ST-41: dispatch SUBMIT_ERROR — reducer preserves the selected date + submitting=false
+      dispatch({ type: 'SUBMIT_ERROR' });
       // ST-13: Show the ORIGINAL save error first (8s duration for complex messages
       // that include request ID + guidance). This must not be hidden by the refresh.
       toast.error(`บันทึกไม่สำเร็จ: ${message}`, { duration: 8000 });
@@ -372,8 +389,6 @@ export function TransferPage() {
       loadProducts().catch(() => {
         toast.warning('ไม่สามารถรีเฟรชสต็อกได้ — กรุณากด Refresh หน้าเว็บก่อนบันทึกซ้ำ', { duration: 8000 });
       });
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -499,7 +514,7 @@ export function TransferPage() {
                     type="date"
                     value={businessDate}
                     max={getThailandTodayDateString()}
-                    onChange={(e) => setBusinessDate(e.target.value)}
+                    onChange={(e) => dispatch({ type: 'SET_DATE', date: e.target.value })}
                     className="text-sm"
                   />
                   {businessDate && businessDate < getThailandTodayDateString() && (
@@ -852,10 +867,10 @@ export function TransferPage() {
               )}
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || !businessDate || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight || (hasGain && !gainReason.trim())}
+                disabled={formState.submitting || !businessDate || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight || (hasGain && !gainReason.trim())}
                 className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
               >
-                {submitting ? (
+                {formState.submitting ? (
                   <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> กำลังบันทึก...</>
                 ) : (
                   <><PackageOpen className="h-4 w-4 mr-1" /> บันทึกใบย้ายสต็อก</>

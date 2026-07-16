@@ -15,6 +15,7 @@ import type {
 
 export interface MockState {
   findSourceProductCalls: string[];
+  findOutputProductCalls: string[];
   findSourceLotsCalls: string[];
   generateBillNumberCalls: number;
   deductSourceLotsCalls: Array<{ productId: string; weightToDeduct: number }>;
@@ -28,6 +29,7 @@ export interface MockState {
 
 export function createMockDeps(options: {
   sourceProduct?: SourceProductRow | null;
+  outputProduct?: SourceProductRow | null;
   sourceLots?: SourceLotRow[];
   deductResult?: DeductResult;
   deductShouldThrow?: Error;
@@ -37,6 +39,7 @@ export function createMockDeps(options: {
 } = {}): { deps: StockTransferDeps; state: MockState } {
   const state: MockState = {
     findSourceProductCalls: [],
+    findOutputProductCalls: [],
     findSourceLotsCalls: [],
     generateBillNumberCalls: 0,
     deductSourceLotsCalls: [],
@@ -52,6 +55,10 @@ export function createMockDeps(options: {
     async findSourceProduct(productId: string) {
       state.findSourceProductCalls.push(productId);
       return options.sourceProduct ?? { id: productId, name: 'Test Product' };
+    },
+    async findOutputProduct(productId: string) {
+      state.findOutputProductCalls.push(productId);
+      return options.outputProduct ?? { id: productId, name: 'Test Output Product' };
     },
     async findSourceLots(productId: string) {
       state.findSourceLotsCalls.push(productId);

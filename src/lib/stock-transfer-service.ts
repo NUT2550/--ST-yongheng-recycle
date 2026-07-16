@@ -6,12 +6,20 @@
  *
  * The service handles:
  *   - business-date validation (DATE_REQUIRED, DATE_INVALID, DATE_FUTURE)
- *   - source-lot causality check (BUSINESS_DATE_BEFORE_SOURCE)
+ *   - field validation (sourceProductId, sourceWeight, items, per-item)
+ *   - output product existence verification
+ *   - positive-yield + gainReason (ST-40)
+ *   - source product + lots loading
  *   - FIFO preview + cost validation (ST-20)
- *   - positive-yield + cost conservation (ST-40)
+ *   - source-lot causality check (ST-41)
+ *   - billNumber generation
+ *   - FIFO deduction + mismatch check (ST-39)
+ *   - cost allocation (ST-40)
  *   - StockTransfer create data construction
  *   - output StockLot create data construction
  *   - AuditLog details construction (with businessDate fields)
+ *   - Prisma error mapping (P2002/P2003/P2025, pgbouncer, FIFO)
+ *   - ST-11 compensation on failure (including ROLLED_BACK AuditLog)
  *
  * The route wraps this service with Prisma-backed deps. Tests inject mock deps
  * that record calls + payloads, proving the production path without DB writes.
@@ -22,7 +30,6 @@ import {
   validateSourceLotCosts,
   verifyFifoMatch,
   buildFifoAuditDetails,
-  FIFO_ORDER_BY,
   type SourceLotForPreview,
   type FifoPreviewResult,
 } from './fifo-validation';
@@ -107,6 +114,7 @@ export interface AuditLogInput {
 /** Injectable dependencies — production wraps Prisma; tests inject mocks. */
 export interface StockTransferDeps {
   findSourceProduct(productId: string): Promise<SourceProductRow | null>;
+  findOutputProduct(productId: string): Promise<SourceProductRow | null>;
   findSourceLots(productId: string): Promise<SourceLotRow[]>;
   generateBillNumber(): Promise<string>;
   deductSourceLots(productId: string, weightToDeduct: number): Promise<DeductResult>;
@@ -218,7 +226,6 @@ export function buildStockTransferCreateData(
     storedBusinessDate: Date;
   }
 ): Record<string, unknown> {
-  const itemsTotalWeight = input.items.reduce((s, i) => s + i.weight, 0);
   return {
     billNumber: deps_result.billNumber,
     date: deps_result.storedBusinessDate,
@@ -282,7 +289,101 @@ export function buildOutputStockLotData(
 
 export type ServiceResult =
   | { ok: true; status: 201; transfer: CreatedTransfer; auditDetails: Record<string, unknown> }
-  | { ok: false; status: 400 | 409 | 500; error: string; code?: string; requestId: string };
+  | {
+      ok: false;
+      status: 400 | 404 | 409 | 500 | 503;
+      error: string;
+      code?: string;
+      requestId: string;
+      /** Extra fields to include in the JSON response body (e.g. details, sourceProductId). */
+      extras?: Record<string, unknown>;
+    };
+
+// ============ Error classification ============
+
+interface ClassifiedError {
+  status: 400 | 404 | 409 | 500 | 503;
+  code?: string;
+  error: string;
+  /** Extra fields for the JSON body (always includes `details` when set). */
+  extras?: Record<string, unknown>;
+}
+
+/**
+ * ST-41: Map a thrown error to a ServiceResult-failure shape.
+ *
+ * Mirrors the route's catch-block error handling:
+ *   - P2002 (unique constraint, e.g. billNumber collision) → 409 BILL_NUMBER_COLLISION
+ *   - P2003 (FK constraint) → 400 FK_CONSTRAINT
+ *   - P2025 (record not found) → 404 NOT_FOUND
+ *   - "Insufficient stock" (FIFO deduction guard) → 400
+ *   - "NEGATIVE_COST_SOURCE_LOT"/"ZERO_COST_SOURCE_LOT"/"ZERO_SOURCE_COST" → 400 FIFO_VALIDATION_ERROR
+ *   - pgbouncer timeout patterns → 503
+ *   - default → 500 with original message as `details`
+ *
+ * Pure function — no DB, no side effects.
+ */
+export function classifyServiceError(err: unknown): ClassifiedError {
+  const message = err instanceof Error ? err.message : 'Failed to create stock transfer';
+  const code = (err as { code?: string } | null | undefined)?.code;
+
+  // Prisma known errors
+  if (code === 'P2002') {
+    return {
+      status: 409,
+      code: 'BILL_NUMBER_COLLISION',
+      error: 'เลขบิลซ้ำ กรุณาลองอีกครั้ง',
+      extras: { details: message },
+    };
+  }
+  if (code === 'P2003') {
+    return {
+      status: 400,
+      code: 'FK_CONSTRAINT',
+      error: 'สินค้าที่อ้างถึงไม่มีอยู่ในระบบ (FK constraint)',
+      extras: { details: message },
+    };
+  }
+  if (code === 'P2025') {
+    return {
+      status: 404,
+      code: 'NOT_FOUND',
+      error: 'ไม่พบข้อมูลที่ต้องการอัปเดต',
+      extras: { details: message },
+    };
+  }
+
+  // FIFO deduction guard — Insufficient stock
+  if (message.includes('Insufficient stock')) {
+    return { status: 400, error: message };
+  }
+
+  // ST-20: FIFO validation error codes
+  if (
+    message.includes('NEGATIVE_COST_SOURCE_LOT') ||
+    message.includes('ZERO_COST_SOURCE_LOT') ||
+    message.includes('ZERO_SOURCE_COST')
+  ) {
+    return { status: 400, code: 'FIFO_VALIDATION_ERROR', error: message };
+  }
+
+  // pgbouncer transaction errors
+  if (message.includes('Transaction not found') || message.includes('drained')) {
+    return {
+      status: 503,
+      code: 'PGBOUNCER_TIMEOUT',
+      error: 'การเชื่อมต่อฐานข้อมูลหมดเวลา กรุณาลองอีกครั้ง (pgbouncer timeout)',
+      extras: { details: message },
+    };
+  }
+
+  // Default — preserve the route's 500 body shape: { error, details, requestId }
+  return {
+    status: 500,
+    error: 'บันทึกใบย้ายสต็อกไม่สำเร็จ',
+    extras: { details: message },
+  };
+}
 
 // ============ Controller (production path) ============
 
@@ -294,13 +395,15 @@ export type ServiceResult =
  *
  * Flow:
  *   1. validate business date → DATE_REQUIRED/INVALID/FUTURE
- *   2. validate fields (sourceProductId, items, etc.)
+ *   2. validate fields (sourceProductId, sourceWeight, items, per-item)
  *   3. positive-yield + gainReason check (ST-40)
- *   4. load source product + lots
- *   5. FIFO preview (ST-39 deterministic, ST-20 zero-cost)
- *   6. source-lot causality check (ST-41)
- *   7. execute: deduct → create transfer → create output lots → audit log
- *   8. on failure after deduction: compensate (ST-11)
+ *   4. load source product
+ *   5. verify output products exist
+ *   6. load source lots + availability check
+ *   7. FIFO preview (ST-39 deterministic, ST-20 zero-cost)
+ *   8. source-lot causality check (ST-41)
+ *   9. execute: deduct → create transfer → create output lots → audit log
+ *  10. on failure after deduction: compensate (ST-11) + ROLLED_BACK AuditLog
  */
 export async function createStockTransfer(
   deps: StockTransferDeps,
@@ -325,6 +428,26 @@ export async function createStockTransfer(
     return { ok: false, status: 400, error: 'กรุณาเพิ่มรายการ output อย่างน้อย 1 รายการ', requestId };
   }
 
+  // 2b. Per-item validation (productId, weight, price, isWaste default)
+  for (let i = 0; i < input.items.length; i++) {
+    const item = input.items[i];
+    const rowNum = i + 1;
+    if (!item.productId || typeof item.productId !== 'string' || !item.productId.trim()) {
+      return { ok: false, status: 400, error: `รายการ output ลำดับที่ ${rowNum} ไม่มีสินค้า กรุณาเลือกสินค้า`, requestId };
+    }
+    if (typeof item.weight !== 'number' || isNaN(item.weight) || item.weight <= 0) {
+      return { ok: false, status: 400, error: `น้ำหนัก output ลำดับที่ ${rowNum} ต้องมากกว่า 0`, requestId };
+    }
+    if (item.outputPricePerKg !== undefined && item.outputPricePerKg !== null) {
+      if (typeof item.outputPricePerKg !== 'number' || isNaN(item.outputPricePerKg) || item.outputPricePerKg < 0) {
+        return { ok: false, status: 400, error: `ราคาปลายทางลำดับที่ ${rowNum} ต้องไม่ติดลบ`, requestId };
+      }
+    }
+    if (typeof item.isWaste !== 'boolean') {
+      item.isWaste = false; // default to false if not provided
+    }
+  }
+
   // 3. Positive-yield + gainReason (ST-40)
   const itemsTotalWeight = input.items.reduce((s, i) => s + i.weight, 0);
   const effectiveBusinessType = input.businessType?.trim() || null;
@@ -332,11 +455,24 @@ export async function createStockTransfer(
 
   if (yieldResult.gainWeight > YIELD_WEIGHT_TOLERANCE) {
     if (!isPositiveYieldAllowed(effectiveBusinessType)) {
-      return { ok: false, status: 400, error: `น้ำหนัก output รวม (${itemsTotalWeight.toFixed(2)} กก.) เกินน้ำหนักต้นทาง (${input.sourceWeight} กก.) — ไม่อนุญาตสำหรับ businessType คัดแยก`, code: 'POSITIVE_YIELD_NOT_ALLOWED', requestId };
+      return {
+        ok: false,
+        status: 400,
+        error: `น้ำหนัก output รวม (${itemsTotalWeight.toFixed(2)} กก.) เกินน้ำหนักต้นทาง (${input.sourceWeight} กก.) — ไม่อนุญาตสำหรับ businessType คัดแยก`,
+        code: 'POSITIVE_YIELD_NOT_ALLOWED',
+        requestId,
+      };
     }
     const gainReasonTrimmed = (input.gainReason || '').trim();
     if (!gainReasonTrimmed) {
-      return { ok: false, status: 400, error: `น้ำหนัก output มากกว่าต้นทาง ${yieldResult.gainWeight.toFixed(2)} กก. กรุณาระบุเหตุผล เช่น หักน้ำหนักประเมินตอนซื้อ`, code: 'GAIN_REASON_REQUIRED', requestId };
+      return {
+        ok: false,
+        status: 400,
+        error: `น้ำหนัก output มากกว่าต้นทาง ${yieldResult.gainWeight.toFixed(2)} กก. กรุณาระบุเหตุผล เช่น หักน้ำหนักประเมินตอนซื้อ`,
+        code: 'GAIN_REASON_REQUIRED',
+        extras: { gainWeight: yieldResult.gainWeight },
+        requestId,
+      };
     }
   }
 
@@ -346,56 +482,123 @@ export async function createStockTransfer(
     return { ok: false, status: 400, error: `ไม่พบสินค้าต้นทาง (ID: ${input.sourceProductId})`, requestId };
   }
 
-  // 5. Load source lots
+  // 5. Verify all output products exist
+  for (let i = 0; i < input.items.length; i++) {
+    const item = input.items[i];
+    const rowNum = i + 1;
+    const outputProduct = await deps.findOutputProduct(item.productId);
+    if (!outputProduct) {
+      return { ok: false, status: 400, error: `ไม่พบสินค้า output ลำดับที่ ${rowNum} (ID: ${item.productId})`, requestId };
+    }
+  }
+
+  // 6. Load source lots + availability check
   const sourceLots = await deps.findSourceLots(input.sourceProductId);
   const totalAvailable = sourceLots.reduce((sum, l) => sum + l.remainingWeight, 0);
   if (totalAvailable < input.sourceWeight) {
-    return { ok: false, status: 400, error: `สต็อกไม่เพียงพอสำหรับ "${sourceProduct.name}". มี: ${totalAvailable} กก., ต้องการ: ${input.sourceWeight} กก.`, requestId };
+    return {
+      ok: false,
+      status: 400,
+      error: `สต็อกไม่เพียงพอสำหรับ "${sourceProduct.name}". มี: ${totalAvailable} กก., ต้องการ: ${input.sourceWeight} กก.`,
+      requestId,
+    };
   }
 
-  // 6. FIFO preview (ST-39 deterministic, ST-20 zero-cost)
+  // 7. FIFO preview (ST-39 deterministic, ST-20 zero-cost)
   const fifoPreview = previewFifoDeduction(
     input.sourceProductId,
     input.sourceWeight,
-    sourceLots.map(l => ({ id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg, dateAdded: l.dateAdded, createdAt: l.createdAt }))
+    sourceLots.map((l) => ({ id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg, dateAdded: l.dateAdded, createdAt: l.createdAt }))
   );
   if (!fifoPreview.success) {
-    return { ok: false, status: 400, error: fifoPreview.message, code: fifoPreview.code, requestId };
+    return {
+      ok: false,
+      status: 400,
+      error: fifoPreview.message,
+      code: fifoPreview.code,
+      extras: {
+        sourceProductId: input.sourceProductId,
+        sourceProductName: sourceProduct.name,
+        sourceWeight: input.sourceWeight,
+        totalAvailable: fifoPreview.totalAvailable,
+        affectedSourceLotIds: fifoPreview.affectedSourceLotIds,
+      },
+      requestId,
+    };
   }
 
   const costValidation = validateSourceLotCosts(fifoPreview, { type: 'TRANSFER', hasNonWasteOutput: true });
   if (!costValidation.valid) {
-    return { ok: false, status: 400, error: costValidation.message, code: costValidation.code, requestId };
+    return {
+      ok: false,
+      status: 400,
+      error: costValidation.message,
+      code: costValidation.code,
+      extras: {
+        sourceProductId: input.sourceProductId,
+        sourceProductName: sourceProduct.name,
+        sourceWeight: input.sourceWeight,
+        affectedSourceLotIds: costValidation.affectedSourceLotIds,
+        weightedAverageCost: costValidation.weightedAverageCost,
+      },
+      requestId,
+    };
   }
 
-  // 7. Source-lot causality check (ST-41) — BEFORE any deduction
-  const consumedLotIds = fifoPreview.deductedLots.map(l => l.lotId);
-  const consumedLotDates = sourceLots.filter(l => consumedLotIds.includes(l.id)).map(l => l.dateAdded);
+  // 8. Source-lot causality check (ST-41) — BEFORE any deduction
+  const consumedLotIds = fifoPreview.deductedLots.map((l) => l.lotId);
+  const consumedLotDates = sourceLots.filter((l) => consumedLotIds.includes(l.id)).map((l) => l.dateAdded);
   const causality = checkSourceLotCausality(dateValidation.businessDate, consumedLotDates);
   if (causality.violated) {
-    return { ok: false, status: 400, error: `วันที่แกะของต้องไม่เร็วกว่าวันที่รับสินค้าต้นทางที่ถูกนำมาใช้ (ต้นทางล่าสุด: ${causality.latestSourceDateStr})`, code: 'BUSINESS_DATE_BEFORE_SOURCE', requestId };
+    return {
+      ok: false,
+      status: 400,
+      error: `วันที่แกะของต้องไม่เร็วกว่าวันที่รับสินค้าต้นทางที่ถูกนำมาใช้ (ต้นทางล่าสุด: ${causality.latestSourceDateStr})`,
+      code: 'BUSINESS_DATE_BEFORE_SOURCE',
+      extras: {
+        businessDate: dateValidation.businessDate,
+        latestSourceDate: causality.latestSourceDateStr,
+      },
+      requestId,
+    };
   }
 
-  // 8. Execute: deduct source lots
+  // 9. Execute: deduct source lots
   const billNumber = await deps.generateBillNumber();
   let fifoResult: DeductResult;
   try {
     fifoResult = await deps.deductSourceLots(input.sourceProductId, input.sourceWeight);
   } catch (err) {
-    const partialDeductedLots = (err as any)?.deductedLots || [];
+    const partialDeductedLots = (err as { deductedLots?: Array<{ id: string; deducted: number }> })?.deductedLots || [];
     if (partialDeductedLots.length > 0) {
       await deps.compensate(partialDeductedLots, requestId, err instanceof Error ? err.message : 'deduction error');
+      await writeRollbackAuditLog(deps, auth, requestId, billNumber, null, partialDeductedLots, err);
     }
-    return { ok: false, status: 500, error: 'บันทึกใบย้ายสต็อกไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'), requestId };
+    const classified = classifyServiceError(err);
+    return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
   }
 
-  // 9. FIFO mismatch check (ST-39)
+  // 10. FIFO mismatch check (ST-39)
+  // NOTE: the route handles FIFO mismatch inline (compensate + 409) WITHOUT writing
+  // a ROLLED_BACK AuditLog — the catch-block audit only fires for thrown errors.
   if (!verifyFifoMatch(fifoPreview, { ...fifoResult, deductedLots: fifoResult.deductedLots })) {
     await deps.compensate(fifoResult.deductedLots, `${requestId}-fifo-mismatch`, 'FIFO preview/execution mismatch');
-    return { ok: false, status: 409, error: 'ตรวจพบความไม่ตรงของต้นทุน FIFO ระหว่าง preview และ execution กรุณาลองอีกครั้ง', code: 'FIFO_MISMATCH', requestId };
+    return {
+      ok: false,
+      status: 409,
+      error: 'ตรวจพบความไม่ตรงของต้นทุน FIFO ระหว่าง preview และ execution กรุณาลองอีกครั้ง',
+      code: 'FIFO_MISMATCH',
+      extras: {
+        sourceProductId: input.sourceProductId,
+        sourceWeight: input.sourceWeight,
+        previewCost: fifoPreview.weightedAverageCost,
+        actualCost: fifoResult.costPerKg,
+      },
+      requestId,
+    };
   }
 
-  // 10. Calculate cost allocation (ST-40)
+  // 11. Calculate cost allocation (ST-40)
   const sourceCostPerKg = fifoResult.costPerKg;
   const sourceTotalCost = fifoResult.totalCost;
   const lossWeight = yieldResult.lossWeight;
@@ -413,7 +616,7 @@ export async function createStockTransfer(
   const sourceAnalysisCost = Math.round(input.sourceWeight * srcPricePerKg * 100) / 100;
   const profitLoss = Math.round((outputTotalValue - sourceAnalysisCost - labor) * 100) / 100;
 
-  // 11. Create StockTransfer
+  // 12. Create StockTransfer
   let created: CreatedTransfer;
   try {
     const createData = buildStockTransferCreateData(input, {
@@ -432,12 +635,14 @@ export async function createStockTransfer(
     });
     created = await deps.createStockTransfer(createData);
   } catch (err) {
-    // Compensate: restore deducted lots
+    // Compensate: restore deducted lots + ROLLED_BACK audit
     await deps.compensate(fifoResult.deductedLots, requestId, err instanceof Error ? err.message : 'create error');
-    return { ok: false, status: 500, error: 'บันทึกใบย้ายสต็อกไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'), requestId };
+    await writeRollbackAuditLog(deps, auth, requestId, billNumber, null, fifoResult.deductedLots, err);
+    const classified = classifyServiceError(err);
+    return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
   }
 
-  // 12. Create output StockLots
+  // 13. Create output StockLots
   try {
     for (let idx = 0; idx < input.items.length; idx++) {
       const lotData = buildOutputStockLotData(input.items[idx], allocatedItems[idx].costPerKg, dateValidation.storedBusinessDate, created.id);
@@ -446,14 +651,16 @@ export async function createStockTransfer(
       }
     }
   } catch (err) {
-    // Compensate: delete output lots + transfer + restore source
+    // Compensate: delete output lots + transfer + restore source + ROLLED_BACK audit
     await deps.deletePartialOutputLots(created.id);
     await deps.deletePartialTransfer(created.id);
     await deps.compensate(fifoResult.deductedLots, requestId, err instanceof Error ? err.message : 'lot create error');
-    return { ok: false, status: 500, error: 'บันทึกใบย้ายสต็อกไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'), requestId };
+    await writeRollbackAuditLog(deps, auth, requestId, billNumber, created.id, fifoResult.deductedLots, err);
+    const classified = classifyServiceError(err);
+    return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
   }
 
-  // 13. Create AuditLog
+  // 14. Create AuditLog
   const fifoAuditDetails = buildFifoAuditDetails(fifoPreview, { type: 'TRANSFER', hasNonWasteOutput: true });
   const auditDetails = buildTransferAuditDetails({
     billNumber,
@@ -468,9 +675,9 @@ export async function createStockTransfer(
     allocatedOutputTotalCost: costAllocation.allocatedTotalCost,
     costConserved: costAllocation.allocatedTotalCost === sourceTotalCost,
     itemCount: created.items.length,
-    nonWasteItemCount: input.items.filter(i => !i.isWaste).length,
+    nonWasteItemCount: input.items.filter((i) => !i.isWaste).length,
     fifoAuditDetails: fifoAuditDetails as unknown as Record<string, unknown>,
-    outputItems: input.items.map(item => ({
+    outputItems: input.items.map((item) => ({
       productId: item.productId,
       weight: item.weight,
       isWaste: item.isWaste,
@@ -497,4 +704,41 @@ export async function createStockTransfer(
   }
 
   return { ok: true, status: 201, transfer: created, auditDetails };
+}
+
+/**
+ * ST-11: Best-effort ROLLED_BACK AuditLog when compensation is invoked.
+ *
+ * Mirrors the route's catch-block audit write. Non-fatal — failures are
+ * swallowed (the error response must still be returned to the client).
+ */
+async function writeRollbackAuditLog(
+  deps: StockTransferDeps,
+  auth: AuthInfo,
+  requestId: string,
+  billNumber: string,
+  createdTransferId: string | null,
+  deductedLots: Array<{ id: string; deducted: number }>,
+  err: unknown
+): Promise<void> {
+  const message = err instanceof Error ? err.message : 'Failed to create stock transfer';
+  try {
+    await deps.createAuditLog({
+      action: 'CREATE',
+      entityType: 'STOCK_TRANSFER',
+      entityId: createdTransferId || 'FAILED',
+      userId: auth.userId,
+      userName: auth.name,
+      details: JSON.stringify({
+        status: 'ROLLED_BACK',
+        error: message.substring(0, 500),
+        billNumber,
+        requestId,
+        deductedLotCount: deductedLots.length,
+        compensatedLotIds: deductedLots.map((l) => l.id),
+      }),
+    });
+  } catch {
+    // AuditLog failure must NOT prevent the error response from being returned.
+  }
 }

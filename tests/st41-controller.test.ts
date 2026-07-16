@@ -248,7 +248,7 @@ describe('ST-41 controller: successful yesterday case — full path', () => {
 // ============ 4. Failure after deduction — ST-11 compensation ============
 
 describe('ST-41 controller: failure after deduction invokes compensation', () => {
-  test('17. createStockTransfer failure → compensation + no orphan lots', async () => {
+  test('17. createStockTransfer failure → compensation + ROLLED_BACK AuditLog + no orphan lots', async () => {
     const { deps, state } = createMockDeps({
       createTransferShouldThrow: new Error('DB connection lost'),
     });
@@ -265,8 +265,14 @@ describe('ST-41 controller: failure after deduction invokes compensation', () =>
     expect(state.createStockTransferCalls).toHaveLength(1); // the failed call
     // No output lots created
     expect(state.createOutputStockLotCalls).toHaveLength(0);
-    // No AuditLog for CREATE
-    expect(state.createAuditLogCalls).toHaveLength(0);
+    // ST-11: exactly one ROLLED_BACK AuditLog (best-effort failure audit)
+    expect(state.createAuditLogCalls).toHaveLength(1);
+    const audit = state.createAuditLogCalls[0];
+    expect(audit.entityType).toBe('STOCK_TRANSFER');
+    const details = JSON.parse(audit.details);
+    expect(details.status).toBe('ROLLED_BACK');
+    expect(details.requestId).toBe(REQUEST_ID);
+    expect(details.error).toContain('DB connection lost');
   });
 
   test('18. createOutputStockLot failure → compensation + cleanup', async () => {
