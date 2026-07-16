@@ -1,92 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { verifyPassword, createToken, getCookieName } from '@/lib/auth'
+import { getCookieName } from '@/lib/auth'
+import { loginController, type LoginDeps } from '@/lib/route-controllers'
 
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json()
+    const body = await request.json()
 
-    if (!username || !password) {
-      return NextResponse.json(
-        { error: 'กรุณากรอกชื่อผู้ใช้และรหัสผ่าน' },
-        { status: 400 }
-      )
+    // Wire the real Prisma adapter as the controller's deps.
+    const deps: LoginDeps = {
+      findUser: (username) =>
+        db.user.findUnique({
+          where: { username },
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            role: true,
+            password: true,
+            isActive: true,
+            permissions: true,
+          },
+        }) as Promise<import('@/lib/route-controllers').LoginUser | null>,
     }
 
-    const user = await db.user.findUnique({
-      where: { username },
-    })
+    const result = await loginController(deps, body)
 
-    if (!user || !user.isActive) {
-      return NextResponse.json(
-        { error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' },
-        { status: 401 }
-      )
+    if (result.status !== 200 || !result.token) {
+      return NextResponse.json(result.body, { status: result.status })
     }
-
-    const valid = await verifyPassword(password, user.password)
-    if (!valid) {
-      return NextResponse.json(
-        { error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' },
-        { status: 401 }
-      )
-    }
-
-    // ST-14: Load permissions from DB and include in JWT.
-    // Admin role gets all permissions implicitly (no need to store them).
-    // Staff role gets only the permissions stored in user.permissions (JSON array).
-    let permissions: Record<string, boolean> = {}
-    if (user.role === 'admin') {
-      // Admin has all permissions — build a complete map
-      permissions = {
-        'customer.create': true,
-        'buy.create': true,
-        'sell.create': true,
-        'sort.create': true,
-        'transfer.create': true,
-        'history.edit': true,
-        'physical-count.apply': true,
-        'dailyPurchaseWeighing': true,
-        'user.manage': true,
-        'product.manage': true,
-      }
-    } else if (user.permissions) {
-      // Staff: parse stored JSON array into a permissions map
-      try {
-        const permArray = JSON.parse(user.permissions) as string[]
-        if (Array.isArray(permArray)) {
-          for (const p of permArray) {
-            if (typeof p === 'string') permissions[p] = true
-          }
-        }
-      } catch {
-        // Invalid JSON in permissions field — treat as no permissions
-      }
-    }
-
-    const token = await createToken({
-      userId: user.id,
-      username: user.username,
-      name: user.name,
-      role: user.role as 'admin' | 'staff',
-      permissions,
-    })
 
     // Build response — include the token in the body so the client can
     // store it in localStorage and send it via the Authorization header.
     // (Cookie-only auth breaks inside cross-origin iframes like the
     // preview panel, where SameSite cookies get blocked.)
-    const response = NextResponse.json({
-      success: true,
-      token,
-      user: {
-        id: user.id,
-        username: user.username,
-        name: user.name,
-        role: user.role,
-        permissions,
-      },
-    })
+    const response = NextResponse.json(result.body, { status: result.status })
 
     // Also set the auth cookie as a fallback (used for direct browser
     // navigation / when localStorage is cleared).
@@ -102,7 +50,7 @@ export async function POST(request: NextRequest) {
       !isLocalhost
     response.cookies.set({
       name: getCookieName(),
-      value: token,
+      value: result.token,
       httpOnly: true,
       secure: isHttps,
       sameSite: isHttps ? 'none' : 'lax',
@@ -113,7 +61,6 @@ export async function POST(request: NextRequest) {
     return response
   } catch (error) {
     console.error('Login error:', error)
-    // Include detailed error info for debugging (remove in production later)
     const errorDetail = error instanceof Error
       ? `${error.name}: ${error.message}`
       : String(error)

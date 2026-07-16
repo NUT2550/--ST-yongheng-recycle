@@ -1,0 +1,2 @@
+[test]
+preload = ["./tests/st10-test-env.ts"]
