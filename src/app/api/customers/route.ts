@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { verifyToken, getTokenFromRequest } from "@/lib/auth";
+import { hasPermission } from '@/lib/permissions';
 import { NextRequest, NextResponse } from 'next/server';
 
 // GET /api/customers - List all customers
@@ -35,8 +36,7 @@ export async function POST(request: NextRequest) {
   if (!token) return NextResponse.json({ error: "ไม่ได้เข้าสู่ระบบ" }, { status: 401 });
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: "token ไม่ถูกต้อง" }, { status: 401 });
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['customer.create'] === true;
-  if (!hasPermission) return NextResponse.json({ error: 'ไม่มีสิทธิ์สร้างลูกค้า' }, { status: 403 });
+  if (!hasPermission(payload, 'customer.create')) return NextResponse.json({ error: 'ไม่มีสิทธิ์สร้างลูกค้า' }, { status: 403 });
 
   try {
     const body = await request.json();

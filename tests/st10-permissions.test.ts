@@ -208,37 +208,7 @@ describe('ST-10: canonical permission names', () => {
   });
 });
 
-// ============ 6. Token strategy documentation (revocation behavior) ============
-
-describe('ST-10: token/revocation strategy (documented behavior)', () => {
-  test('24. JWT has 7-day expiry (documented — no immediate revocation)', () => {
-    // The JWT is created with setExpirationTime('7d') in src/lib/auth.ts.
-    // There is no token version/security stamp. Revoked permissions take
-    // effect on next login (within 7 days). Admin must instruct staff to
-    // re-login after permission changes.
-    const documentedExpiryDays = 7;
-    expect(documentedExpiryDays).toBe(7);
-  });
-
-  test('25. re-login receives new permission state (login route reads DB)', () => {
-    // The login route (src/app/api/auth/login/route.ts) reads user.permissions
-    // from the DB at each login and embeds it in the new JWT. So after an
-    // admin changes a staff's permissions, the staff's NEXT login will have
-    // the updated permissions. Their existing token (up to 7 days old) keeps
-    // the old permissions until it expires or they re-login.
-    // This test documents that invariant:
-    const loginReadsFromDB = true; // verified in login route code
-    expect(loginReadsFromDB).toBe(true);
-  });
-
-  test('26. admin role gets all permissions implicitly at login (no DB stored permissions needed)', () => {
-    // The login route builds a complete permissions map for admin role
-    // regardless of what's stored in user.permissions (which is null for admin).
-    // This means admin access cannot be accidentally revoked by clearing
-    // the permissions field.
-    const adminImplicitPermissions = hasPermission(ADMIN, 'customer.create');
-    expect(adminImplicitPermissions).toBe(true);
-    // Admin's permissions field in DB is null — but JWT has all permissions
-    expect(ADMIN.permissions).toBeUndefined();
-  });
-});
+// ============ 6. Token strategy — REMOVED documentation-only tests ============
+// Tests 24-26 (hard-coded boolean assertions) were removed.
+// were removed per Owner review. Real JWT behavior is tested in
+// tests/st10-production.test.ts via createToken/verifyToken.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { verifyPassword, createToken, getCookieName } from '@/lib/auth'
+import { CANONICAL_PERMISSIONS } from '@/lib/permissions'
 
 export async function POST(request: NextRequest) {
   try {

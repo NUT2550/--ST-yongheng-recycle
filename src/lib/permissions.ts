@@ -9,7 +9,10 @@
  * Canonical permission names (single source of truth — used by login route,
  * users management API, and all route authorization checks):
  *   customer.create, buy.create, sell.create, sort.create, transfer.create,
- *   history.edit, physical-count.apply, dailyPurchaseWeighing, user.manage, product.manage
+ *   history.edit, physical-count.apply, dailyPurchaseWeighing, product.manage
+ *
+ * Note: user management (PATCH /api/users/[id]) is admin-only via role check,
+ * not a staff-grantable permission. 'user.manage' is intentionally NOT in this list.
  *
  * Token strategy:
  *   - JWT expires after 7 days (setExpirationTime('7d')).
@@ -30,7 +33,6 @@ export const CANONICAL_PERMISSIONS = [
   'history.edit',
   'physical-count.apply',
   'dailyPurchaseWeighing',
-  'user.manage',
   'product.manage',
 ] as const
 
@@ -45,7 +47,6 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'history.edit': 'แก้ไข/ยกเลิกบิลในประวัติ',
   'physical-count.apply': 'Apply การชั่งสต็อกจริง (Legacy)',
   'dailyPurchaseWeighing': 'ชั่งยอดซื้อทองแดง/ทองเหลือง',
-  'user.manage': 'จัดการผู้ใช้',
   'product.manage': 'จัดการสินค้า',
 }
 
