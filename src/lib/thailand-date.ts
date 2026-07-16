@@ -127,3 +127,56 @@ export function formatThailandBuddhistDate(date: Date | string): string {
   const buddhistYear = parseInt(year, 10) + 543
   return `${day}/${month}/${buddhistYear}`
 }
+
+/**
+ * ST-41: Format a stored UTC date as Thailand date+time for history display.
+ * Returns DD/MM/YYYY (Buddhist) HH:MM — Thailand timezone, no browser-TZ dependency.
+ *
+ * Replaces the browser-local formatDate() for bill dates stored as Thailand
+ * business dates (UTC timestamps). The old formatDate() used getDate()/
+ * getMonth()/getFullYear() which shift in non-Thailand timezones.
+ */
+export function formatThailandDateTimeDisplay(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const thailandMs = d.getTime() + THAILAND_OFFSET_MINUTES * 60 * 1000
+  const thailandDate = new Date(thailandMs)
+  const day = String(thailandDate.getUTCDate()).padStart(2, '0')
+  const month = String(thailandDate.getUTCMonth() + 1).padStart(2, '0')
+  const year = thailandDate.getUTCFullYear() + 543
+  const hours = String(thailandDate.getUTCHours()).padStart(2, '0')
+  const minutes = String(thailandDate.getUTCMinutes()).padStart(2, '0')
+  return `${day}/${month}/${year} ${hours}:${minutes}`
+}
+
+
+/**
+ * ST-41: Check if a business date is before any of the consumed source lot dates.
+ *
+ * Causality rule: an output StockLot cannot predate its consumed source lots.
+ * If the selected business date is earlier than any source lot's dateAdded,
+ * the output would chronologically predate its input — a causality violation.
+ *
+ * @param businessDateStr - YYYY-MM-DD business date
+ * @param sourceLotDates - array of Date objects (dateAdded of consumed source lots)
+ * @returns { violated: boolean, latestSourceDate: string, violatingLotIndex: number }
+ */
+export function checkSourceLotCausality(
+  businessDateStr: string,
+  sourceLotDates: Date[]
+): { violated: boolean; latestSourceDateStr: string; latestSourceDateMs: number } {
+  // Find the latest source lot date (by raw timestamp)
+  let latestMs = 0
+  for (const lotDate of sourceLotDates) {
+    if (lotDate.getTime() > latestMs) latestMs = lotDate.getTime()
+  }
+  // Convert the latest source lot date to a Thailand business-date string (YYYY-MM-DD)
+  // This normalizes away the time-of-day component — we compare CALENDAR dates, not timestamps
+  const latestSourceDateStr = formatThailandBusinessDate(new Date(latestMs))
+  // Violation: business date is STRICTLY BEFORE the latest source lot's calendar date
+  // String comparison on YYYY-MM-DD works correctly for calendar date ordering
+  return {
+    violated: businessDateStr < latestSourceDateStr,
+    latestSourceDateStr,
+    latestSourceDateMs: latestMs,
+  }
+}

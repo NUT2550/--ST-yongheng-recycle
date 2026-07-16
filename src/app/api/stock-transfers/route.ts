@@ -21,7 +21,8 @@ import {
   isValidDateString,
   isFutureThailandDate,
   parseThailandBusinessDate,
-  getThailandTodayDateString,
+  formatThailandBusinessDate,
+  checkSourceLotCausality,
 } from '@/lib/thailand-date';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
@@ -449,6 +450,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ST-41: Source-lot causality check — business date must not be earlier than
+    // any consumed source lot's dateAdded. An output lot cannot predate its source.
+    // fifoPreview.deductedLots contains the lots that WILL be consumed; find their dateAdded.
+    if (fifoPreview.success) {
+      const consumedLotIds = fifoPreview.deductedLots.map(l => l.lotId)
+      const consumedLotDates = sourceLots
+        .filter(l => consumedLotIds.includes(l.id))
+        .map(l => l.dateAdded)
+      const causality = checkSourceLotCausality(date, consumedLotDates)
+      if (causality.violated) {
+        return NextResponse.json(
+          {
+            error: `วันที่แกะของต้องไม่เร็วกว่าวันที่รับสินค้าต้นทางที่ถูกนำมาใช้ (ต้นทางล่าสุด: ${causality.latestSourceDateStr})`,
+            code: 'BUSINESS_DATE_BEFORE_SOURCE',
+            businessDate: date,
+            latestSourceDate: causality.latestSourceDateStr,
+            requestId,
+          },
+          { status: 400, headers: { 'X-Request-ID': requestId } }
+        )
+      }
+    }
+
     // ========== EXECUTE (pgbouncer-safe sequential operations, NOT interactive transaction) ==========
 
     // Step 1: Generate bill number BEFORE any DB writes
@@ -589,6 +613,11 @@ export async function POST(request: NextRequest) {
           sourceProductName: sourceProduct.name,
           sourceCostPerKg,
           sourceTotalCost,
+          businessDate: date, // ST-41: server-normalized YYYY-MM-DD
+          storedBusinessDateUtc: parseThailandBusinessDate(date).toISOString(), // ST-41: UTC timestamp
+          requestId, // ST-41: traceability
+          actorUserId: payload.userId, // ST-41: actor
+          actorUserName: payload.name, // ST-41: actor
           lossWeight,
           lossCost,
           gainWeight,

@@ -6,7 +6,6 @@ import { fetchProducts, createStockTransfer } from '@/lib/api';
 import {
   formatBaht,
   formatWeight,
-  getCurrentDateForInput,
   calculateCartWeight,
 } from '@/lib/helpers';
 import {

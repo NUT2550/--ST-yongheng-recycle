@@ -209,17 +209,7 @@ describe('ST-41: round-trip stability', () => {
   })
 })
 
-// ============ 7. Failure-state retention (UI behavior documented) ============
-
-describe('ST-41: failure-state retention (documented UI behavior)', () => {
-  test('28. businessDate state is NOT reset on HTTP 400/409/500 — only on success', () => {
-    // The UI's setBusinessDate(getThailandTodayDateString()) is called ONLY in the
-    // success path (after the api call succeeds). The catch block does NOT reset it.
-    // The finally block resets setSubmitting(false) but NOT businessDate.
-    // This test documents that invariant:
-    const resetOnSuccess = true  // setBusinessDate called after toast.success
-    const resetOnError = false   // NOT called in catch block
-    expect(resetOnSuccess).toBe(true)
-    expect(resetOnError).toBe(false)
-  })
-})
+// ============ 7. Failure-state retention — moved to route-integration tests ============
+// The documentation-only boolean test was removed per ST-41 review.
+// Real failure-state retention is tested in tests/st41-route-integration.test.ts
+// (test 26: executable check that businessDate remains valid + unchanged after error).

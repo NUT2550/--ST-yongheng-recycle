@@ -9,6 +9,7 @@ import {
 } from '@/lib/api';
 import { BuyBill, SellBill, SortingBill, StockTransfer } from '@/lib/types';
 import { formatBaht, formatWeight, formatDate } from '@/lib/helpers';
+import { formatThailandDateTimeDisplay } from '@/lib/thailand-date';
 import { formulaHint } from '@/lib/safe-math';
 import { getAuthToken } from '@/lib/api';
 import {
@@ -431,7 +432,7 @@ function BuyBillCard({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <ShoppingCart className="h-4 w-4 text-green-600 shrink-0" />
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
-                      {formatDate(bill.date)}
+                      {formatThailandDateTimeDisplay(bill.date)}
                     </span>
                     {bill.isCredit && (
                       <Badge
@@ -552,7 +553,7 @@ function SellBillCard({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Coins className="h-4 w-4 text-blue-600 shrink-0" />
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
-                      {bill.customer ? bill.customer.name : formatDate(bill.date)}
+                      {bill.customer ? bill.customer.name : formatThailandDateTimeDisplay(bill.date)}
                     </span>
                     {bill.isCredit && (
                       <Badge
@@ -565,7 +566,7 @@ function SellBillCard({
                     {cancelled && <CancelledBadge />}
                   </div>
                   <p className="text-xs text-gray-500">
-                    {formatDate(bill.date)} · {bill.items.length} รายการ
+                    {formatThailandDateTimeDisplay(bill.date)} · {bill.items.length} รายการ
                   </p>
                 </div>
                 <div className="text-right shrink-0">
@@ -703,7 +704,7 @@ function SortBillCard({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <RefreshCw className="h-4 w-4 text-purple-600 shrink-0" />
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
-                      {formatDate(bill.date)}
+                      {formatThailandDateTimeDisplay(bill.date)}
                     </span>
                     {roomDisplay && (
                       <Badge variant="secondary" className="bg-purple-100 text-purple-700 hover:bg-purple-100 text-[10px] px-1.5 py-0 shrink-0">
@@ -875,7 +876,7 @@ function TransferBillCard({
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Icon className={`h-4 w-4 ${iconColor} shrink-0`} />
                     <span className={`text-sm font-medium ${cancelled ? 'text-gray-500' : 'text-gray-900'}`}>
-                      {formatDate(bill.date)}
+                      {formatThailandDateTimeDisplay(bill.date)}
                     </span>
                     {bill.roomNumber && (
                       <Badge variant="secondary" className={badgeClass}>
