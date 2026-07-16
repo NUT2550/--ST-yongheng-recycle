@@ -1,4 +1,2 @@
 [test]
-# Stub 'server-only' for test environment — in production Next.js handles it
-# In tests, we make it a no-op so auth.ts can be imported
 preload = ["./tests/st10-server-only-stub.ts"]
