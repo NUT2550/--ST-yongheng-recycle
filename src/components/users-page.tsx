@@ -27,19 +27,12 @@ import {
 } from '@/components/ui/table'
 import { toast } from 'sonner'
 import { getAuthToken } from '@/lib/api'
+// ST-10: Single source of truth for permission keys + Thai labels.
+// Imported from the shared permission module — same source the server uses
+// to build JWTs and authorize routes. No local duplicate array.
+import { PERMISSION_LABELS } from '@/lib/permissions'
 
-// ST-14: Canonical permission keys (must match server-side VALID_PERMISSIONS)
-const PERMISSION_KEYS = [
-  { key: 'customer.create', label: 'สร้างลูกค้า' },
-  { key: 'buy.create', label: 'สร้างใบรับซื้อ' },
-  { key: 'sell.create', label: 'สร้างใบขาย' },
-  { key: 'sort.create', label: 'สร้างใบคัดแยก' },
-  { key: 'transfer.create', label: 'สร้างใบย้ายสต็อก' },
-  { key: 'history.edit', label: 'แก้ไข/ยกเลิกบิลในประวัติ' },
-  { key: 'physical-count.apply', label: 'Apply การชั่งสต็อกจริง (Legacy)' },
-  { key: 'dailyPurchaseWeighing', label: 'ชั่งยอดซื้อทองแดง/ทองเหลือง' },
-  { key: 'product.manage', label: 'จัดการสินค้า' },
-] as const
+const PERMISSION_KEYS = Object.entries(PERMISSION_LABELS).map(([key, label]) => ({ key, label }))
 
 interface User {
   id: string

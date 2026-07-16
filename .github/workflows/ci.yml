@@ -117,8 +117,6 @@ jobs:
       - name: Install dependencies (lockfile-consistent)
         run: bun install --frozen-lockfile
 
-      - name: Stub server-only for test environment
-        run: echo 'export {}' > node_modules/server-only/index.js
       - name: Run unit tests
         env:
           JWT_SECRET: ci-dummy-jwt-secret-not-for-production-use-only

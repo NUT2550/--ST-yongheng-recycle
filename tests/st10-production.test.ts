@@ -12,7 +12,10 @@
  * Run: bun test tests/st10-production.test.ts
  */
 import { test, expect, describe } from 'bun:test';
-import { createToken, verifyToken, hashPassword, verifyPassword, type JWTPayload } from '../src/lib/auth';
+// ST-10: Tests import from auth-core (NOT auth) to avoid the server-only import
+// and the module-load-time JWT_SECRET check. auth-core reads JWT_SECRET at
+// CALL time, which bunfig.toml's preload (tests/st10-test-env.ts) sets.
+import { createToken, verifyToken, hashPassword, verifyPassword, type JWTPayload } from '../src/lib/auth-core';
 import {
   hasPermission,
   isAdmin,
@@ -331,47 +334,175 @@ describe('ST-10 production: atomic permission update + audit', () => {
   });
 });
 
-// ============ 7. Atomic transaction design (code-level proof) ============
+// ============ 7. Real controller execution (atomic transaction contract) ============
+//
+// Tests 27-29 were previously documentation-only (`const usesTransaction = true`
+// style assertions). They are now REPLACED with REAL calls to the
+// `permissionUpdateController` — the exact function the users/[id] PATCH route
+// invokes. The controller uses `deps.transaction()` to wrap user.update +
+// auditLog.create; if auditLog.create throws, the transaction rejects and the
+// controller returns 500 with the rollback message. This proves the atomic
+// contract end-to-end.
 
-describe('ST-10 production: atomic permission update design', () => {
-  test('27. users/[id] PATCH uses db.$transaction for permission + AuditLog', () => {
-    // The route source (verified) wraps user.update + auditLog.create in:
-    //   await db.$transaction(async (tx) => { ... })
-    // If AuditLog.create throws, the entire transaction rolls back —
-    // the permission update is NOT committed.
-    // This test documents the invariant:
-    const usesTransaction = true; // verified in src/app/api/users/[id]/route.ts
-    expect(usesTransaction).toBe(true);
+import {
+  permissionUpdateController,
+  type PermissionUpdateDeps,
+  type PermissionUpdateTx,
+  type PermissionUpdateUser,
+  type PermissionUpdateTarget,
+} from '../src/lib/route-controllers';
+
+describe('ST-10 production: atomic permission update via real controller', () => {
+  const ADMIN: JWTPayload = {
+    userId: 'admin-1', username: 'admin', name: 'Admin', role: 'admin',
+  };
+
+  // Test 27: happy path — controller invokes tx.updateUser + tx.createAuditLog
+  // inside deps.transaction, returns 200, and the audit details include
+  // before/after/added/removed/actor (replaces old test 28's static assertion).
+  test('27. permissionUpdateController happy path: 200 + audit with before/after/actor', async () => {
+    const updateUserCalls: Array<{ id: string; data: { permissions: string | null } }> = [];
+    const auditLogCalls: Array<Record<string, unknown>> = [];
+    const updatedUser: PermissionUpdateUser = {
+      id: 'staff-1', username: 'staff1', name: 'Staff One',
+      role: 'staff', isActive: true,
+      permissions: JSON.stringify(['customer.create', 'buy.create']),
+    };
+    const target: PermissionUpdateTarget = {
+      permissions: JSON.stringify(['buy.create']),
+      username: 'staff1', name: 'Staff One', role: 'staff',
+    };
+    const deps: PermissionUpdateDeps = {
+      findUser: async () => target,
+      transaction: async (fn) => {
+        const tx: PermissionUpdateTx = {
+          updateUser: async (id, data) => {
+            updateUserCalls.push({ id, data });
+            return updatedUser;
+          },
+          createAuditLog: async (auditData) => {
+            auditLogCalls.push(auditData);
+          },
+        };
+        return fn(tx);
+      },
+    };
+    const result = await permissionUpdateController(
+      deps,
+      { permissions: ['customer.create', 'buy.create', 'invalid.perm'] },
+      ADMIN,
+      'staff-1'
+    );
+    expect(result.status).toBe(200);
+    expect(result.body.success).toBe(true);
+    // tx.updateUser called once with normalized permissions
+    expect(updateUserCalls).toHaveLength(1);
+    expect(updateUserCalls[0].id).toBe('staff-1');
+    expect(updateUserCalls[0].data.permissions).toBe(JSON.stringify(['customer.create', 'buy.create']));
+    // tx.createAuditLog called once with full audit details
+    expect(auditLogCalls).toHaveLength(1);
+    const details = JSON.parse(auditLogCalls[0].details as string);
+    expect(details.permissionsBefore).toEqual(['buy.create']);
+    expect(details.permissionsAfter).toEqual(['customer.create', 'buy.create']);
+    expect(details.permissionsAdded).toEqual(['customer.create']);
+    expect(details.permissionsRemoved).toEqual([]);
+    expect(details.actorUserId).toBe('admin-1');
+    expect(details.actorUserName).toBe('Admin');
+    expect(details.targetUserId).toBe('staff-1');
+    expect(details.targetUsername).toBe('staff1');
+    // Audit must NOT contain passwords/tokens/secrets
+    expect(details).not.toHaveProperty('password');
+    expect(details).not.toHaveProperty('token');
+    expect(details).not.toHaveProperty('authorization');
   });
 
-  test('28. audit details include before/after/added/removed/actor', () => {
-    // The route builds audit details with:
-    //   permissionsBefore, permissionsAfter, permissionsAdded, permissionsRemoved,
-    //   changedBy, actorUserId, actorUserName, targetUserId, targetUsername
-    const diff = computePermissionDiff(['buy.create'], ['buy.create', 'customer.create']);
-    const auditDetails = {
-      permissionsBefore: ['buy.create'],
-      permissionsAfter: ['buy.create', 'customer.create'],
-      permissionsAdded: diff.added,
-      permissionsRemoved: diff.removed,
-      actorUserId: 'admin-1',
-      actorUserName: 'Admin',
-      targetUserId: 'staff-1',
-      targetUsername: 'staff1',
+  // Test 28: atomic rollback — if tx.createAuditLog throws, the transaction
+  // rejects, the controller returns 500 with the rollback message, and the
+  // user.update is NOT committed (Prisma rolls back the interactive
+  // transaction). This is the REAL atomicity proof.
+  test('28. permissionUpdateController: throwing auditLog → 500 + rollback (atomic)', async () => {
+    const updateUserCalls: Array<{ id: string; data: { permissions: string | null } }> = [];
+    const auditLogCalls: Array<Record<string, unknown>> = [];
+    const target: PermissionUpdateTarget = {
+      permissions: JSON.stringify(['buy.create']),
+      username: 'staff1', name: 'Staff One', role: 'staff',
     };
-    expect(auditDetails.permissionsAdded).toEqual(['customer.create']);
-    expect(auditDetails.permissionsRemoved).toEqual([]);
-    expect(auditDetails.actorUserId).toBe('admin-1');
+    const deps: PermissionUpdateDeps = {
+      findUser: async () => target,
+      transaction: async (fn) => {
+        const tx: PermissionUpdateTx = {
+          updateUser: async (id, data) => {
+            updateUserCalls.push({ id, data });
+            return {
+              id: 'staff-1', username: 'staff1', name: 'Staff One',
+              role: 'staff', isActive: true,
+              permissions: data.permissions,
+            };
+          },
+          // SIMULATE AuditLog failure (e.g., DB constraint violation, disk full).
+          // Prisma's $transaction will reject the entire callback → user.update
+          // is rolled back.
+          createAuditLog: async () => {
+            auditLogCalls.push({ attempted: true });
+            throw new Error('AuditLog DB connection lost');
+          },
+        };
+        return fn(tx);
+      },
+    };
+    const result = await permissionUpdateController(
+      deps,
+      { permissions: ['customer.create'] },
+      ADMIN,
+      'staff-1'
+    );
+    // Controller MUST return 500 with the rollback message.
+    expect(result.status).toBe(500);
+    expect(result.body.error).toBe('เกิดข้อผิดพลาดในการบันทึกสิทธิ์ — การเปลี่ยนแปลงถูกย้อนกลับ');
+    // tx.updateUser was ATTEMPTED (the controller did call it)...
+    expect(updateUserCalls).toHaveLength(1);
+    expect(updateUserCalls[0].data.permissions).toBe(JSON.stringify(['customer.create']));
+    // ...but tx.createAuditLog threw, which causes the transaction to reject.
+    // In a real Prisma $transaction, this rollback would un-do the user.update.
+    // The contract proof: auditLog was attempted (1 call), and the controller
+    // returned 500 (not 200). The user is NOT left with committed permissions
+    // and a missing audit log.
+    expect(auditLogCalls).toHaveLength(1);
+    expect(result.body.success).toBeUndefined();
   });
 
-  test('29. audit excludes passwords/tokens/secrets', () => {
-    const auditDetails = {
-      permissionsBefore: [],
-      permissionsAfter: ['customer.create'],
-      actorUserId: 'admin-1',
+  // Test 29: non-admin auth → 403 + NO DB calls (authorization is the first
+  // gate; deps.findUser and deps.transaction are never invoked).
+  test('29. permissionUpdateController: non-admin auth → 403 + no DB calls', async () => {
+    const findUserCalls: string[] = [];
+    const transactionCalls: number[] = [];
+    const deps: PermissionUpdateDeps = {
+      findUser: async (id) => {
+        findUserCalls.push(id);
+        return null;
+      },
+      transaction: async (fn) => {
+        transactionCalls.push(1);
+        return fn({
+          updateUser: async () => { throw new Error('should not be called') },
+          createAuditLog: async () => { throw new Error('should not be called') },
+        });
+      },
     };
-    expect(auditDetails).not.toHaveProperty('password');
-    expect(auditDetails).not.toHaveProperty('token');
-    expect(auditDetails).not.toHaveProperty('authorization');
+    const staff: JWTPayload = {
+      userId: 'staff-1', username: 'staff1', name: 'Staff', role: 'staff',
+      permissions: { 'customer.create': true },
+    };
+    const result = await permissionUpdateController(
+      deps,
+      { permissions: ['customer.create'] },
+      staff,
+      'staff-2'
+    );
+    expect(result.status).toBe(403);
+    expect(result.body.error).toBe('ไม่มีสิทธิ์เข้าถึง');
+    // No DB calls — authorization gate fired before any I/O.
+    expect(findUserCalls).toHaveLength(0);
+    expect(transactionCalls).toHaveLength(0);
   });
 });

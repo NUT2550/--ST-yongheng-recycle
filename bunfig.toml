@@ -1,2 +1,2 @@
 [test]
-preload = ["./tests/st10-server-only-stub.ts"]
+preload = ["./tests/st10-test-env.ts"]

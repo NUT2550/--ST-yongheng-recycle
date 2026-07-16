@@ -1,93 +1,46 @@
+/**
+ * ST-10: Server-only auth facade.
+ *
+ * This file re-exports the pure crypto layer from `./auth-core` and adds two
+ * production-only guarantees:
+ *
+ *   1. `import 'server-only'` — Next.js will refuse to bundle this module
+ *      into client code, preventing accidental leakage of JWT signing /
+ *      verification / password hashing into the browser.
+ *
+ *   2. Module-load-time `JWT_SECRET` check — production fails fast at boot
+ *      if the secret is missing, instead of waiting for the first login
+ *      attempt to throw. This makes misconfiguration immediately visible
+ *      in deploy logs.
+ *
+ * Tests should import from `./auth-core` directly (NOT from this file) so
+ * they don't trigger the server-only guard and don't need JWT_SECRET set
+ * at module load time. `auth-core`'s `createToken` / `verifyToken` read
+ * JWT_SECRET at call time, which lets `bunfig.toml` preload set a test
+ * secret before any test invokes them.
+ */
+
 import 'server-only'
-import { SignJWT, jwtVerify } from 'jose'
-import bcrypt from 'bcryptjs'
-import { TOKEN_STORAGE_KEY } from './auth-constants'
 
-export { TOKEN_STORAGE_KEY }
-
-// JWT secret MUST be provided via environment variable.
-// Never fall back to a hardcoded value — that would allow attackers to forge
-// tokens if the env var is missing. Fail fast at module load instead.
+// Production safety: fail fast if the JWT secret is missing at boot.
+// Without this, the first login attempt would throw an opaque error inside
+// `auth-core.createToken` instead of failing at startup.
 const JWT_SECRET_STRING = process.env.JWT_SECRET
 if (!JWT_SECRET_STRING) {
   throw new Error(
     'JWT_SECRET environment variable is required. Set it in .env or Vercel env vars.'
   )
 }
-const JWT_SECRET = new TextEncoder().encode(JWT_SECRET_STRING)
 
-const COOKIE_NAME = TOKEN_STORAGE_KEY
-
-export interface JWTPayload {
-  userId: string
-  username: string
-  name: string
-  role: 'admin' | 'staff'
-  permissions?: Record<string, boolean>
-}
-
-// Hash password
-export async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10)
-}
-
-// Verify password
-export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-  return bcrypt.compare(password, hashedPassword)
-}
-
-// Create JWT token
-export async function createToken(payload: JWTPayload): Promise<string> {
-  return new SignJWT({ ...payload })
-    .setProtectedHeader({ alg: 'HS256' })
-    .setIssuedAt()
-    .setExpirationTime('7d')
-    .sign(JWT_SECRET)
-}
-
-// Verify JWT token
-export async function verifyToken(token: string): Promise<JWTPayload | null> {
-  try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload as unknown as JWTPayload
-  } catch {
-    return null
-  }
-}
-
-// Get cookie name
-export function getCookieName(): string {
-  return COOKIE_NAME
-}
-
-// Parse cookie from request headers
-export function getTokenFromCookies(cookieHeader: string | null): string | null {
-  if (!cookieHeader) return null
-  const cookies = cookieHeader.split(';')
-  for (const cookie of cookies) {
-    const [name, value] = cookie.trim().split('=')
-    if (name === COOKIE_NAME) {
-      return value
-    }
-  }
-  return null
-}
-
-// Extract token from a request, preferring the Authorization header (Bearer)
-// and falling back to the auth_token cookie. This makes auth work in both:
-//   - direct browser access (cookie)
-//   - cross-origin iframes where SameSite cookies may be blocked (header)
-export function getTokenFromRequest(request: Request): string | null {
-  // 1) Authorization: Bearer <token>
-  const authHeader = request.headers.get('authorization') || request.headers.get('Authorization')
-  if (authHeader) {
-    const match = authHeader.match(/^Bearer\s+(.+)$/i)
-    if (match) return match[1].trim()
-  }
-  // 2) Cookie fallback
-  const cookieHeader = request.headers.get('cookie')
-  if (cookieHeader) {
-    return getTokenFromCookies(cookieHeader)
-  }
-  return null
-}
+// Re-export everything from the pure crypto layer.
+export {
+  TOKEN_STORAGE_KEY,
+  type JWTPayload,
+  hashPassword,
+  verifyPassword,
+  createToken,
+  verifyToken,
+  getCookieName,
+  getTokenFromCookies,
+  getTokenFromRequest,
+} from './auth-core'

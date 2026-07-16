@@ -120,3 +120,58 @@ export function computePermissionDiff(
     removed: before.filter((p) => !afterSet.has(p)),
   }
 }
+
+/**
+ * ST-10: Build the admin permission map (every canonical permission = true).
+ *
+ * Admin role gets all canonical permissions implicitly at login time. The
+ * map is embedded into the JWT so that downstream route handlers using
+ * `hasPermission(payload, perm)` succeed uniformly for admins.
+ *
+ * NOTE: 'user.manage' is intentionally NOT in this map. User management
+ * (PATCH /api/users/[id]) is admin-only via the `isAdmin()` role check, NOT
+ * a permission flag. Removing 'user.manage' from JWTs eliminates the
+ * stale-permission-flag attack surface — even a tampered or stale JWT
+ * cannot grant user-management rights because the flag is never emitted.
+ *
+ * Pure function — used by the login route AND the loginController tests.
+ */
+export function buildAdminPermissionMap(): Record<string, boolean> {
+  const map: Record<string, boolean> = {}
+  for (const perm of CANONICAL_PERMISSIONS) {
+    map[perm] = true
+  }
+  return map
+}
+
+/**
+ * ST-10: Build the staff permission map from the stored DB JSON string.
+ *
+ * Staff role gets ONLY the permissions explicitly stored in `user.permissions`
+ * (a JSON array of canonical permission strings). Anything that isn't a
+ * canonical permission string is silently dropped via `filterValidPermissions`
+ * — this is the trust boundary that prevents forged / stale / typo'd
+ * permission strings from being embedded in the JWT.
+ *
+ * Pure function — used by the login route AND the loginController tests.
+ *
+ * @param storedPermissions  The raw `user.permissions` column value
+ *                           (JSON string array) — may be null or invalid JSON.
+ */
+export function buildStaffPermissionMap(
+  storedPermissions: string | null
+): Record<string, boolean> {
+  const map: Record<string, boolean> = {}
+  if (!storedPermissions) return map
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(storedPermissions)
+  } catch {
+    return map
+  }
+  if (!Array.isArray(parsed)) return map
+  for (const p of filterValidPermissions(parsed)) {
+    map[p] = true
+  }
+  return map
+}
