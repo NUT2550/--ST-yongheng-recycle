@@ -118,6 +118,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run unit tests
+        env:
+          JWT_SECRET: ci-dummy-jwt-secret-not-for-production-use-only
         run: bun test
 
   build:
