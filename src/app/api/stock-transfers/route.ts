@@ -17,6 +17,12 @@ import {
   isPositiveYieldAllowed,
   YIELD_WEIGHT_TOLERANCE,
 } from '@/lib/transfer-cost-allocation';
+import {
+  isValidDateString,
+  isFutureThailandDate,
+  parseThailandBusinessDate,
+  getThailandTodayDateString,
+} from '@/lib/thailand-date';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
 // ST-11: deductStockFIFO now attaches partial deductedLots to the error if it throws mid-loop,
@@ -245,6 +251,26 @@ export async function POST(request: NextRequest) {
     };
 
     // ========== VALIDATION (return 400 for all validation failures) ==========
+
+    // ST-41: Validate business date (YYYY-MM-DD, real calendar date, not future)
+    if (!date || typeof date !== 'string' || !date.trim()) {
+      return NextResponse.json(
+        { error: 'กรุณาระบุวันที่แกะของ', code: 'DATE_REQUIRED' },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+    if (!isValidDateString(date)) {
+      return NextResponse.json(
+        { error: 'รูปแบบวันที่ไม่ถูกต้อง', code: 'DATE_INVALID' },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+    if (isFutureThailandDate(date)) {
+      return NextResponse.json(
+        { error: 'ไม่สามารถบันทึกวันที่ในอนาคตได้', code: 'DATE_FUTURE' },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
 
     // 1. sourceProductId required
     if (!sourceProductId || typeof sourceProductId !== 'string' || !sourceProductId.trim()) {
@@ -483,7 +509,7 @@ export async function POST(request: NextRequest) {
     const created = await db.stockTransfer.create({
       data: {
         billNumber,
-        date: new Date(date),
+        date: parseThailandBusinessDate(date), // ST-41: Thailand business-date midnight (timezone-safe)
         roomNumber: roomNumber?.trim() || null,
         businessType: businessType?.trim() || null,
         sourceProductId,
@@ -537,7 +563,7 @@ export async function POST(request: NextRequest) {
             productId: item.productId,
             remainingWeight: item.weight,
             costPerKg: allocatedItems[idx].costPerKg,
-            dateAdded: new Date(date),
+            dateAdded: parseThailandBusinessDate(date), // ST-41: business date for FIFO chronology
             source: 'TRANSFER',
             sourceId: created.id,
           },

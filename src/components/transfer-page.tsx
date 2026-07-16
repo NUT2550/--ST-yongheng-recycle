@@ -9,6 +9,11 @@ import {
   getCurrentDateForInput,
   calculateCartWeight,
 } from '@/lib/helpers';
+import {
+  getThailandTodayDateString,
+  isFutureThailandDate,
+  formatThailandBuddhistDate,
+} from '@/lib/thailand-date';
 import { Product, TransferCartItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -54,7 +59,8 @@ export function TransferPage() {
   const [sourceWeightInput, setSourceWeightInput] = useState<string>('');
   const [weighedTotalInput, setWeighedTotalInput] = useState<string>('');
   const [isWaste, setIsWaste] = useState(false);
-  const [dateTime, setDateTime] = useState<string>(getCurrentDateForInput());
+  // ST-41: business date (YYYY-MM-DD) — date-only, defaults to Thailand today
+  const [businessDate, setBusinessDate] = useState<string>(getThailandTodayDateString());
   const [note, setNote] = useState<string>('');
   const [gainReason, setGainReason] = useState<string>(''); // ST-40: required when output > source
 
@@ -300,6 +306,15 @@ export function TransferPage() {
       );
       return;
     }
+    // ST-41: validate business date (not blank, not future)
+    if (!businessDate || businessDate.trim() === '') {
+      toast.error('กรุณาระบุวันที่แกะของ');
+      return;
+    }
+    if (isFutureThailandDate(businessDate)) {
+      toast.error('ไม่สามารถเลือกวันที่ในอนาคตได้');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -309,7 +324,7 @@ export function TransferPage() {
       const weighedTotalExpression = weighedTotalResult.isFormula ? weighedTotalResult.expression : undefined;
 
       const result = await createStockTransfer({
-        date: new Date(dateTime).toISOString(),
+        date: businessDate, // ST-41: date-only YYYY-MM-DD (backend normalizes via parseThailandBusinessDate)
         sourceProductId: transferSourceProductId,
         sourceWeight: transferSourceWeight,
         sourceWeightExpression,
@@ -337,7 +352,7 @@ export function TransferPage() {
       clearTransferCart();
       setSourceWeightInput('');
       setWeighedTotalInput('');
-      setDateTime(getCurrentDateForInput());
+      setBusinessDate(getThailandTodayDateString()); // ST-41: reset to today only after successful save
       setNote('');
       setGainReason('');
 
@@ -475,6 +490,22 @@ export function TransferPage() {
                     value={transferLaborCost || ''}
                     onChange={(e) => setTransferLaborCost(parseFloat(e.target.value) || 0)}
                   />
+                </div>
+
+                {/* ST-41: Business date */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="transfer-date" className="text-xs">วันที่แกะของ</Label>
+                  <Input
+                    id="transfer-date"
+                    type="date"
+                    value={businessDate}
+                    max={getThailandTodayDateString()}
+                    onChange={(e) => setBusinessDate(e.target.value)}
+                    className="text-sm"
+                  />
+                  {businessDate && businessDate < getThailandTodayDateString() && (
+                    <p className="text-[11px] text-amber-600">กำลังบันทึกย้อนหลัง — {formatThailandBuddhistDate(businessDate)}</p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -705,6 +736,12 @@ export function TransferPage() {
               <CardTitle className="text-base font-semibold">สรุป</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2.5">
+              {/* ST-41: Business date in summary */}
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">วันที่แกะของ</span>
+                <span className="font-medium">{businessDate ? formatThailandBuddhistDate(businessDate) : '—'}</span>
+              </div>
+
               {/* Weight summary */}
               <div className="flex justify-between text-sm">
                 <span className="text-gray-500">น้ำหนักต้นทาง</span>
@@ -816,7 +853,7 @@ export function TransferPage() {
               )}
               <Button
                 onClick={handleSubmit}
-                disabled={submitting || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight || (hasGain && !gainReason.trim())}
+                disabled={submitting || !businessDate || transferSourceWeight <= 0 || transferCartItems.length === 0 || sourceAvailableWeight <= 0 || transferSourceWeight > sourceAvailableWeight || (hasGain && !gainReason.trim())}
                 className="w-full bg-cyan-600 hover:bg-cyan-700 text-white"
               >
                 {submitting ? (
