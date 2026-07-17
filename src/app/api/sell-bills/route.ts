@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber } from '@/lib/bill-helpers';
 import { hasPermission } from '@/lib/permissions';
+import { makeSellBillServiceDeps } from '@/lib/bill-service-prisma-adapters';
 import {
   createSellBillService,
   DuplicateExistingError,
@@ -17,71 +18,7 @@ import {
 // adapter: auth -> parse -> call service -> map errors to responses.
 // ============================================================================
 
-function makeSellBillDeps() {
-  return {
-    checkStockAvailability: async (items: Array<{ productId: string; weight: number }>) => {
-      for (const item of items) {
-        const lots = await db.stockLot.findMany({
-          where: {
-            productId: item.productId,
-            remainingWeight: { gt: 0 },
-          },
-          orderBy: FIFO_ORDER_BY,
-        });
-        const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
-        if (totalAvailable < item.weight) {
-          const product = await db.product.findUnique({
-            where: { id: item.productId },
-            select: { name: true },
-          });
-          return {
-            ok: false as const,
-            productId: item.productId,
-            productName: product?.name,
-            available: totalAvailable,
-            requested: item.weight,
-          };
-        }
-      }
-      return { ok: true as const };
-    },
-    generateBillNumber: () => generateBillNumber(db, 'SELL'),
-    transaction: <T>(fn: (tx: SellBillTx<SellBillCreatedBill>) => Promise<T>): Promise<T> =>
-      db.$transaction(async (prismaTx) => {
-        const adaptedTx: SellBillTx = {
-          createSellBill: (args) =>
-            prismaTx.sellBill.create({
-              ...args,
-              include: {
-                items: { include: { product: true } },
-                customer: true,
-              },
-            }) as Promise<SellBillCreatedBill>,
-          findSourceLots: (productId) =>
-            prismaTx.stockLot.findMany({
-              where: { productId, remainingWeight: { gt: 0 } },
-              orderBy: FIFO_ORDER_BY,
-            }) as Promise<
-              Array<{
-                id: string;
-                remainingWeight: number;
-                costPerKg: number;
-                dateAdded: Date;
-                createdAt: Date;
-              }>
-            >,
-          updateStockLotRemaining: (id, newRemaining) =>
-            prismaTx.stockLot.update({
-              where: { id },
-              data: { remainingWeight: newRemaining },
-            }),
-          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
-          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
-        };
-        return fn(adaptedTx);
-      }),
-  };
-}
+// ST-8: makeSellBillServiceDeps imported from @/lib/bill-service-prisma-adapters
 
 // POST /api/sell-bills - Create a sell bill (thin adapter over createSellBillService)
 export async function POST(request: NextRequest) {
@@ -111,7 +48,7 @@ export async function POST(request: NextRequest) {
       }>;
     };
 
-    const result = await createSellBillService(makeSellBillDeps(), {
+    const result = await createSellBillService(makeSellBillServiceDeps(), {
       date,
       customerId,
       isCredit,

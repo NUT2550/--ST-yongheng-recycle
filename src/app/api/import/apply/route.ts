@@ -12,6 +12,7 @@ import {
   type ParsedBillItem,
 } from '@/lib/import-pipeline';
 import { hasPermission } from '@/lib/permissions';
+import { makeBuyBillServiceDeps, makeSellBillServiceDeps } from '@/lib/bill-service-prisma-adapters';
 import {
   createBuyBillService,
   createSellBillService,
@@ -68,93 +69,9 @@ import {
 // POST routes. No duplicated logic.
 // ============================================================================
 
-function makeBuyBillDeps() {
-  return {
-    generateBillNumber: () => generateBillNumber(db, 'BUY'),
-    transaction: <T>(fn: (tx: BuyBillTx<BuyBillCreatedBill>) => Promise<T>): Promise<T> =>
-      db.$transaction(async (prismaTx) => {
-        const adaptedTx: BuyBillTx = {
-          createBuyBill: (args) =>
-            prismaTx.buyBill.create({
-              ...args,
-              include: { items: { include: { product: true } } },
-            }) as Promise<BuyBillCreatedBill>,
-          createStockLots: (data) => prismaTx.stockLot.createMany({ data }),
-          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
-          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
-        };
-        return fn(adaptedTx);
-      }),
-  };
-}
 
-function makeSellBillDeps() {
-  return {
-    checkStockAvailability: async (
-      items: Array<{ productId: string; weight: number }>
-    ) => {
-      for (const item of items) {
-        const lots = await db.stockLot.findMany({
-          where: {
-            productId: item.productId,
-            remainingWeight: { gt: 0 },
-          },
-          orderBy: FIFO_ORDER_BY,
-        });
-        const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
-        if (totalAvailable < item.weight) {
-          const product = await db.product.findUnique({
-            where: { id: item.productId },
-            select: { name: true },
-          });
-          return {
-            ok: false as const,
-            productId: item.productId,
-            productName: product?.name,
-            available: totalAvailable,
-            requested: item.weight,
-          };
-        }
-      }
-      return { ok: true as const };
-    },
-    generateBillNumber: () => generateBillNumber(db, 'SELL'),
-    transaction: <T>(fn: (tx: SellBillTx<SellBillCreatedBill>) => Promise<T>): Promise<T> =>
-      db.$transaction(async (prismaTx) => {
-        const adaptedTx: SellBillTx = {
-          createSellBill: (args) =>
-            prismaTx.sellBill.create({
-              ...args,
-              include: {
-                items: { include: { product: true } },
-                customer: true,
-              },
-            }) as Promise<SellBillCreatedBill>,
-          findSourceLots: (productId) =>
-            prismaTx.stockLot.findMany({
-              where: { productId, remainingWeight: { gt: 0 } },
-              orderBy: FIFO_ORDER_BY,
-            }) as Promise<
-              Array<{
-                id: string;
-                remainingWeight: number;
-                costPerKg: number;
-                dateAdded: Date;
-                createdAt: Date;
-              }>
-            >,
-          updateStockLotRemaining: (id, newRemaining) =>
-            prismaTx.stockLot.update({
-              where: { id },
-              data: { remainingWeight: newRemaining },
-            }),
-          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
-          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
-        };
-        return fn(adaptedTx);
-      }),
-  };
-}
+
+
 
 // ============================================================================
 // Production deps for applyImport.
@@ -230,7 +147,7 @@ const deps: ImportApplyDeps = {
   // classifies the bill as DUPLICATE_EXISTING.
   createPurchaseBill: async (bill, actor) => {
     const result = await createBuyBillService(
-      makeBuyBillDeps(),
+      makeBuyBillServiceDeps(),
       {
         date: bill.date,
         isCredit: false,
@@ -256,7 +173,7 @@ const deps: ImportApplyDeps = {
   // bubbles up unchanged.
   createSalesBill: async (bill, actor) => {
     const result = await createSellBillService(
-      makeSellBillDeps(),
+      makeSellBillServiceDeps(),
       {
         date: bill.date,
         customerId: undefined,

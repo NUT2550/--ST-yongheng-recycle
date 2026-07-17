@@ -692,7 +692,7 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
     expect(src).toMatch(/status: 'DUPLICATE_EXISTING'/);
     // Verify isPrismaP2002 maps P2002 to DuplicateExistingError in bill-services.
     const billServicesSrc = readSource(BILL_SERVICES_PATH);
-    expect(billServicesSrc).toMatch(/isPrismaP2002\s*\(/);
+    expect(billServicesSrc).toMatch(/isP2002OnField\s*\(/);
     expect(billServicesSrc).toMatch(/throw new DuplicateExistingError/);
     // Real isPrismaP2002 behavior.
     expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);

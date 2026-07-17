@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber } from '@/lib/bill-helpers';
 import { hasPermission } from '@/lib/permissions';
+import { makeBuyBillServiceDeps } from '@/lib/bill-service-prisma-adapters';
 import {
   createBuyBillService,
   DuplicateExistingError,
@@ -16,25 +17,7 @@ import {
 // adapter: auth -> parse -> call service -> map errors to responses.
 // ============================================================================
 
-function makeBuyBillDeps() {
-  return {
-    generateBillNumber: () => generateBillNumber(db, 'BUY'),
-    transaction: <T>(fn: (tx: BuyBillTx<BuyBillCreatedBill>) => Promise<T>): Promise<T> =>
-      db.$transaction(async (prismaTx) => {
-        const adaptedTx: BuyBillTx = {
-          createBuyBill: (args) =>
-            prismaTx.buyBill.create({
-              ...args,
-              include: { items: { include: { product: true } } },
-            }) as Promise<BuyBillCreatedBill>,
-          createStockLots: (data) => prismaTx.stockLot.createMany({ data }),
-          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
-          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
-        };
-        return fn(adaptedTx);
-      }),
-  };
-}
+// ST-8: makeBuyBillServiceDeps imported from @/lib/bill-service-prisma-adapters
 
 // POST /api/buy-bills - Create a buy bill (thin adapter over createBuyBillService)
 export async function POST(request: NextRequest) {
@@ -77,7 +60,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await createBuyBillService(makeBuyBillDeps(), {
+    const result = await createBuyBillService(makeBuyBillServiceDeps(), {
       date,
       isCredit,
       note,

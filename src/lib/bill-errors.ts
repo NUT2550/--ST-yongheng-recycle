@@ -26,3 +26,14 @@ export function isPrismaP2002(error: unknown): boolean {
   const code = (error as { code?: string }).code
   return code === 'P2002'
 }
+
+/**
+ * Check if a P2002 error is on a specific unique field.
+ * Inspects error.meta.target when available.
+ */
+export function isP2002OnField(error: unknown, fieldName: string): boolean {
+  if (!isPrismaP2002(error)) return false
+  const meta = (error as { meta?: { target?: string[] } }).meta
+  if (!meta?.target) return false
+  return meta.target.includes(fieldName)
+}

@@ -47,6 +47,7 @@ function makeMockDeps(opts: {
           if (opts.throwP2002) {
             const e = new Error('Unique constraint failed');
             (e as any).code = 'P2002';
+            (e as any).meta = { target: ['externalBillNumber'] };
             throw e;
           }
           if (opts.throwOther) throw opts.throwOther;

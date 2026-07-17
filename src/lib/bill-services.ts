@@ -43,7 +43,7 @@ import {
 } from './fifo-validation'
 import { isRealFormula } from './safe-math'
 import { normalizeBillNumber } from './bill-identity'
-import { DuplicateExistingError, isPrismaP2002 } from './bill-errors'
+import { DuplicateExistingError, isPrismaP2002, isP2002OnField } from './bill-errors'
 import type { AuthPayload } from './permissions'
 
 // DuplicateExistingError + isPrismaP2002 imported from ./bill-errors (no circular dependency)
@@ -320,7 +320,7 @@ export async function createBuyBillService<TBill extends BuyBillCreatedBill = Bu
 
     return { bill, billNumber, totalAmount }
   } catch (err) {
-    if (isPrismaP2002(err)) {
+    if (isP2002OnField(err, 'externalBillNumber')) {
       throw new DuplicateExistingError('externalBillNumber')
     }
     throw err
@@ -640,7 +640,7 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
       totalCost: txResult.totalCost,
     }
   } catch (err) {
-    if (isPrismaP2002(err)) {
+    if (isP2002OnField(err, 'externalBillNumber')) {
       throw new DuplicateExistingError('externalBillNumber')
     }
     throw err
