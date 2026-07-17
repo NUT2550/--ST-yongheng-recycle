@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
-import { isRealFormula } from '@/lib/safe-math';
+import { generateBillNumber } from '@/lib/bill-helpers';
 import {
   applyImport,
   normalizeBillNumber,
@@ -12,65 +11,140 @@ import {
   type ParsedBillItem,
 } from '@/lib/import-pipeline';
 import { hasPermission } from '@/lib/permissions';
-import { FIFO_ORDER_BY } from '@/lib/fifo-validation';
+import {
+  createBuyBillService,
+  createSellBillService,
+  FIFO_ORDER_BY,
+  type BuyBillCreatedBill,
+  type BuyBillTx,
+  type SellBillCreatedBill,
+  type SellBillTx,
+} from '@/lib/bill-services';
 
-// ST-8 Blocker 4: FIFO_ORDER_BY is imported from @/lib/fifo-validation
-// (canonical ST-39 ordering: dateAdded ASC, createdAt ASC, id ASC).
+// ST-8 Blocker 3: this route does NOT contain a second bill engine.
+// The createPurchaseBill / createSalesBill callbacks below are THIN
+// ADAPTERS over the shared services createBuyBillService /
+// createSellBillService (from @/lib/bill-services) — the SAME services
+// used by /api/buy-bills and /api/sell-bills. All bill/stock/audit
+// creation happens inside the shared service's atomic transaction.
+//
+// ST-8 Blocker 4: FIFO_ORDER_BY is re-exported from @/lib/bill-services
+// (canonical ST-39 ordering: dateAdded ASC, createdAt ASC, id ASC). The
+// source of truth remains @/lib/fifo-validation.
+//
+// ST-8 Blocker 7: when the shared service hits a Prisma P2002 (unique
+// constraint violation), it throws DuplicateExistingError. That error
+// bubbles up through the callback to applyImport, which classifies the
+// bill as DUPLICATE_EXISTING (not FAILED) so the rest of the batch
+// continues.
 
-/**
- * Transactional FIFO deduction — same algorithm as /api/sell-bills/route.ts
- * deductStockFIFO. Throws "Insufficient stock..." if any lot can't cover.
- *
- * ST-11 safety: the entire bill creation (including FIFO deduction) runs
- * inside ONE db.$transaction — so a mid-loop failure rolls back ALL lot
- * updates atomically. No partial deduction state. The per-bill try/catch
- * in the applyImport controller (above this layer) classifies the rolled-
- * back bill as INSUFFICIENT_STOCK or FAILED — the rest of the batch
- * continues unaffected.
- */
-async function deductStockFIFOTx(
-  productId: string,
-  weightToDeduct: number,
-  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0]
-): Promise<{ costPerKg: number; totalCost: number }> {
-  const lots = await tx.stockLot.findMany({
-    where: {
-      productId,
-      remainingWeight: { gt: 0 },
-    },
-    orderBy: FIFO_ORDER_BY,
-  });
+// ============================================================================
+// Production deps for the SHARED bill services.
+//
+// These factories are identical to the ones in /api/buy-bills/route.ts
+// (makeBuyBillDeps) and /api/sell-bills/route.ts (makeSellBillDeps) —
+// the import apply route uses the SAME shared services as the regular
+// POST routes. No duplicated logic.
+// ============================================================================
 
-  const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
-  if (totalAvailable < weightToDeduct) {
-    throw new Error(
-      `Insufficient stock for product ${productId}. Available: ${totalAvailable}, Requested: ${weightToDeduct}`
-    );
-  }
-
-  let remaining = weightToDeduct;
-  let totalCost = 0;
-
-  for (const lot of lots) {
-    if (remaining <= 0) break;
-    const deductFromLot = Math.min(lot.remainingWeight, remaining);
-    totalCost += deductFromLot * lot.costPerKg;
-    remaining -= deductFromLot;
-    await tx.stockLot.update({
-      where: { id: lot.id },
-      data: { remainingWeight: lot.remainingWeight - deductFromLot },
-    });
-  }
-
-  const costPerKg = weightToDeduct > 0 ? totalCost / weightToDeduct : 0;
+function makeBuyBillDeps() {
   return {
-    costPerKg: Math.round(costPerKg * 100) / 100,
-    totalCost: Math.round(totalCost * 100) / 100,
+    generateBillNumber: () => generateBillNumber(db, 'BUY'),
+    transaction: <T>(fn: (tx: BuyBillTx<BuyBillCreatedBill>) => Promise<T>): Promise<T> =>
+      db.$transaction(async (prismaTx) => {
+        const adaptedTx: BuyBillTx = {
+          createBuyBill: (args) =>
+            prismaTx.buyBill.create({
+              ...args,
+              include: { items: { include: { product: true } } },
+            }) as Promise<BuyBillCreatedBill>,
+          createStockLots: (data) => prismaTx.stockLot.createMany({ data }),
+          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
+          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
+        };
+        return fn(adaptedTx);
+      }),
+  };
+}
+
+function makeSellBillDeps() {
+  return {
+    checkStockAvailability: async (
+      items: Array<{ productId: string; weight: number }>
+    ) => {
+      for (const item of items) {
+        const lots = await db.stockLot.findMany({
+          where: {
+            productId: item.productId,
+            remainingWeight: { gt: 0 },
+          },
+          orderBy: FIFO_ORDER_BY,
+        });
+        const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
+        if (totalAvailable < item.weight) {
+          const product = await db.product.findUnique({
+            where: { id: item.productId },
+            select: { name: true },
+          });
+          return {
+            ok: false as const,
+            productId: item.productId,
+            productName: product?.name,
+            available: totalAvailable,
+            requested: item.weight,
+          };
+        }
+      }
+      return { ok: true as const };
+    },
+    generateBillNumber: () => generateBillNumber(db, 'SELL'),
+    transaction: <T>(fn: (tx: SellBillTx<SellBillCreatedBill>) => Promise<T>): Promise<T> =>
+      db.$transaction(async (prismaTx) => {
+        const adaptedTx: SellBillTx = {
+          createSellBill: (args) =>
+            prismaTx.sellBill.create({
+              ...args,
+              include: {
+                items: { include: { product: true } },
+                customer: true,
+              },
+            }) as Promise<SellBillCreatedBill>,
+          findSourceLots: (productId) =>
+            prismaTx.stockLot.findMany({
+              where: { productId, remainingWeight: { gt: 0 } },
+              orderBy: FIFO_ORDER_BY,
+            }) as Promise<
+              Array<{
+                id: string;
+                remainingWeight: number;
+                costPerKg: number;
+                dateAdded: Date;
+                createdAt: Date;
+              }>
+            >,
+          updateStockLotRemaining: (id, newRemaining) =>
+            prismaTx.stockLot.update({
+              where: { id },
+              data: { remainingWeight: newRemaining },
+            }),
+          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
+          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
+        };
+        return fn(adaptedTx);
+      }),
   };
 }
 
 // ============================================================================
-// Production deps for applyImport
+// Production deps for applyImport.
+//
+// findExistingBillNumber + checkStockAvailability are PRE-CHECKS (not bill
+// creation). The createPurchaseBill / createSalesBill callbacks are thin
+// adapters that transform ParsedBill into BuyBillInput / SellBillInput and
+// delegate to the SHARED services. The services own ALL bill/stock/audit
+// creation inside their own atomic transaction. DuplicateExistingError
+// (P2002) bubbles up unchanged so applyImport classifies as
+// DUPLICATE_EXISTING.
 // ============================================================================
 
 const deps: ImportApplyDeps = {
@@ -97,8 +171,11 @@ const deps: ImportApplyDeps = {
     return false;
   },
 
-  // Sales pre-check: ensure every item has enough stock BEFORE attempting
-  // the bill creation. Returns the first failing item (if any).
+  // Sales pre-check (used by applyImport to classify INSUFFICIENT_STOCK
+  // BEFORE attempting bill creation). The shared createSellBillService
+  // ALSO performs its own in-transaction stock check (defense in depth
+  // against races) — but that one throws → FAILED, whereas this pre-check
+  // lets the pipeline classify the bill as INSUFFICIENT_STOCK.
   checkStockAvailability: async (items) => {
     for (const item of items) {
       const lots = await db.stockLot.findMany({
@@ -126,174 +203,56 @@ const deps: ImportApplyDeps = {
     return { ok: true as const };
   },
 
-  // Purchase bill creation — mirrors /api/buy-bills POST handler.
-  // Uses ONE db.$transaction for atomic rollback (ST-11 safety preserved).
+  // Purchase bill creation — delegates to the SHARED createBuyBillService.
+  // The service handles: bill number generation, BuyBill + BuyBillItem
+  // creation, StockLot creation (source='BUY'), CreditEntry (if isCredit),
+  // and AuditLog — all inside ONE atomic $transaction (ST-11 safety).
+  // DuplicateExistingError (P2002) bubbles up unchanged so applyImport
+  // classifies the bill as DUPLICATE_EXISTING.
   createPurchaseBill: async (bill, actor) => {
-    const date = new Date(bill.date);
-    const billItems = bill.items.map((item) => {
-      const itemTotal = item.weight * item.pricePerKg;
-      return {
-        productId: item.productId,
-        weight: item.weight,
-        weightExpression: isRealFormula(item.weightExpression)
-          ? item.weightExpression!.trim()
-          : null,
-        pricePerKg: item.pricePerKg,
-        totalAmount: Math.round(itemTotal * 100) / 100,
-      };
-    });
-    const totalAmount = Math.round(
-      billItems.reduce((s, i) => s + i.totalAmount, 0) * 100
-    ) / 100;
-
-    // Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout)
-    const billNumber = await generateBillNumber(db, 'BUY');
-
-    const created = await db.$transaction(async (tx) => {
-      const buyBill = await tx.buyBill.create({
-        data: {
-          billNumber,
-          externalBillNumber: normalizeBillNumber(bill.externalBillNumber),
-          date,
-          isCredit: false,
-          note: bill.note || null,
-          totalAmount,
-          items: { create: billItems },
-        },
-        include: { items: { include: { product: true } } },
-      });
-
-      // Create StockLots for each item (purchase ADDS stock)
-      await tx.stockLot.createMany({
-        data: buyBill.items.map((item) => ({
-          productId: item.productId,
-          remainingWeight: item.weight,
-          costPerKg: item.pricePerKg,
-          dateAdded: date,
-          source: 'BUY',
-          sourceId: buyBill.id,
-        })),
-      });
-
-      await writeAuditLog(tx, {
-        action: 'CREATE',
-        entityType: 'BUY_BILL',
-        entityId: buyBill.id,
-        userId: actor.userId,
-        userName: actor.name,
-        details: JSON.stringify({
-          billNumber,
-          externalBillNumber: buyBill.externalBillNumber,
-          totalAmount,
-          itemCount: buyBill.items.length,
-          importSource: 'ST-8-import-pipeline',
-        }),
-      });
-
-      return buyBill;
-    });
-
-    return { id: created.id, billNumber };
-  },
-
-  // Sales bill creation — mirrors /api/sell-bills POST handler.
-  // Uses ONE db.$transaction with tx-scoped FIFO deduction (ST-11 safety
-  // preserved: any failure rolls back ALL lot updates + the SellBill).
-  createSalesBill: async (bill, actor) => {
-    const date = new Date(bill.date);
-
-    // Pre-validate stock availability (defensive — applyImport already
-    // calls checkStockAvailability, but race conditions can occur between
-    // the pre-check and the transaction).
-    for (const item of bill.items) {
-      const lots = await db.stockLot.findMany({
-        where: {
-          productId: item.productId,
-          remainingWeight: { gt: 0 },
-        },
-        select: { remainingWeight: true },
-      });
-      const totalAvailable = lots.reduce((s, l) => s + l.remainingWeight, 0);
-      if (totalAvailable < item.weight) {
-        throw new Error(
-          `Insufficient stock for product ${item.productId}. Available: ${totalAvailable}, Requested: ${item.weight}`
-        );
-      }
-    }
-
-    const billNumber = await generateBillNumber(db, 'SELL');
-
-    const created = await db.$transaction(async (tx) => {
-      let totalAmount = 0;
-      let totalCost = 0;
-      const sellItems: Array<{
-        productId: string;
-        weight: number;
-        weightExpression: string | null;
-        pricePerKg: number;
-        totalAmount: number;
-        costPerKg: number;
-        totalCost: number;
-      }> = [];
-
-      for (const item of bill.items) {
-        const itemTotalAmount = Math.round(item.weight * item.pricePerKg * 100) / 100;
-        const fifoResult = await deductStockFIFOTx(item.productId, item.weight, tx);
-
-        totalAmount += itemTotalAmount;
-        totalCost += fifoResult.totalCost;
-
-        sellItems.push({
+    const result = await createBuyBillService(
+      makeBuyBillDeps(),
+      {
+        date: bill.date,
+        isCredit: false,
+        note: bill.note,
+        externalBillNumber: bill.externalBillNumber,
+        items: bill.items.map((item) => ({
           productId: item.productId,
           weight: item.weight,
-          weightExpression: isRealFormula(item.weightExpression)
-            ? item.weightExpression!.trim()
-            : null,
+          weightExpression: item.weightExpression,
           pricePerKg: item.pricePerKg,
-          totalAmount: itemTotalAmount,
-          costPerKg: fifoResult.costPerKg,
-          totalCost: fifoResult.totalCost,
-        });
-      }
+        })),
+      },
+      actor
+    );
+    return { id: result.bill.id, billNumber: result.billNumber };
+  },
 
-      totalAmount = Math.round(totalAmount * 100) / 100;
-      totalCost = Math.round(totalCost * 100) / 100;
-
-      const sellBill = await tx.sellBill.create({
-        data: {
-          billNumber,
-          externalBillNumber: normalizeBillNumber(bill.externalBillNumber),
-          date,
-          customerId: null,
-          isCredit: false,
-          note: bill.note || null,
-          totalAmount,
-          totalCost,
-          items: { create: sellItems },
-        },
-        include: { items: { include: { product: true } } },
-      });
-
-      await writeAuditLog(tx, {
-        action: 'CREATE',
-        entityType: 'SELL_BILL',
-        entityId: sellBill.id,
-        userId: actor.userId,
-        userName: actor.name,
-        details: JSON.stringify({
-          billNumber,
-          externalBillNumber: sellBill.externalBillNumber,
-          totalAmount,
-          totalCost,
-          itemCount: sellBill.items.length,
-          importSource: 'ST-8-import-pipeline',
-        }),
-      });
-
-      return sellBill;
-    });
-
-    return { id: created.id, billNumber };
+  // Sales bill creation — delegates to the SHARED createSellBillService.
+  // The service handles: bill number generation, SellBill + SellBillItem
+  // creation, FIFO deduction (ST-39 canonical ordering + ST-20 zero-cost
+  // validation), CreditEntry (if isCredit), and AuditLog — all inside ONE
+  // atomic $transaction (ST-11 safety). DuplicateExistingError (P2002)
+  // bubbles up unchanged.
+  createSalesBill: async (bill, actor) => {
+    const result = await createSellBillService(
+      makeSellBillDeps(),
+      {
+        date: bill.date,
+        customerId: undefined,
+        isCredit: false,
+        note: bill.note,
+        items: bill.items.map((item) => ({
+          productId: item.productId,
+          weight: item.weight,
+          weightExpression: item.weightExpression,
+          pricePerKg: item.pricePerKg,
+        })),
+      },
+      actor
+    );
+    return { id: result.bill.id, billNumber: result.billNumber };
   },
 };
 

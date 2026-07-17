@@ -11,7 +11,23 @@
  *   - "classify" = compute a status for a single bill (pure)
  *   - "detect"   = scan a list and tag bills (pure)
  *   - "build"    = aggregate results into a summary (pure)
+ *
+ * ST-8 Blocker 3 (production parity): the apply controller delegates
+ * actual bill creation to the deps' `createPurchaseBill` /
+ * `createSalesBill` callbacks. The Production route
+ * (src/app/api/import/apply/route.ts) implements those callbacks as
+ * thin adapters over the SHARED services `createBuyBillService` /
+ * `createSellBillService` (from ./bill-services) — it does NOT contain
+ * a second bill engine. Tests inject mock callbacks.
+ *
+ * ST-8 Blocker 7 (P2002 mapping): when the shared service hits a Prisma
+ * P2002 (unique constraint violation), it throws `DuplicateExistingError`.
+ * The apply controller catches that specific error class and classifies
+ * the bill as DUPLICATE_EXISTING (not FAILED) so the rest of the batch
+ * continues. Other errors bubble up as FAILED.
  */
+
+import { DuplicateExistingError } from './bill-services';
 
 // ============================================================================
 // Types
@@ -548,14 +564,26 @@ export async function applyImport(
         billId: created.id,
       });
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Unknown error during bill creation';
-      results.push({
-        externalBillNumber: bill.externalBillNumber,
-        normalizedBillNumber: norm,
-        status: 'FAILED',
-        error: message,
-      });
+      // ST-8 Blocker 7: DuplicateExistingError (thrown by the shared
+      // createBuyBillService / createSellBillService on Prisma P2002) is
+      // classified as DUPLICATE_EXISTING so the rest of the batch
+      // continues. All other errors → FAILED.
+      if (err instanceof DuplicateExistingError) {
+        results.push({
+          externalBillNumber: bill.externalBillNumber,
+          normalizedBillNumber: norm,
+          status: 'DUPLICATE_EXISTING',
+        });
+      } else {
+        const message =
+          err instanceof Error ? err.message : 'Unknown error during bill creation';
+        results.push({
+          externalBillNumber: bill.externalBillNumber,
+          normalizedBillNumber: norm,
+          status: 'FAILED',
+          error: message,
+        });
+      }
       // Continue with next bill — one failure must NOT abort the batch.
     }
   }
