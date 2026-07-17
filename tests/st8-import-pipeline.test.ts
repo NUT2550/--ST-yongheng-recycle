@@ -76,7 +76,7 @@ interface MockState {
   insufficientStockProductIds: Set<string>; // productIds with insufficient stock
   failOnBillNumbers: Set<string>; // normalized bill numbers that should fail on create
   // Recorded calls
-  findExistingBillNumberCalls: Array<{ type: 'purchase' | 'sales'; normalized: string }>;
+  loadExistingBillNumbersCalls: Array<{ type: 'purchase' | 'sales'; normalizedCandidates: string[] }>;
   checkStockAvailabilityCalls: Array<{ items: ParsedBillItem[] }>;
   createPurchaseBillCalls: Array<{ bill: ParsedBill; actor: ImportActor }>;
   createSalesBillCalls: Array<{ bill: ParsedBill; actor: ImportActor }>;
@@ -92,7 +92,7 @@ function makeMockDeps(): { deps: ImportApplyDeps; state: MockState; reset: () =>
     existingBillNumbers: new Set(),
     insufficientStockProductIds: new Set(),
     failOnBillNumbers: new Set(),
-    findExistingBillNumberCalls: [],
+    loadExistingBillNumbersCalls: [],
     checkStockAvailabilityCalls: [],
     createPurchaseBillCalls: [],
     createSalesBillCalls: [],
@@ -102,16 +102,19 @@ function makeMockDeps(): { deps: ImportApplyDeps; state: MockState; reset: () =>
   };
 
   const deps: ImportApplyDeps = {
-    findExistingBillNumber: async (type, normalized) => {
-      state.findExistingBillNumberCalls.push({ type, normalized });
-      // After a bill is "written" via createPurchaseBill/createSalesBill,
-      // it should be considered existing on subsequent checks (simulates
-      // the DB state). This models concurrent + idempotent re-upload cases.
+    loadExistingBillNumbers: async (type, normalizedCandidates) => {
+      state.loadExistingBillNumbersCalls.push({ type, normalizedCandidates });
+      // Build the set of "existing" normalized numbers: programmable
+      // existingBillNumbers + bills "written" via createPurchaseBill/
+      // createSalesBill (simulates DB state). This models concurrent +
+      // idempotent re-upload cases. applyImport calls this ONCE per
+      // import request (not per bill) and checks membership in-memory.
+      const result = new Set<string>();
+      for (const n of state.existingBillNumbers) result.add(n);
       const written =
-        type === 'purchase'
-          ? state.writtenPurchaseBills.has(normalized)
-          : state.writtenSalesBills.has(normalized);
-      return written || state.existingBillNumbers.has(normalized);
+        type === 'purchase' ? state.writtenPurchaseBills : state.writtenSalesBills;
+      for (const n of written.keys()) result.add(n);
+      return result;
     },
     checkStockAvailability: async (items) => {
       state.checkStockAvailabilityCalls.push({ items });
@@ -158,7 +161,7 @@ function makeMockDeps(): { deps: ImportApplyDeps; state: MockState; reset: () =>
     state.existingBillNumbers.clear();
     state.insufficientStockProductIds.clear();
     state.failOnBillNumbers.clear();
-    state.findExistingBillNumberCalls.length = 0;
+    state.loadExistingBillNumbersCalls.length = 0;
     state.checkStockAvailabilityCalls.length = 0;
     state.createPurchaseBillCalls.length = 0;
     state.createSalesBillCalls.length = 0;
@@ -272,7 +275,7 @@ describe('ST-8: normalizeBillNumber', () => {
 // ============================================================================
 
 describe('ST-8: Duplicate detection', () => {
-  test('8. existing duplicate detected via findExistingBillNumber', async () => {
+  test('8. existing duplicate detected via loadExistingBillNumbers', async () => {
     mock.state.existingBillNumbers.add('A1051492');
     const bills = [makeBill({ externalBillNumber: 'A1051492' })];
     const summary = await applyImport('purchase', bills, mock.deps, ACTOR);
@@ -329,8 +332,8 @@ describe('ST-8: Duplicate detection', () => {
     const bills = [makeBill({ externalBillNumber: '  A1051492\t' })];
     const summary = await applyImport('purchase', bills, mock.deps, ACTOR);
     expect(summary.importedCount).toBe(1);
-    // Verify the normalized number was used in the findExistingBillNumber call
-    expect(mock.state.findExistingBillNumberCalls[0].normalized).toBe('A1051492');
+    // Verify the normalized number was passed in the loadExistingBillNumbers call
+    expect(mock.state.loadExistingBillNumbersCalls[0].normalizedCandidates).toContain('A1051492');
     // Verify the createPurchaseBill recorded the normalized number
     expect(mock.state.createPurchaseBillCalls[0].bill.externalBillNumber).toBe(
       '  A1051492\t'
@@ -510,7 +513,7 @@ describe('ST-8: Purchase apply', () => {
 
     // Reset call counters (but keep written bills in state)
     mock.state.createPurchaseBillCalls.length = 0;
-    mock.state.findExistingBillNumberCalls.length = 0;
+    mock.state.loadExistingBillNumbersCalls.length = 0;
 
     // Second upload — both should now be DUPLICATE_EXISTING (because they're in writtenPurchaseBills)
     const second = await applyImport('purchase', bills, mock.deps, ACTOR);
@@ -679,7 +682,7 @@ describe('ST-8: Sales apply', () => {
     expect(first.importedCount).toBe(2);
 
     mock.state.createSalesBillCalls.length = 0;
-    mock.state.findExistingBillNumberCalls.length = 0;
+    mock.state.loadExistingBillNumbersCalls.length = 0;
     mock.state.checkStockAvailabilityCalls.length = 0;
 
     const second = await applyImport('sales', bills, mock.deps, ACTOR);
@@ -1060,28 +1063,37 @@ describe('ST-8: Integration scenarios', () => {
     expect(mock.state.createPurchaseBillCalls).toHaveLength(0);
   });
 
-  test('C. findExistingBillNumber throws → bill classified as FAILED, others continue', async () => {
-    // Replace findExistingBillNumber with one that throws for a specific bill
-    const originalFind = mock.deps.findExistingBillNumber!;
-    let throwOnNext = 'A1051493';
-    mock.deps.findExistingBillNumber = async (type, normalized) => {
-      if (normalized === throwOnNext) {
-        throw new Error('DB connection failed');
-      }
-      return originalFind(type, normalized);
+  test('C. loadExistingBillNumbers throws → all READY bills FAILED, others keep classification', async () => {
+    // ST-8 rev 2: loadExistingBillNumbers is called ONCE per import request.
+    // If it throws, the apply controller conservatively marks every READY
+    // bill as FAILED (no DB writes) — preserving the "never create a
+    // duplicate" invariant. INVALID / UNMATCHED / in-file-dup bills keep
+    // their original classification (they don't need the existing-set).
+    const originalLoad = mock.deps.loadExistingBillNumbers;
+    mock.deps.loadExistingBillNumbers = async () => {
+      throw new Error('DB connection failed');
     };
     const bills = [
-      makeBill({ externalBillNumber: 'A1051492' }),
-      makeBill({ externalBillNumber: 'A1051493' }), // findExisting will throw
-      makeBill({ externalBillNumber: 'A1051494' }),
+      makeBill({ externalBillNumber: 'A1051492' }), // READY → FAILED
+      makeBill({ externalBillNumber: 'A1051493' }), // READY → FAILED
+      makeBill({ externalBillNumber: '' }),         // INVALID (no bill number)
+      makeBill({
+        externalBillNumber: 'A1051494',
+        items: [makeItem({ matched: false, productId: '' })],
+      }), // UNMATCHED
+      makeBill({ externalBillNumber: 'A1051495' }), // first occurrence
+      makeBill({ externalBillNumber: 'A1051495' }), // in-file dup (later)
     ];
     const summary = await applyImport('purchase', bills, mock.deps, ACTOR);
-    expect(summary.importedCount).toBe(2);
-    expect(summary.failedCount).toBe(1);
-    expect(summary.failedBills[0].externalBillNumber).toBe('A1051493');
-    expect(summary.failedBills[0].error).toBe('Duplicate check failed');
+    expect(summary.importedCount).toBe(0);
+    // 3 READY bills (A1051492, A1051493, A1051495 first occurrence) → all FAILED
+    expect(summary.failedCount).toBe(3);
+    expect(summary.invalidCount).toBe(1);
+    expect(summary.unmatchedCount).toBe(1);
+    expect(summary.duplicateInFileCount).toBe(1);
+    expect(mock.state.createPurchaseBillCalls).toHaveLength(0);
     // Restore for subsequent tests
-    mock.deps.findExistingBillNumber = originalFind;
+    mock.deps.loadExistingBillNumbers = originalLoad;
   });
 
   test('D. checkStockAvailability throws → bill FAILED, others continue', async () => {

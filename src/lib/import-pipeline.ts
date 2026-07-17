@@ -25,6 +25,20 @@
  * The apply controller catches that specific error class and classifies
  * the bill as DUPLICATE_EXISTING (not FAILED) so the rest of the batch
  * continues. Other errors bubble up as FAILED.
+ *
+ * ST-8 rev 2 (one lookup per request): the original
+ * `findExistingBillNumber(type, normalized)` was called PER BILL inside
+ * `applyImport` — and each call loaded ALL historical bills from the DB
+ * (O(N*M) where N = batch size, M = total existing bills). The new
+ * `loadExistingBillNumbers(type, normalizedCandidates)` is called ONCE
+ * per import request — it returns a Set<string> of all NORMALIZED bill
+ * numbers that already exist in the DB. The apply controller then
+ * performs an in-memory `existingSet.has(norm)` check per bill — O(1)
+ * per bill. To detect in-file duplicates (bill A and bill B in the same
+ * upload both claim number X), the controller adds each successfully
+ * imported (or P2002-rejected) bill's normalized number to the
+ * existingSet AFTER processing — so later bills in the same batch are
+ * correctly classified as DUPLICATE_EXISTING.
  */
 
 import { DuplicateExistingError } from './bill-services';
@@ -141,21 +155,46 @@ export function isBlankBillNumber(value: unknown): boolean {
  * and the apply controller for that).
  *
  * Order of checks (first match wins):
- *   1. INVALID           — missing externalBillNumber or no valid items
+ *   1. INVALID           — missing externalBillNumber, no valid items,
+ *                          or any item has invalid weight/price (NaN,
+ *                          Infinity, <= 0 weight, < 0 price)
  *   2. UNMATCHED_PRODUCT — at least one item has matched=false
  *   3. READY             — otherwise
  *
  * DUPLICATE_EXISTING / DUPLICATE_IN_FILE / INSUFFICIENT_STOCK / FAILED
  * are determined later by the apply controller.
+ *
+ * ST-8 rev 2 input safety: weight must be finite and > 0; pricePerKg
+ * must be finite and >= 0. NaN, Infinity, -Infinity, negative weight,
+ * zero weight, and negative price all classify the bill as INVALID
+ * (zero write — no DB query, no bill creation, no stock modification).
  */
 export function classifyBillStatus(bill: ParsedBill): BillClassification {
   // INVALID: missing externalBillNumber
   if (isBlankBillNumber(bill.externalBillNumber)) {
     return 'INVALID';
   }
-  // INVALID: no items or all items have weight <= 0
+  // ST-8 rev 2 Fix 3: INVALID if date is missing, blank, or does not parse
+  // to a valid Date. The route preserves missing/invalid dates as '' (it
+  // NEVER fabricates dates via new Date().toISOString()). The shared
+  // service also validates — but classifying here means zero write (no
+  // createPurchaseBill / createSalesBill call) instead of FAILED.
+  if (
+    typeof bill.date !== 'string' ||
+    bill.date.trim() === '' ||
+    Number.isNaN(new Date(bill.date).getTime())
+  ) {
+    return 'INVALID';
+  }
+  // INVALID: no items, or no items with valid weight + price
   const validItems = bill.items.filter(
-    (i) => typeof i.weight === 'number' && i.weight > 0
+    (i) =>
+      typeof i.weight === 'number' &&
+      Number.isFinite(i.weight) &&
+      i.weight > 0 &&
+      typeof i.pricePerKg === 'number' &&
+      Number.isFinite(i.pricePerKg) &&
+      i.pricePerKg >= 0
   );
   if (validItems.length === 0) {
     return 'INVALID';
@@ -388,6 +427,38 @@ export function shouldEnableApply(
 }
 
 // ============================================================================
+// Server-side product validation (pure — used by the route + tests)
+// ============================================================================
+
+/**
+ * ST-8 rev 2 (no client trust): override the client-supplied `matched`
+ * flag on each ParsedBillItem based on SERVER-SIDE product validation.
+ *
+ * The route handler does ONE batch DB query to fetch all valid productIds
+ * (db.product.findMany with `where: { id: { in: [...] } }}`), then calls
+ * this pure function to override `matched` on every item. The client's
+ * `matched` flag is NEVER trusted — even if a malicious client sends
+ * `matched: true` for an invalid productId, this function flips it to
+ * `false` so the bill gets classified as UNMATCHED_PRODUCT (zero write).
+ *
+ * @param bills              — parsed bills (mutated in-place + returned)
+ * @param validProductIds    — Set of productIds that exist in the DB
+ * @returns the same bills array (for chaining); each item's `matched`
+ *          field is set to `validProductIds.has(item.productId)`
+ */
+export function overrideMatchedFlagFromServerValidation(
+  bills: ParsedBill[],
+  validProductIds: Set<string>
+): ParsedBill[] {
+  for (const bill of bills) {
+    for (const item of bill.items) {
+      item.matched = validProductIds.has(item.productId);
+    }
+  }
+  return bills;
+}
+
+// ============================================================================
 // Apply controller (injectable deps — same pattern as ST-10)
 // ============================================================================
 
@@ -399,13 +470,29 @@ export interface ImportActor {
   role: 'admin' | 'staff';
 }
 
-/** Injectable dependencies for the apply controller. */
+/**
+ * Injectable dependencies for the apply controller.
+ *
+ * ST-8 rev 2: `loadExistingBillNumbers` replaces `findExistingBillNumber`.
+ * The new function is called ONCE per import request (not per bill) and
+ * returns a Set<string> of all NORMALIZED bill numbers that already exist
+ * in the DB. The apply controller then performs an O(1) `set.has(norm)`
+ * check per bill.
+ */
 export interface ImportApplyDeps {
-  /** Returns true if a bill with the given NORMALIZED number already exists in DB. */
-  findExistingBillNumber: (
+  /**
+   * Batch-load all NORMALIZED bill numbers that already exist in the DB
+   * for the given type. Called ONCE per import request.
+   *
+   * @param type                 — 'purchase' or 'sales'
+   * @param normalizedCandidates — array of normalized bill numbers to check
+   *                               (may include '' entries; those are ignored)
+   * @returns Set<string> of normalized bill numbers that exist in the DB
+   */
+  loadExistingBillNumbers: (
     type: 'purchase' | 'sales',
-    normalizedBillNumber: string
-  ) => Promise<boolean>;
+    normalizedCandidates: string[]
+  ) => Promise<Set<string>>;
 
   /** Pre-check stock availability for sales bills (returns first failing item if any). */
   checkStockAvailability?: (
@@ -440,17 +527,25 @@ export interface ImportApplyDeps {
  * Algorithm:
  *   1. Pre-classify all bills (INVALID, UNMATCHED_PRODUCT, READY).
  *   2. Detect in-file duplicates (later occurrences → DUPLICATE_IN_FILE).
- *   3. For each READY bill (in array order):
- *      a. Re-check duplicate at apply time (concurrency protection).
+ *   3. ONE batch DB query: load all existing normalized bill numbers for
+ *      the candidates into a Set<string>.
+ *   4. For each READY bill (in array order):
+ *      a. In-memory check: `existingSet.has(norm)`.
  *         If duplicate → DUPLICATE_EXISTING, skip.
  *      b. (Sales only) Pre-check stock availability.
  *         If insufficient → INSUFFICIENT_STOCK, skip.
  *      c. Attempt to create the bill. Per-bill try/catch.
- *         If success → READY (imported).
- *         If throws  → FAILED, continue with next bill.
- *   4. Return ImportSummary.
+ *         If success → READY (imported); add norm to existingSet.
+ *         If DuplicateExistingError → DUPLICATE_EXISTING; add norm to existingSet.
+ *         Other errors → FAILED.
+ *   5. Return ImportSummary.
  *
  * One bill's failure does NOT abort the batch.
+ *
+ * ST-8 rev 2: only ONE call to `deps.loadExistingBillNumbers` is made
+ * per import request (not per bill). The Set is mutated in-memory as
+ * bills are processed so that later bills in the same batch correctly
+ * detect in-file duplicates of earlier successful imports.
  *
  * NOTE: The actor is trusted (auth already verified by the route handler).
  */
@@ -463,12 +558,65 @@ export async function applyImport(
   const inFile = detectInFileDuplicates(bills);
   const results: BillImportResult[] = [];
 
+  // ST-8 rev 2: ONE batch DB query for the entire import request.
+  // Collect ALL normalized bill numbers from the batch (including
+  // in-file duplicates and invalid ones — the DB query just ignores
+  // empty strings). This replaces the O(N*M) per-bill lookup.
+  const allNormalized = bills.map((b) => normalizeBillNumber(b.externalBillNumber));
+
+  let existingSet: Set<string>;
+  try {
+    existingSet = await deps.loadExistingBillNumbers(type, allNormalized);
+  } catch {
+    // If the batch duplicate check itself fails, we conservatively mark
+    // every non-skipped bill as FAILED (no DB writes). This preserves
+    // the "never create a duplicate" invariant.
+    for (let i = 0; i < bills.length; i++) {
+      const bill = bills[i];
+      const norm = allNormalized[i];
+      if (inFile.duplicateFlags[i]) {
+        results.push({
+          externalBillNumber: bill.externalBillNumber,
+          normalizedBillNumber: norm,
+          status: 'DUPLICATE_IN_FILE',
+        });
+        continue;
+      }
+      const preStatus = classifyBillStatus(bill);
+      if (preStatus === 'INVALID') {
+        results.push({
+          externalBillNumber: bill.externalBillNumber,
+          normalizedBillNumber: norm,
+          status: 'INVALID',
+          error: 'Missing externalBillNumber or no valid items',
+        });
+        continue;
+      }
+      if (preStatus === 'UNMATCHED_PRODUCT') {
+        results.push({
+          externalBillNumber: bill.externalBillNumber,
+          normalizedBillNumber: norm,
+          status: 'UNMATCHED_PRODUCT',
+          error: 'Has unmatched product items',
+        });
+        continue;
+      }
+      results.push({
+        externalBillNumber: bill.externalBillNumber,
+        normalizedBillNumber: norm,
+        status: 'FAILED',
+        error: 'Duplicate check failed',
+      });
+    }
+    return buildImportSummary(results);
+  }
+
   for (let i = 0; i < bills.length; i++) {
     const bill = bills[i];
-    const norm = normalizeBillNumber(bill.externalBillNumber);
+    const norm = allNormalized[i];
 
     // In-file duplicate (later occurrence) — check FIRST so we don't waste
-    // an apply-time duplicate check on a bill we already know is a dup.
+    // a create attempt on a bill we already know is a dup of an earlier one.
     if (inFile.duplicateFlags[i]) {
       results.push({
         externalBillNumber: bill.externalBillNumber,
@@ -500,26 +648,12 @@ export async function applyImport(
       continue;
     }
 
-    // Concurrency re-check: another process may have created this bill
-    // between preview and apply.
-    try {
-      const exists = await deps.findExistingBillNumber(type, norm);
-      if (exists) {
-        results.push({
-          externalBillNumber: bill.externalBillNumber,
-          normalizedBillNumber: norm,
-          status: 'DUPLICATE_EXISTING',
-        });
-        continue;
-      }
-    } catch {
-      // If the duplicate check itself fails, we conservatively skip the bill
-      // rather than risk creating a duplicate. Classify as FAILED.
+    // ST-8 rev 2: in-memory O(1) duplicate check (no DB call per bill).
+    if (norm !== '' && existingSet.has(norm)) {
       results.push({
         externalBillNumber: bill.externalBillNumber,
         normalizedBillNumber: norm,
-        status: 'FAILED',
-        error: 'Duplicate check failed',
+        status: 'DUPLICATE_EXISTING',
       });
       continue;
     }
@@ -556,6 +690,15 @@ export async function applyImport(
           ? await deps.createPurchaseBill(bill, actor)
           : await deps.createSalesBill(bill, actor);
 
+      // ST-8 rev 2: add the normalized number to the existingSet so that
+      // later bills in the SAME batch with the same number are correctly
+      // classified as DUPLICATE_EXISTING (in-file duplicate detection
+      // already caught earlier occurrences, but this is defense in depth
+      // for any edge case where in-file detection missed something).
+      if (norm !== '') {
+        existingSet.add(norm);
+      }
+
       results.push({
         externalBillNumber: bill.externalBillNumber,
         normalizedBillNumber: norm,
@@ -569,6 +712,12 @@ export async function applyImport(
       // classified as DUPLICATE_EXISTING so the rest of the batch
       // continues. All other errors → FAILED.
       if (err instanceof DuplicateExistingError) {
+        // ST-8 rev 2: add the normalized number to the existingSet so
+        // that later bills in the same batch with the same number are
+        // classified as DUPLICATE_EXISTING (not re-attempted).
+        if (norm !== '') {
+          existingSet.add(norm);
+        }
         results.push({
           externalBillNumber: bill.externalBillNumber,
           normalizedBillNumber: norm,

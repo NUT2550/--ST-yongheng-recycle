@@ -5,6 +5,7 @@ import { generateBillNumber } from '@/lib/bill-helpers';
 import {
   applyImport,
   normalizeBillNumber,
+  overrideMatchedFlagFromServerValidation,
   type ImportApplyDeps,
   type ImportActor,
   type ParsedBill,
@@ -37,6 +38,26 @@ import {
 // bubbles up through the callback to applyImport, which classifies the
 // bill as DUPLICATE_EXISTING (not FAILED) so the rest of the batch
 // continues.
+//
+// ST-8 rev 2 (one lookup per request): loadExistingBillNumbers is called
+// ONCE per import request (replacing the per-bill findExistingBillNumber).
+// It is a SINGLE Prisma findMany with `where: { externalBillNumber: { in: [...] } }`.
+// The apply controller then does O(1) in-memory Set lookups per bill.
+//
+// ST-8 rev 2 (no client trust): the client-supplied `matched` flag on
+// each ParsedBillItem is NEVER trusted. The route does ONE batch DB
+// query to fetch all valid productIds, then calls
+// overrideMatchedFlagFromServerValidation to overwrite `matched` based
+// on actual DB state. A forged `matched: true` for an invalid productId
+// is flipped to `false` → the bill is classified as UNMATCHED_PRODUCT
+// (zero write).
+//
+// ST-8 rev 2 (no date fabrication): a missing or invalid `date` field
+// is preserved as `''` (empty string). The shared service's
+// validateBillDate rejects `''` → bill creation throws → the apply
+// controller classifies as FAILED (zero write). The route NEVER uses
+// `new Date().toISOString()` as a fallback — that would silently
+// fabricate a date the user never entered.
 
 // ============================================================================
 // Production deps for the SHARED bill services.
@@ -138,37 +159,35 @@ function makeSellBillDeps() {
 // ============================================================================
 // Production deps for applyImport.
 //
-// findExistingBillNumber + checkStockAvailability are PRE-CHECKS (not bill
-// creation). The createPurchaseBill / createSalesBill callbacks are thin
-// adapters that transform ParsedBill into BuyBillInput / SellBillInput and
-// delegate to the SHARED services. The services own ALL bill/stock/audit
-// creation inside their own atomic transaction. DuplicateExistingError
-// (P2002) bubbles up unchanged so applyImport classifies as
-// DUPLICATE_EXISTING.
+// loadExistingBillNumbers is a SINGLE-QUERY batch lookup (one query per
+// import request, not per bill). checkStockAvailability is a PRE-CHECK
+// (not bill creation). The createPurchaseBill / createSalesBill callbacks
+// are thin adapters that transform ParsedBill into BuyBillInput /
+// SellBillInput and delegate to the SHARED services. The services own
+// ALL bill/stock/audit creation inside their own atomic transaction.
+// DuplicateExistingError (P2002) bubbles up unchanged so applyImport
+// classifies as DUPLICATE_EXISTING.
 // ============================================================================
 
 const deps: ImportApplyDeps = {
-  // Concurrency re-check: is this normalized bill number already in DB?
-  // We fetch all non-null externalBillNumbers for the type, normalize them,
-  // and check membership. Acceptable for typical batch sizes (< 200 bills).
-  findExistingBillNumber: async (type, normalized) => {
-    if (normalized === '') return false;
+  // ST-8 rev 2: ONE batch query per import request. The candidates are
+  // the normalized bill numbers from the upload — we filter out empty
+  // strings, then run a single findMany with `in: [...]`. The returned
+  // Set<string> is used by applyImport for O(1) per-bill lookup.
+  loadExistingBillNumbers: async (type, normalizedCandidates) => {
+    const nonEmpty = normalizedCandidates.filter((n) => n !== '');
+    if (nonEmpty.length === 0) return new Set();
     const bills =
       type === 'purchase'
         ? await db.buyBill.findMany({
-            where: { externalBillNumber: { not: null } },
+            where: { externalBillNumber: { in: nonEmpty } },
             select: { externalBillNumber: true },
           })
         : await db.sellBill.findMany({
-            where: { externalBillNumber: { not: null } },
+            where: { externalBillNumber: { in: nonEmpty } },
             select: { externalBillNumber: true },
           });
-    for (const b of bills) {
-      if (normalizeBillNumber(b.externalBillNumber) === normalized) {
-        return true;
-      }
-    }
-    return false;
+    return new Set(bills.map((b) => normalizeBillNumber(b.externalBillNumber)));
   },
 
   // Sales pre-check (used by applyImport to classify INSUFFICIENT_STOCK
@@ -269,6 +288,14 @@ const deps: ImportApplyDeps = {
  *
  * Per-bill try/catch: one bill's failure does NOT abort the batch.
  * Duplicates are SKIPPED (not blocking). Returns structured result.
+ *
+ * ST-8 rev 2 safety invariants:
+ *   - Malformed JSON body → HTTP 400 (no DB query, no bill creation).
+ *   - Missing/invalid date → bill classified as INVALID/FAILED (zero write).
+ *     The route NEVER fabricates dates via `new Date().toISOString()`.
+ *   - Client-supplied `matched` flag is NEVER trusted. The route does
+ *     ONE batch DB query for valid productIds and overwrites `matched`.
+ *   - One batch DB query for existing bill numbers (not per-bill).
  */
 export async function POST(request: NextRequest) {
   const token = getTokenFromRequest(request);
@@ -280,9 +307,23 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
   }
 
+  // ST-8 rev 2 Fix 2: safe JSON parsing. If the body is not valid JSON,
+  // return HTTP 400 immediately — NO DB query, NO bill creation, NO stock
+  // modification. Previously, request.json() would throw an uncaught
+  // error that fell through to the generic 500 catch block, leaking
+  // internals and producing a misleading status code.
+  let importBody: unknown;
+  try {
+    importBody = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: 'Invalid JSON body' },
+      { status: 400 }
+    );
+  }
+
   // ST-8 Blocker 1: Type-specific authorization
-  const importBody = await request.json();
-  const { type: importType } = importBody as { type?: string };
+  const { type: importType } = (importBody as { type?: string }) ?? {};
   if (importType === 'purchase' && !hasPermission(jwtPayload, 'buy.create')) {
     return NextResponse.json({ error: 'ไม่มีสิทธิ์นำเข้าใบซื้อ' }, { status: 403 });
   }
@@ -301,8 +342,8 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    const body = importBody;
-    const { type, bills } = body as { type?: unknown; bills?: unknown };
+    const body = importBody as { type?: unknown; bills?: unknown };
+    const { type, bills } = body;
 
     if (type !== 'purchase' && type !== 'sales') {
       return NextResponse.json(
@@ -320,28 +361,51 @@ export async function POST(request: NextRequest) {
 
     // Defensive: validate each bill's basic shape (does NOT validate business
     // rules — that's the apply controller's job).
+    //
+    // ST-8 rev 2 Fix 3: NEVER replace a missing/invalid date with
+    // `new Date().toISOString()`. A missing date is preserved as `''`
+    // (empty string), which the shared service's validateBillDate will
+    // reject → bill creation throws → applyImport classifies as FAILED
+    // (zero write). The previous behavior fabricated a "now" date that
+    // the user never entered, which is unacceptable for an audit-grade
+    // financial system.
+    //
+    // ST-8 rev 2 Fix 4: NEVER trust the client-supplied `matched` flag.
+    // We initialize `matched` to `true` here for shape compatibility,
+    // but the route OVERRIDES it below via
+    // overrideMatchedFlagFromServerValidation after running a batch DB
+    // query to fetch valid productIds. A forged `matched: true` for an
+    // invalid productId is flipped to `false` → UNMATCHED_PRODUCT.
     const parsedBills: ParsedBill[] = [];
+    const allProductIds = new Set<string>();
     for (const raw of bills) {
       if (!raw || typeof raw !== 'object') continue;
       const b = raw as Record<string, unknown>;
       const items = Array.isArray(b.items) ? b.items : [];
       const parsedItems: ParsedBillItem[] = items
         .filter((i): i is Record<string, unknown> => !!i && typeof i === 'object')
-        .map((i) => ({
-          productId: String(i.productId ?? ''),
-          productName: String(i.productName ?? ''),
-          productCode: i.productCode != null ? String(i.productCode) : undefined,
-          weight: typeof i.weight === 'number' ? i.weight : Number(i.weight) || 0,
-          weightExpression:
-            typeof i.weightExpression === 'string' ? i.weightExpression : undefined,
-          pricePerKg:
-            typeof i.pricePerKg === 'number' ? i.pricePerKg : Number(i.pricePerKg) || 0,
-          totalAmount:
-            typeof i.totalAmount === 'number'
-              ? i.totalAmount
-              : Number(i.totalAmount) || 0,
-          matched: i.matched !== false, // default true unless explicitly false
-        }));
+        .map((i) => {
+          const productId = String(i.productId ?? '');
+          if (productId) allProductIds.add(productId);
+          return {
+            productId,
+            productName: String(i.productName ?? ''),
+            productCode: i.productCode != null ? String(i.productCode) : undefined,
+            weight: typeof i.weight === 'number' ? i.weight : Number(i.weight) || 0,
+            weightExpression:
+              typeof i.weightExpression === 'string' ? i.weightExpression : undefined,
+            pricePerKg:
+              typeof i.pricePerKg === 'number' ? i.pricePerKg : Number(i.pricePerKg) || 0,
+            totalAmount:
+              typeof i.totalAmount === 'number'
+                ? i.totalAmount
+                : Number(i.totalAmount) || 0,
+            // ST-8 rev 2 Fix 4: default to true; will be OVERWRITTEN by
+            // overrideMatchedFlagFromServerValidation below. The client
+            // value is never trusted.
+            matched: true,
+          };
+        });
       parsedBills.push({
         externalBillNumber: String(b.externalBillNumber ?? ''),
         seller: typeof b.seller === 'string' ? b.seller : undefined,
@@ -349,11 +413,29 @@ export async function POST(request: NextRequest) {
         buyerCode: typeof b.buyerCode === 'string' ? b.buyerCode : undefined,
         licensePlate:
           typeof b.licensePlate === 'string' ? b.licensePlate : undefined,
-        date: typeof b.date === 'string' ? b.date : new Date().toISOString(),
+        // ST-8 rev 2 Fix 3: preserve missing/invalid date as '' (NOT
+        // new Date().toISOString()). The shared service rejects ''.
+        date: typeof b.date === 'string' ? b.date : '',
         note: typeof b.note === 'string' ? b.note : '',
         items: parsedItems,
       });
     }
+
+    // ST-8 rev 2 Fix 4: ONE batch DB query for valid productIds. The
+    // client's `matched` flag is OVERWRITTEN based on this server-side
+    // truth. A forged `matched: true` for an invalid productId is
+    // flipped to `false` → UNMATCHED_PRODUCT (zero write).
+    let validProductIds: Set<string>;
+    if (allProductIds.size === 0) {
+      validProductIds = new Set();
+    } else {
+      const found = await db.product.findMany({
+        where: { id: { in: Array.from(allProductIds) } },
+        select: { id: true },
+      });
+      validProductIds = new Set(found.map((p) => p.id));
+    }
+    overrideMatchedFlagFromServerValidation(parsedBills, validProductIds);
 
     const summary = await applyImport(type, parsedBills, deps, actor);
 
