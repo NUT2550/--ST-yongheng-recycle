@@ -687,7 +687,7 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
     // import-pipeline.ts catches DuplicateExistingError and classifies the
     // bill as DUPLICATE_EXISTING (not FAILED).
     const src = readSource(IMPORT_PIPELINE_PATH);
-    expect(src).toMatch(/import.*DuplicateExistingError.*from ['"]\.\/bill-services['"]/);
+    expect(src).toMatch(/import.*DuplicateExistingError.*from ['"]\.\/bill-errors['"]/);
     expect(src).toMatch(/err instanceof DuplicateExistingError/);
     expect(src).toMatch(/status: 'DUPLICATE_EXISTING'/);
     // Verify isPrismaP2002 maps P2002 to DuplicateExistingError in bill-services.
@@ -696,7 +696,8 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
     expect(billServicesSrc).toMatch(/throw new DuplicateExistingError/);
     // Real isPrismaP2002 behavior.
     expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);
-    expect(isPrismaP2002({ message: 'Unique constraint failed' } as never)).toBe(true);
+    // New bill-errors.ts only checks code === 'P2002' (stricter than old version that also checked message)
+    expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);
     expect(isPrismaP2002(new Error('random error'))).toBe(false);
   });
 });

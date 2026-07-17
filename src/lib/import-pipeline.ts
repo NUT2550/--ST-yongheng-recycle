@@ -41,7 +41,9 @@
  * correctly classified as DUPLICATE_EXISTING.
  */
 
-import { DuplicateExistingError } from './bill-services';
+import { DuplicateExistingError } from './bill-errors'
+import { normalizeBillNumber } from './bill-identity';
+export { normalizeBillNumber } from './bill-identity'
 
 // ============================================================================
 // Types
@@ -125,18 +127,7 @@ export interface ImportSummary {
  * @param value — raw bill number (string; non-strings return empty string)
  * @returns normalized bill number (empty string if input is blank/invalid)
  */
-export function normalizeBillNumber(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  // Step 1: NFC normalization (canonical Thai Unicode forms)
-  let s = value.normalize('NFC');
-  // Step 2: Convert all Unicode whitespace variants to regular space.
-  // This covers: \t \n \r \f \v, U+00A0 (NBSP), U+2000..U+200A, U+2028, U+2029, U+202F, U+205F, U+3000, U+FEFF
-  // Using \s with the Unicode flag covers all of these in one shot.
-  s = s.replace(/\s+/gu, ' ');
-  // Step 3: Trim leading/trailing space (now possible after step 2 normalized NBSP etc.)
-  s = s.trim();
-  return s;
-}
+
 
 /**
  * Check whether a normalized bill number is "present" (non-empty after normalization).

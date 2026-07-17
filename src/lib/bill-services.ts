@@ -42,42 +42,11 @@ import {
   type SourceLotForPreview,
 } from './fifo-validation'
 import { isRealFormula } from './safe-math'
-import { normalizeBillNumber } from './import-pipeline'
+import { normalizeBillNumber } from './bill-identity'
+import { DuplicateExistingError, isPrismaP2002 } from './bill-errors'
 import type { AuthPayload } from './permissions'
 
-// ============================================================================
-// Prisma P2002 detection + DuplicateExistingError
-// ============================================================================
-
-/**
- * ST-8 Blocker 7: Detect whether an error is a Prisma P2002 (unique
- * constraint violation).
- *
- * Prisma's `PrismaClientKnownRequestError` exposes a `.code === 'P2002'`
- * field. We also defensively inspect the message string in case the
- * error is wrapped (e.g. by a logging layer).
- */
-export function isPrismaP2002(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const e = error as Record<string, unknown>
-  if (e.code === 'P2002') return true
-  const msg = typeof e.message === 'string' ? e.message : ''
-  return msg.includes('Unique constraint failed')
-}
-
-/**
- * Error thrown by the bill services when a Prisma P2002 unique-constraint
- * violation is detected. Callers should catch this and classify the bill
- * as DUPLICATE_EXISTING (not FAILED) so the rest of the batch continues.
- */
-export class DuplicateExistingError extends Error {
-  readonly field: string
-  constructor(field: string, message?: string) {
-    super(message ?? `Duplicate existing record on field: ${field}`)
-    this.name = 'DuplicateExistingError'
-    this.field = field
-  }
-}
+// DuplicateExistingError + isPrismaP2002 imported from ./bill-errors (no circular dependency)
 
 // ============================================================================
 // Server-side validation helpers (pure)
@@ -286,7 +255,9 @@ export async function createBuyBillService<TBill extends BuyBillCreatedBill = Bu
   totalAmount = round2(totalAmount)
 
   const billNumber = await deps.generateBillNumber()
-  const externalBillNumber = input.externalBillNumber?.trim() || null
+  const externalBillNumber = input.externalBillNumber
+    ? (normalizeBillNumber(input.externalBillNumber) || null)
+    : null
   const date = new Date(input.date)
 
   try {
@@ -683,3 +654,5 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
 // ============================================================================
 
 export { FIFO_ORDER_BY } from './fifo-validation'
+export { normalizeBillNumber } from './bill-identity'
+export { DuplicateExistingError, isPrismaP2002 } from './bill-errors'
