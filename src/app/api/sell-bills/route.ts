@@ -1,65 +1,100 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
-import { isRealFormula } from '@/lib/safe-math';
-import { FIFO_ORDER_BY } from '@/lib/fifo-validation';
+import { generateBillNumber } from '@/lib/bill-helpers';
+import { hasPermission } from '@/lib/permissions';
+import {
+  createSellBillService,
+  DuplicateExistingError,
+  FIFO_ORDER_BY,
+  type SellBillCreatedBill,
+  type SellBillTx,
+} from '@/lib/bill-services';
 
-// Helper: Deduct stock using FIFO and return weighted average cost
-async function deductStockFIFO(
-  productId: string,
-  weightToDeduct: number,
-  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0]
-): Promise<{ costPerKg: number; totalCost: number }> {
-  // Get available lots ordered by dateAdded ASC (FIFO)
-  const lots = await tx.stockLot.findMany({
-    where: {
-      productId,
-      remainingWeight: { gt: 0 },
-    },
-    orderBy: FIFO_ORDER_BY,
-  });
+// ============================================================================
+// Production deps for createSellBillService — adapts the real Prisma tx
+// to the service's SellBillTx interface. The route handler is a thin
+// adapter: auth -> parse -> call service -> map errors to responses.
+// ============================================================================
 
-  // Check total available stock
-  const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
-  if (totalAvailable < weightToDeduct) {
-    throw new Error(
-      `Insufficient stock for product ${productId}. Available: ${totalAvailable}, Requested: ${weightToDeduct}`
-    );
-  }
-
-  let remaining = weightToDeduct;
-  let totalCost = 0;
-
-  for (const lot of lots) {
-    if (remaining <= 0) break;
-
-    const deductFromLot = Math.min(lot.remainingWeight, remaining);
-    totalCost += deductFromLot * lot.costPerKg;
-    remaining -= deductFromLot;
-
-    await tx.stockLot.update({
-      where: { id: lot.id },
-      data: { remainingWeight: lot.remainingWeight - deductFromLot },
-    });
-  }
-
-  const costPerKg = weightToDeduct > 0 ? totalCost / weightToDeduct : 0;
+function makeSellBillDeps() {
   return {
-    costPerKg: Math.round(costPerKg * 100) / 100,
-    totalCost: Math.round(totalCost * 100) / 100,
+    checkStockAvailability: async (items: Array<{ productId: string; weight: number }>) => {
+      for (const item of items) {
+        const lots = await db.stockLot.findMany({
+          where: {
+            productId: item.productId,
+            remainingWeight: { gt: 0 },
+          },
+          orderBy: FIFO_ORDER_BY,
+        });
+        const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
+        if (totalAvailable < item.weight) {
+          const product = await db.product.findUnique({
+            where: { id: item.productId },
+            select: { name: true },
+          });
+          return {
+            ok: false as const,
+            productId: item.productId,
+            productName: product?.name,
+            available: totalAvailable,
+            requested: item.weight,
+          };
+        }
+      }
+      return { ok: true as const };
+    },
+    generateBillNumber: () => generateBillNumber(db, 'SELL'),
+    transaction: <T>(fn: (tx: SellBillTx<SellBillCreatedBill>) => Promise<T>): Promise<T> =>
+      db.$transaction(async (prismaTx) => {
+        const adaptedTx: SellBillTx = {
+          createSellBill: (args) =>
+            prismaTx.sellBill.create({
+              ...args,
+              include: {
+                items: { include: { product: true } },
+                customer: true,
+              },
+            }) as Promise<SellBillCreatedBill>,
+          findSourceLots: (productId) =>
+            prismaTx.stockLot.findMany({
+              where: { productId, remainingWeight: { gt: 0 } },
+              orderBy: FIFO_ORDER_BY,
+            }) as Promise<
+              Array<{
+                id: string;
+                remainingWeight: number;
+                costPerKg: number;
+                dateAdded: Date;
+                createdAt: Date;
+              }>
+            >,
+          updateStockLotRemaining: (id, newRemaining) =>
+            prismaTx.stockLot.update({
+              where: { id },
+              data: { remainingWeight: newRemaining },
+            }),
+          createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
+          createAuditLog: (data) => prismaTx.auditLog.create({ data }),
+        };
+        return fn(adaptedTx);
+      }),
   };
 }
 
-// POST /api/sell-bills - Create a sell bill with FIFO cost calculation
+// POST /api/sell-bills - Create a sell bill (thin adapter over createSellBillService)
 export async function POST(request: NextRequest) {
   // --- Auth ---
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['sell.create'] === true;
-  if (!hasPermission) return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+
+  // ST-8 Blocker 1: type-specific authorization via shared hasPermission.
+  if (!hasPermission(payload, 'sell.create')) {
+    return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+  }
 
   try {
     const body = await request.json();
@@ -76,145 +111,50 @@ export async function POST(request: NextRequest) {
       }>;
     };
 
-    // --- Validation ---
-    if (!items || items.length === 0) {
-      return NextResponse.json({ error: 'Items are required' }, { status: 400 });
-    }
+    const result = await createSellBillService(makeSellBillDeps(), {
+      date,
+      customerId,
+      isCredit,
+      note,
+      items,
+    }, payload);
 
-    for (const item of items) {
-      if (typeof item.weight !== 'number' || item.weight <= 0) {
-        return NextResponse.json({ error: 'น้ำหนักต้องมากกว่า 0' }, { status: 400 });
-      }
-      if (typeof item.pricePerKg !== 'number' || item.pricePerKg <= 0) {
-        return NextResponse.json({ error: 'ราคา/กก. ต้องมากกว่า 0' }, { status: 400 });
-      }
-    }
-
-    // Pre-validate stock availability for all items
-    for (const item of items) {
-      const lots = await db.stockLot.findMany({
-        where: {
-          productId: item.productId,
-          remainingWeight: { gt: 0 },
-        },
-        orderBy: FIFO_ORDER_BY,
-      });
-      const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
-      if (totalAvailable < item.weight) {
-        const product = await db.product.findUnique({
-          where: { id: item.productId },
-          select: { name: true },
-        });
-        return NextResponse.json(
-          {
-            error: `สต็อกไม่เพียงพอสำหรับ "${product?.name || item.productId}". มี: ${totalAvailable} kg, ต้องการ: ${item.weight} kg`,
-          },
-          { status: 400 }
-        );
-      }
-    }
-
-    // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
-    const billNumber = await generateBillNumber(db, 'SELL');
-
-    // --- Transaction: FIFO deduction + bill + credit + audit ---
-    const bill = await db.$transaction(async (tx) => {
-      let totalAmount = 0;
-      let totalCost = 0;
-      const sellItems: Array<{
-        productId: string;
-        weight: number;
-        weightExpression: string | null;
-        pricePerKg: number;
-        totalAmount: number;
-        costPerKg: number;
-        totalCost: number;
-      }> = [];
-
-      for (const item of items) {
-        const itemTotalAmount = Math.round(item.weight * item.pricePerKg * 100) / 100;
-        const fifoResult = await deductStockFIFO(item.productId, item.weight, tx);
-
-        totalAmount += itemTotalAmount;
-        totalCost += fifoResult.totalCost;
-
-        sellItems.push({
-          productId: item.productId,
-          weight: item.weight,
-          weightExpression: isRealFormula(item.weightExpression)
-            ? item.weightExpression!.trim()
-            : null,
-          pricePerKg: item.pricePerKg,
-          totalAmount: itemTotalAmount,
-          costPerKg: fifoResult.costPerKg,
-          totalCost: fifoResult.totalCost,
-        });
-      }
-
-      totalAmount = Math.round(totalAmount * 100) / 100;
-      totalCost = Math.round(totalCost * 100) / 100;
-
-      const created = await tx.sellBill.create({
-        data: {
-          billNumber,
-          date: new Date(date),
-          customerId: customerId || null,
-          isCredit,
-          note: note || null,
-          totalAmount,
-          totalCost,
-          items: {
-            create: sellItems,
-          },
-        },
-        include: {
-          items: { include: { product: true } },
-          customer: true,
-        },
-      });
-
-      // If credit, create a CreditEntry (RECEIVABLE)
-      if (isCredit) {
-        await tx.creditEntry.create({
-          data: {
-            type: 'RECEIVABLE',
-            amount: totalAmount,
-            paidAmount: 0,
-            customerId: customerId || null,
-            referenceType: 'SELL_BILL',
-            referenceId: created.id,
-            description: `ใบขาย ${billNumber}`,
-            date: new Date(date),
-            isSettled: false,
-          },
-        });
-      }
-
-      await writeAuditLog(tx, {
-        action: 'CREATE',
-        entityType: 'SELL_BILL',
-        entityId: created.id,
-        userId: payload.userId,
-        userName: payload.name,
-        details: JSON.stringify({
-          billNumber,
-          totalAmount,
-          totalCost,
-          itemCount: created.items.length,
-          isCredit,
-          customerId: customerId || null,
-        }),
-      });
-
-      return created;
-    });
-
-    return NextResponse.json({ bill }, { status: 201 });
+    return NextResponse.json({ bill: result.bill }, { status: 201 });
   } catch (error) {
+    if (error instanceof DuplicateExistingError) {
+      return NextResponse.json(
+        { error: 'เลขบิลซ้ำ — กรุณาลองอีกครั้ง' },
+        { status: 409 }
+      );
+    }
     const message = error instanceof Error ? error.message : 'Failed to create sell bill';
     console.error('Error creating sell bill:', error);
 
-    if (message.includes('Insufficient stock')) {
+    if (message.includes('Insufficient stock') || message.includes('สต็อกไม่เพียงพอ')) {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
+
+    // ST-20 Phase 2: Surface FIFO validation errors with proper codes
+    if (
+      message.includes('NEGATIVE_COST_SOURCE_LOT') ||
+      message.includes('ZERO_COST_SOURCE_LOT') ||
+      message.includes('ZERO_SOURCE_COST') ||
+      message.includes('ต้นทุน 0 บาท/กก.') ||
+      message.includes('ต้นทุนถัวเฉลี่ยของสต็อกต้นทางเป็น 0')
+    ) {
+      return NextResponse.json(
+        { error: message, code: 'FIFO_VALIDATION_ERROR' },
+        { status: 400 }
+      );
+    }
+
+    // Validation errors -> 400
+    if (
+      message.includes('น้ำหนักต้องมากกว่า 0') ||
+      message.includes('ราคา/กก. ต้องไม่ติดลบ') ||
+      message.includes('วันที่ไม่ถูกต้อง') ||
+      message === 'Items are required'
+    ) {
       return NextResponse.json({ error: message }, { status: 400 });
     }
 

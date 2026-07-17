@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { normalizeBillNumber } from '@/lib/import-pipeline';
+import { hasPermission } from '@/lib/permissions';
 
 /**
  * ST-8: Batch duplicate-check API.
@@ -36,7 +37,14 @@ export async function POST(request: NextRequest) {
       type?: unknown;
     };
 
-    // Validate type
+    // ST-8 Blocker 1: Type-specific authorization
+    if (type === 'purchase' && !hasPermission(payload, 'buy.create')) {
+      return NextResponse.json({ error: 'ไม่มีสิทธิ์นำเข้าใบซื้อ' }, { status: 403 });
+    }
+    if (type === 'sales' && !hasPermission(payload, 'sell.create')) {
+      return NextResponse.json({ error: 'ไม่มีสิทธิ์นำเข้าใบขาย' }, { status: 403 });
+    }
+
     if (type !== 'purchase' && type !== 'sales') {
       return NextResponse.json(
         { error: "type must be 'purchase' or 'sales'" },

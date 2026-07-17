@@ -11,13 +11,11 @@ import {
   type ParsedBill,
   type ParsedBillItem,
 } from '@/lib/import-pipeline';
+import { hasPermission } from '@/lib/permissions';
+import { FIFO_ORDER_BY } from '@/lib/fifo-validation';
 
-// ============================================================================
-// FIFO ordering — consistent with /api/sell-bills/route.ts and
-// /api/stock-transfers/route.ts. Oldest-first (FIFO) by dateAdded ASC.
-// ============================================================================
-
-const FIFO_ORDER_BY = { dateAdded: 'asc' as const };
+// ST-8 Blocker 4: FIFO_ORDER_BY is imported from @/lib/fifo-validation
+// (canonical ST-39 ordering: dateAdded ASC, createdAt ASC, id ASC).
 
 /**
  * Transactional FIFO deduction — same algorithm as /api/sell-bills/route.ts
@@ -323,12 +321,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
   }
 
-  const hasPermission =
-    jwtPayload.role === 'admin' ||
-    jwtPayload.permissions?.['buy.create'] === true ||
-    jwtPayload.permissions?.['sell.create'] === true;
-  if (!hasPermission) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+  // ST-8 Blocker 1: Type-specific authorization
+  const importBody = await request.json();
+  const { type: importType } = importBody as { type?: string };
+  if (importType === 'purchase' && !hasPermission(jwtPayload, 'buy.create')) {
+    return NextResponse.json({ error: 'ไม่มีสิทธิ์นำเข้าใบซื้อ' }, { status: 403 });
+  }
+  if (importType === 'sales' && !hasPermission(jwtPayload, 'sell.create')) {
+    return NextResponse.json({ error: 'ไม่มีสิทธิ์นำเข้าใบขาย' }, { status: 403 });
+  }
+  if (importType !== 'purchase' && importType !== 'sales') {
+    return NextResponse.json({ error: 'type ต้องเป็น purchase หรือ sales' }, { status: 400 });
   }
 
   const actor: ImportActor = {
@@ -339,7 +342,7 @@ export async function POST(request: NextRequest) {
   };
 
   try {
-    const body = await request.json();
+    const body = importBody;
     const { type, bills } = body as { type?: unknown; bills?: unknown };
 
     if (type !== 'purchase' && type !== 'sales') {
