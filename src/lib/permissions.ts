@@ -9,7 +9,7 @@
  * Canonical permission names (single source of truth — used by login route,
  * users management API, and all route authorization checks):
  *   customer.create, buy.create, sell.create, sort.create, transfer.create,
- *   history.edit, physical-count.apply, dailyPurchaseWeighing, product.manage
+ *   history.edit, dailyPurchaseWeighing, product.manage
  *
  * Note: user management (PATCH /api/users/[id]) is admin-only via role check,
  * not a staff-grantable permission. 'user.manage' is intentionally NOT in this list.
@@ -31,7 +31,6 @@ export const CANONICAL_PERMISSIONS = [
   'sort.create',
   'transfer.create',
   'history.edit',
-  'physical-count.apply',
   'dailyPurchaseWeighing',
   'product.manage',
 ] as const
@@ -45,7 +44,6 @@ export const PERMISSION_LABELS: Record<string, string> = {
   'sort.create': 'สร้างใบคัดแยก',
   'transfer.create': 'สร้างใบย้ายสต็อก',
   'history.edit': 'แก้ไข/ยกเลิกบิลในประวัติ',
-  'physical-count.apply': 'Apply การชั่งสต็อกจริง (Legacy)',
   'dailyPurchaseWeighing': 'ชั่งยอดซื้อทองแดง/ทองเหลือง',
   'product.manage': 'จัดการสินค้า',
 }

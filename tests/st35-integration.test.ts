@@ -560,23 +560,6 @@ describe('ST-35: Stock invariants (production controller + fake repository)', ()
   });
 });
 
-// ============ Legacy Apply route test (actual handler) ============
-
-describe('ST-35: Legacy Apply route (actual production handler)', () => {
-  test('POST returns 403 with suspension message', async () => {
-    const { POST } = await import('../src/app/api/physical-counts/[id]/apply/route');
-    const mockRequest = new Request('http://localhost/api/physical-counts/test/apply', { method: 'POST' }) as any;
-    const result = await POST(mockRequest, { params: Promise.resolve({ id: 'test' }) });
-    expect(result.status).toBe(403);
-    const body = await result.json();
-    expect(body.error).toContain('ระงับการใช้งาน');
-    expect(body.error).toContain('ชั่งยอดซื้อ');
-  });
-
-  test('apply route module does not export db', async () => {
-    const applyModule = await import('../src/app/api/physical-counts/[id]/apply/route');
-    const exports = Object.keys(applyModule);
-    expect(exports).toContain('POST');
-    expect(exports).not.toContain('db');
-  });
-});
+// ============ Legacy Apply route removed (ST-44) ============
+// The /api/physical-counts/[id]/apply route and the entire physical-count page
+// were removed in ST-44. The previous 403-suspension tests are obsolete.
