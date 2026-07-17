@@ -3114,3 +3114,23 @@ Test file: `ซื้อ 11-7-2569 แบบละเอียด.xls`
 - ✅ No database/stock changes
 - ✅ No merge (Draft PR)
 - ✅ No deploy
+
+---
+Task ID: ST-44-INVESTIGATION
+Agent: main
+Task: ST-44 — Remove ONLY "ชั่งสต็อกจริง (Legacy)" page (Page A). Do NOT touch "ชั่งยอดทองแดง/ทองเหลืองประจำวัน" (Page B, belongs to ST-43).
+
+Work Log:
+- Reset local main to origin/main (5cbaa0d, ST-8 merged) as clean base for ST-44.
+- Identified Page A vs Page B via nav config in src/app/page.tsx:
+  - Page A (REMOVE): tab='physical-count', label='ชั่งสต็อกจริง (Legacy)', renders <PhysicalCountPage/> from '@/components/physical-count-page'. Component contains exact Owner warning "หยุดใช้งาน — กระบวนการนี้ไม่ตรงกับงานจริงของบริษัท" + title "ชั่งสต็อกจริง". 100% match.
+  - Page B (KEEP): tab='daily-weighing', label='ชั่งยอดซื้อทองแดง/ทองเหลือง', renders <DailyWeighingPage/> from '@/components/daily-weighing-page'. Component title "ชั่งยอดทองแดง/ทองเหลืองประจำวัน". 100% match to Owner Page B. DO NOT TOUCH.
+- Mapped all physical-count references in src/: physical-count-page.tsx (UI), api/physical-counts/{route,[id]/route,[id]/apply/route}.ts (3 API routes), page.tsx (nav+render), permissions.ts (canonical perm 'physical-count.apply' + label), types.ts (PageTab union member).
+- Confirmed PhysicalCountSession Prisma model used ONLY in the 2 physical-counts API routes being removed — no orphaned refs after removal. Prisma schema models (PhysicalCountSession/Item) + reconciliation/ scripts + debug doc left UNTOUCHED (historical data, no migration authorized).
+- Tests referencing legacy apply route: tests/st35-integration.test.ts (lines 563-582, self-contained describe block) and tests/st38-integration.test.ts (lines 577-597, self-contained describe block). Both test the 403 suspension behavior — obsolete once route removed; will remove both blocks.
+- permissions.ts: 'physical-count.apply' in CANONICAL_PERMISSIONS + PERMISSION_LABELS + comment. users-page.tsx renders checkboxes from PERMISSION_LABELS entries — removing the entry simply hides the checkbox (safe; no point granting a dead permission). buildAdmin/StaffPermissionMap iterate CANONICAL_PERMISSIONS — removing entry is clean.
+
+Stage Summary:
+- Removal scope (9 files): DELETE physical-count-page.tsx + 3 API routes; EDIT page.tsx (import/tab/case), permissions.ts (perm+label+comment), types.ts (PageTab), st35 test (remove legacy-apply describe), st38 test (remove legacy-apply describe).
+- DO NOT TOUCH: prisma/schema.prisma, reconciliation/, debug/, daily-weighing page+API+lib (Page B / ST-43).
+- No migration, no schema change, no DB write. Branch: st-44-remove-legacy-physical-count from 5cbaa0d.
