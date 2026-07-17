@@ -1,17 +1,25 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
-import { isRealFormula } from '@/lib/safe-math';
+import { hasPermission } from '@/lib/permissions';
+import { makeBuyBillServiceDeps } from '@/lib/bill-service-prisma-adapters';
+import {
+  createBuyBillService,
+  DuplicateExistingError,
+} from '@/lib/bill-services';
 
-// POST /api/buy-bills - Create a buy bill
+// ST-8: thin adapter — auth → parse → createBuyBillService → map errors
+// POST /api/buy-bills - Create a buy bill (thin adapter over createBuyBillService)
 export async function POST(request: NextRequest) {
   const token = getTokenFromRequest(request);
   if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
   const payload = await verifyToken(token);
   if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['buy.create'] === true;
-  if (!hasPermission) return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+
+  // ST-8 Blocker 1: type-specific authorization via shared hasPermission.
+  if (!hasPermission(payload, 'buy.create')) {
+    return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+  }
 
   try {
     const body = await request.json();
@@ -28,11 +36,7 @@ export async function POST(request: NextRequest) {
       }>;
     };
 
-    if (!items || items.length === 0) {
-      return NextResponse.json({ error: 'Items are required' }, { status: 400 });
-    }
-
-    // Check for duplicate externalBillNumber if provided
+    // Check for duplicate externalBillNumber if provided (UX: 409 before bill number generation).
     if (externalBillNumber && externalBillNumber.trim()) {
       const existing = await db.buyBill.findFirst({
         where: { externalBillNumber: externalBillNumber.trim() },
@@ -46,91 +50,35 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Server-side validation
-    for (const item of items) {
-      if (typeof item.weight !== 'number' || item.weight <= 0) {
-        return NextResponse.json({ error: 'น้ำหนักต้องมากกว่า 0' }, { status: 400 });
-      }
-      if (typeof item.pricePerKg !== 'number' || item.pricePerKg < 0) {
-        return NextResponse.json({ error: 'ราคา/กก. ต้องไม่ติดลบ' }, { status: 400 });
-      }
+    const result = await createBuyBillService(makeBuyBillServiceDeps(), {
+      date,
+      isCredit,
+      note,
+      externalBillNumber,
+      items,
+    }, payload);
+
+    return NextResponse.json({ bill: result.bill }, { status: 201 });
+  } catch (error) {
+    if (error instanceof DuplicateExistingError) {
+      return NextResponse.json(
+        { error: 'เลขบิลซ้ำ — กรุณาลองอีกครั้ง' },
+        { status: 409 }
+      );
+    }
+    const message = error instanceof Error ? error.message : 'Failed to create buy bill';
+    console.error('Error creating buy bill:', error);
+
+    // Validation errors -> 400
+    if (
+      message.includes('น้ำหนักต้องมากกว่า 0') ||
+      message.includes('ราคา/กก. ต้องไม่ติดลบ') ||
+      message.includes('วันที่ไม่ถูกต้อง') ||
+      message === 'Items are required'
+    ) {
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    let totalAmount = 0;
-    const billItems = items.map((item) => {
-      const itemTotal = item.weight * item.pricePerKg;
-      totalAmount += itemTotal;
-      return {
-        productId: item.productId,
-        weight: item.weight,
-        // เก็บ expression เฉพาะกรณีที่เป็นจริง (isRealFormula) — plain number เก็บ null
-        weightExpression: isRealFormula(item.weightExpression)
-          ? item.weightExpression!.trim()
-          : null,
-        pricePerKg: item.pricePerKg,
-        totalAmount: Math.round(itemTotal * 100) / 100,
-      };
-    });
-    totalAmount = Math.round(totalAmount * 100) / 100;
-
-    // Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout)
-    const billNumber = await generateBillNumber(db, 'BUY');
-
-    const bill = await db.$transaction(async (tx) => {
-      const created = await tx.buyBill.create({
-        data: {
-          billNumber,
-          externalBillNumber: externalBillNumber?.trim() || null,
-          date: new Date(date),
-          isCredit,
-          note: note || null,
-          totalAmount,
-          items: { create: billItems },
-        },
-        include: { items: { include: { product: true } } },
-      });
-
-      await tx.stockLot.createMany({
-        data: created.items.map((item) => ({
-          productId: item.productId,
-          remainingWeight: item.weight,
-          costPerKg: item.pricePerKg,
-          dateAdded: new Date(date),
-          source: 'BUY',
-          sourceId: created.id,
-        })),
-      });
-
-      if (isCredit) {
-        await tx.creditEntry.create({
-          data: {
-            type: 'PAYABLE',
-            amount: totalAmount,
-            paidAmount: 0,
-            referenceType: 'BUY_BILL',
-            referenceId: created.id,
-            description: `ใบซื้อ ${billNumber}`,
-            date: new Date(date),
-            isSettled: false,
-          },
-        });
-      }
-
-      await writeAuditLog(tx, {
-        action: 'CREATE',
-        entityType: 'BUY_BILL',
-        entityId: created.id,
-        userId: payload.userId,
-        userName: payload.name,
-        details: JSON.stringify({ billNumber, totalAmount, itemCount: created.items.length, isCredit }),
-      });
-
-      return created;
-    });
-
-    return NextResponse.json({ bill }, { status: 201 });
-  } catch (error) {
-    console.error('Error creating buy bill:', error);
     return NextResponse.json({ error: 'Failed to create buy bill' }, { status: 500 });
   }
 }
