@@ -262,6 +262,7 @@ const deps: ImportApplyDeps = {
         customerId: undefined,
         isCredit: false,
         note: bill.note,
+        externalBillNumber: bill.externalBillNumber,
         items: bill.items.map((item) => ({
           productId: item.productId,
           weight: item.weight,

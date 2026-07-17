@@ -827,6 +827,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
             recordedSellArgs = args as never;
             return {
               id: 'sell-1',
+              externalBillNumber: args.data.externalBillNumber,
               items: args.data.items.create.map((it) => ({
                 productId: it.productId,
                 weight: it.weight,

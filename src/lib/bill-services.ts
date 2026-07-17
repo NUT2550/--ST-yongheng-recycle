@@ -42,6 +42,7 @@ import {
   type SourceLotForPreview,
 } from './fifo-validation'
 import { isRealFormula } from './safe-math'
+import { normalizeBillNumber } from './import-pipeline'
 import type { AuthPayload } from './permissions'
 
 // ============================================================================
@@ -371,6 +372,7 @@ export interface SellBillInput {
   customerId?: string
   isCredit: boolean
   note?: string
+  externalBillNumber?: string
   items: SellBillItemInput[]
 }
 
@@ -379,6 +381,7 @@ export interface SellBillInput {
  */
 export interface SellBillCreatedBill {
   id: string
+  externalBillNumber: string | null
   items: Array<{ productId: string; weight: number; pricePerKg: number }>
 }
 
@@ -390,6 +393,7 @@ export interface SellBillCreateArgs {
     customerId: string | null
     isCredit: boolean
     note: string | null
+    externalBillNumber: string | null
     totalAmount: number
     totalCost: number
     items: {
@@ -523,6 +527,9 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
 
   const billNumber = await deps.generateBillNumber()
   const date = new Date(input.date)
+  const externalBillNumber = input.externalBillNumber
+    ? (normalizeBillNumber(input.externalBillNumber) || null)
+    : null
 
   try {
     const txResult = await deps.transaction(async (tx) => {
@@ -614,6 +621,7 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
           customerId: input.customerId || null,
           isCredit: input.isCredit,
           note: input.note || null,
+          externalBillNumber,
           totalAmount,
           totalCost,
           items: { create: sellItems },
@@ -642,6 +650,7 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
         userName: auth.name,
         details: JSON.stringify({
           billNumber,
+          externalBillNumber,
           totalAmount,
           totalCost,
           itemCount: sellBill.items.length,
