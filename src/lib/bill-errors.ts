@@ -33,7 +33,14 @@ export function isPrismaP2002(error: unknown): boolean {
  */
 export function isP2002OnField(error: unknown, fieldName: string): boolean {
   if (!isPrismaP2002(error)) return false
-  const meta = (error as { meta?: { target?: string[] } }).meta
+  const meta = (error as { meta?: { target?: string[] | string } }).meta
   if (!meta?.target) return false
-  return meta.target.includes(fieldName)
+  // Support both string[] and string target shapes
+  if (Array.isArray(meta.target)) {
+    return meta.target.includes(fieldName)
+  }
+  if (typeof meta.target === 'string') {
+    return meta.target === fieldName
+  }
+  return false
 }

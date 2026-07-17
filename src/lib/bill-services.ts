@@ -62,7 +62,7 @@ import type { AuthPayload } from './permissions'
  *
  * @returns null if valid, otherwise a Thai error message.
  */
-export function validateBillItemNumeric(item: {
+export function validateBuyBillItemNumeric(item: {
   weight: number
   pricePerKg: number
 }): string | null {
@@ -81,6 +81,35 @@ export function validateBillItemNumeric(item: {
     return 'ราคา/กก. ต้องไม่ติดลบ'
   }
   return null
+}
+
+export function validateSellBillItemNumeric(item: {
+  weight: number
+  pricePerKg: number
+}): string | null {
+  if (
+    typeof item.weight !== 'number' ||
+    !Number.isFinite(item.weight) ||
+    item.weight <= 0
+  ) {
+    return 'น้ำหนักต้องมากกว่า 0'
+  }
+  if (
+    typeof item.pricePerKg !== 'number' ||
+    !Number.isFinite(item.pricePerKg) ||
+    item.pricePerKg <= 0
+  ) {
+    return 'ราคา/กก. ต้องมากกว่า 0'
+  }
+  return null
+}
+
+// Backwards-compatible alias (uses Purchase rules: pricePerKg >= 0)
+export function validateBillItemNumeric(item: {
+  weight: number
+  pricePerKg: number
+}): string | null {
+  return validateBuyBillItemNumeric(item)
 }
 
 /**
@@ -483,7 +512,7 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
     throw new Error('Items are required')
   }
   for (const item of input.items) {
-    const err = validateBillItemNumeric(item)
+    const err = validateSellBillItemNumeric(item)
     if (err) throw new Error(err)
   }
   const dateErr = validateBillDate(input.date)

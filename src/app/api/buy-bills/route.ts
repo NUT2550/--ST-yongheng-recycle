@@ -1,24 +1,14 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { generateBillNumber } from '@/lib/bill-helpers';
 import { hasPermission } from '@/lib/permissions';
 import { makeBuyBillServiceDeps } from '@/lib/bill-service-prisma-adapters';
 import {
   createBuyBillService,
   DuplicateExistingError,
-  type BuyBillCreatedBill,
-  type BuyBillTx,
 } from '@/lib/bill-services';
 
-// ============================================================================
-// Production deps for createBuyBillService — adapts the real Prisma tx
-// to the service's BuyBillTx interface. The route handler is a thin
-// adapter: auth -> parse -> call service -> map errors to responses.
-// ============================================================================
-
-// ST-8: makeBuyBillServiceDeps imported from @/lib/bill-service-prisma-adapters
-
+// ST-8: thin adapter — auth → parse → createBuyBillService → map errors
 // POST /api/buy-bills - Create a buy bill (thin adapter over createBuyBillService)
 export async function POST(request: NextRequest) {
   const token = getTokenFromRequest(request);

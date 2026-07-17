@@ -1,23 +1,14 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { generateBillNumber } from '@/lib/bill-helpers';
 import { hasPermission } from '@/lib/permissions';
 import { makeSellBillServiceDeps } from '@/lib/bill-service-prisma-adapters';
 import {
   createSellBillService,
   DuplicateExistingError,
-  FIFO_ORDER_BY,
-  type SellBillCreatedBill,
-  type SellBillTx,
 } from '@/lib/bill-services';
 
-// ============================================================================
-// Production deps for createSellBillService — adapts the real Prisma tx
-// to the service's SellBillTx interface. The route handler is a thin
-// adapter: auth -> parse -> call service -> map errors to responses.
-// ============================================================================
-
+// ST-8: thin adapter — auth → parse → createSellBillService → map errors
 // ST-8: makeSellBillServiceDeps imported from @/lib/bill-service-prisma-adapters
 
 // POST /api/sell-bills - Create a sell bill (thin adapter over createSellBillService)
