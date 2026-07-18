@@ -256,6 +256,12 @@ export function createPrismaStockTransferDeps(): StockTransferDeps {
       });
     },
 
+    async createStockMovements(data): Promise<void> {
+      await db.stockMovement.createMany({
+        data: data as Prisma.StockMovementCreateManyInput[],
+      });
+    },
+
     async createAuditLog(data: AuditLogInput): Promise<void> {
       await db.auditLog.create({
         data: {

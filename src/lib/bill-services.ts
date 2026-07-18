@@ -41,6 +41,11 @@ import {
   validateSourceLotCosts,
   type SourceLotForPreview,
 } from './fifo-validation'
+import {
+  buildPurchaseMovements,
+  buildSaleMovements,
+  type StockMovementDraft,
+} from './stock-movement-ledger'
 import { isRealFormula } from './safe-math'
 import { normalizeBillNumber } from './bill-identity'
 import { DuplicateExistingError, isPrismaP2002, isP2002OnField } from './bill-errors'
@@ -160,7 +165,7 @@ export interface BuyBillInput {
  */
 export interface BuyBillCreatedBill {
   id: string
-  items: Array<{ productId: string; weight: number; pricePerKg: number }>
+  items: Array<{ id?: string; productId: string; weight: number; pricePerKg: number }>
 }
 
 /** Shape of the `args` object passed to BuyBillTx.createBuyBill (matches Prisma's `{ data }` convention). */
@@ -216,6 +221,7 @@ export interface BuyBillTx<TBill extends BuyBillCreatedBill = BuyBillCreatedBill
     userName?: string | null
     details?: string | null
   }): Promise<unknown>
+  createStockMovements?(data: StockMovementDraft[]): Promise<unknown>
 }
 
 export interface BuyBillServiceDeps<TBill extends BuyBillCreatedBill = BuyBillCreatedBill> {
@@ -316,6 +322,17 @@ export async function createBuyBillService<TBill extends BuyBillCreatedBill = Bu
         }))
       )
 
+      await tx.createStockMovements?.(buildPurchaseMovements({
+        id: buyBill.id,
+        billNumber,
+        date,
+        items: buyBill.items.map((item, index) => ({
+          id: item.id || `item-${index}`,
+          productId: item.productId,
+          weight: item.weight,
+        })),
+      }))
+
       if (input.isCredit) {
         await tx.createCreditEntry?.({
           type: 'PAYABLE',
@@ -382,7 +399,7 @@ export interface SellBillInput {
 export interface SellBillCreatedBill {
   id: string
   externalBillNumber: string | null
-  items: Array<{ productId: string; weight: number; pricePerKg: number }>
+  items: Array<{ id?: string; productId: string; weight: number; pricePerKg: number }>
 }
 
 /** Shape of the `args` object passed to SellBillTx.createSellBill (matches Prisma's `{ data }` convention). */
@@ -452,6 +469,7 @@ export interface SellBillTx<TBill extends SellBillCreatedBill = SellBillCreatedB
     userName?: string | null
     details?: string | null
   }): Promise<unknown>
+  createStockMovements?(data: StockMovementDraft[]): Promise<unknown>
 }
 
 export interface SellBillServiceDeps<TBill extends SellBillCreatedBill = SellBillCreatedBill> {
@@ -627,6 +645,17 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
           items: { create: sellItems },
         },
       })
+
+      await tx.createStockMovements?.(buildSaleMovements({
+        id: sellBill.id,
+        billNumber,
+        date,
+        items: sellBill.items.map((item, index) => ({
+          id: item.id || `item-${index}`,
+          productId: item.productId,
+          weight: item.weight,
+        })),
+      }))
 
       if (input.isCredit) {
         await tx.createCreditEntry?.({

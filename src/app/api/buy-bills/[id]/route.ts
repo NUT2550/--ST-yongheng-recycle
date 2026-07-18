@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
+import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
 
 
 async function requireEditPermission(request: NextRequest) {
@@ -280,6 +281,7 @@ export async function DELETE(
     }
 
     await db.$transaction(async (tx) => {
+      const cancelledAt = new Date();
       // Check if stock was consumed downstream
       const buyLots = await tx.stockLot.findMany({
         where: { source: 'BUY', sourceId: id },
@@ -313,11 +315,13 @@ export async function DELETE(
         where: { id },
         data: {
           isCancelled: true,
-          cancelledAt: new Date(),
+          cancelledAt,
           cancelledBy: auth.userId,
           cancelReason: reason || null,
         },
       });
+
+      await reverseSourceMovements(tx, 'BUY_BILL', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Purchase cancelled');
 
       // Audit log
       await tx.auditLog.create({

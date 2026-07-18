@@ -11,6 +11,7 @@
 import { db } from '@/lib/db';
 import { generateBillNumber } from '@/lib/bill-helpers';
 import { FIFO_ORDER_BY } from '@/lib/fifo-validation';
+import type { Prisma } from '@prisma/client';
 import type {
   BuyBillServiceDeps,
   BuyBillTx,
@@ -38,6 +39,9 @@ export function makeBuyBillServiceDeps(): BuyBillServiceDeps<BuyBillCreatedBill>
           createStockLots: (data) => prismaTx.stockLot.createMany({ data }),
           createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
           createAuditLog: (data) => prismaTx.auditLog.create({ data }),
+          createStockMovements: (data) => prismaTx.stockMovement.createMany({
+            data: data as Prisma.StockMovementCreateManyInput[],
+          }),
         };
         return fn(adaptedTx);
       }),
@@ -94,6 +98,9 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
             prismaTx.stockLot.update({ where: { id }, data: { remainingWeight: newRemaining } }),
           createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
           createAuditLog: (data) => prismaTx.auditLog.create({ data }),
+          createStockMovements: (data) => prismaTx.stockMovement.createMany({
+            data: data as Prisma.StockMovementCreateManyInput[],
+          }),
         };
         return fn(adaptedTx);
       }),

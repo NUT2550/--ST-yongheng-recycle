@@ -3134,3 +3134,21 @@ Stage Summary:
 - Removal scope (9 files): DELETE physical-count-page.tsx + 3 API routes; EDIT page.tsx (import/tab/case), permissions.ts (perm+label+comment), types.ts (PageTab), st35 test (remove legacy-apply describe), st38 test (remove legacy-apply describe).
 - DO NOT TOUCH: prisma/schema.prisma, reconciliation/, debug/, daily-weighing page+API+lib (Page B / ST-43).
 - No migration, no schema change, no DB write. Branch: st-44-remove-legacy-physical-count from 5cbaa0d.
+
+---
+Task ID: ST-47
+Agent: Codex
+Date: 2026-07-18
+Task: Add append-only StockMovement ledger and trusted baseline foundation
+
+Work Log:
+- Added additive Prisma models/enums and migration for StockMovement, StockBaseline, and StockBaselineItem.
+- Integrated deterministic ledger emission into Purchase, Sale, Sorting, and StockTransfer creation paths and append-only reversal emission into cancellation paths.
+- Added approved-baseline initialization, Thailand-date-safe closing-stock read model, adjustment builder, and dry-run-only historical backfill/reconciliation service.
+- Used read-only Production evidence to propose 2026-06-19 closing as the candidate baseline boundary; no Production writes or migration apply were performed.
+- Added 24 ST-47 tests; full regression passed 639 tests, TypeScript passed, targeted lint passed, and local production build passed.
+
+Stage Summary:
+- Branch: `st-47-stock-movement-ledger-baseline`, based on `origin/main` c66e38779ae5eb180aea21d7f0a0b9e57c5944b8.
+- Baseline values remain DRAFT/UNKNOWN pending explicit Owner review; no Production baseline exists.
+- Legacy/import Sorting/StockLot dates before normal operation remain classified as unsupported/ambiguous and are not silently backfilled.

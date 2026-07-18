@@ -1,7 +1,9 @@
 import { db } from '@/lib/db';
+import type { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
+import { buildSortingMovements } from '@/lib/stock-movement-ledger';
 import { isRealFormula } from '@/lib/safe-math';
 import {
   previewFifoDeduction,
@@ -323,7 +325,32 @@ export async function POST(request: NextRequest) {
       throw lotErr;
     }
 
-    // Step 4: Audit log (best-effort, non-fatal)
+    // Step 4: ledger emission is part of the compensated stock-write workflow.
+    // A failure removes partial outputs + bill and restores the FIFO source.
+    try {
+      await db.stockMovement.createMany({
+        data: buildSortingMovements({
+          id: created.id,
+          billNumber,
+          date: new Date(date),
+          sourceProductId,
+          sourceWeight,
+          items: created.items.map((item: { id: string; productId: string; weight: number; isWaste: boolean }) => ({
+            id: item.id,
+            productId: item.productId,
+            weight: item.weight,
+            isWaste: item.isWaste,
+          })),
+        }) as Prisma.StockMovementCreateManyInput[],
+      });
+    } catch (ledgerErr) {
+      await db.stockLot.deleteMany({ where: { source: 'SORTING', sourceId: created.id } }).catch(() => {});
+      await db.sortingBill.delete({ where: { id: created.id } }).catch(() => {});
+      await restoreStock(sourceProductId, sourceWeight, sourceCostPerKg, db, 'SORT_LEDGER_ROLLBACK');
+      throw ledgerErr;
+    }
+
+    // Step 5: Audit log (best-effort, non-fatal)
     // ST-20 Phase 2: Enhanced audit with source lot breakdown + cost allocation details
     const fifoAuditDetails = buildFifoAuditDetails(fifoPreview, {
       type: 'SORTING',

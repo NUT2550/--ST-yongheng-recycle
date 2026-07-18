@@ -12,6 +12,7 @@ import type {
   CreatedTransfer,
   AuditLogInput,
 } from '../src/lib/stock-transfer-service';
+import type { StockMovementDraft } from '../src/lib/stock-movement-ledger';
 
 export interface MockState {
   findSourceProductCalls: string[];
@@ -21,6 +22,7 @@ export interface MockState {
   deductSourceLotsCalls: Array<{ productId: string; weightToDeduct: number }>;
   createStockTransferCalls: Record<string, unknown>[];
   createOutputStockLotCalls: Record<string, unknown>[];
+  createStockMovementCalls: StockMovementDraft[];
   createAuditLogCalls: AuditLogInput[];
   compensateCalls: Array<{ deductedLots: Array<{ id: string; deducted: number }>; requestId: string; reason?: string }>;
   deletePartialTransferCalls: string[];
@@ -45,6 +47,7 @@ export function createMockDeps(options: {
     deductSourceLotsCalls: [],
     createStockTransferCalls: [],
     createOutputStockLotCalls: [],
+    createStockMovementCalls: [],
     createAuditLogCalls: [],
     compensateCalls: [],
     deletePartialTransferCalls: [],
@@ -96,6 +99,9 @@ export function createMockDeps(options: {
     async createOutputStockLot(data: Record<string, unknown>) {
       state.createOutputStockLotCalls.push(data);
       if (options.createLotShouldThrow) throw options.createLotShouldThrow;
+    },
+    async createStockMovements(data) {
+      state.createStockMovementCalls.push(...data);
     },
     async createAuditLog(data: AuditLogInput) {
       state.createAuditLogCalls.push(data);
