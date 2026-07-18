@@ -40,6 +40,28 @@ describe('ST-47 trusted baseline', () => {
     expect(result.alreadyApproved).toBe(true)
     expect(state.movements).toHaveLength(0)
   })
+  test('3a. empty baseline cannot be approved', async () => {
+    const state = baselineDeps()
+    const original = state.deps.findBaseline
+    state.deps.findBaseline = async id => ({ ...(await original(id))!, items: [] })
+    await expect(approveStockBaseline(state.deps, 'base-1', { userId: 'u', name: 'Owner' })).rejects.toThrow('Empty baseline')
+  })
+  test('3b. invalid, duplicate, and incomplete baseline evidence is rejected', async () => {
+    for (const items of [
+      [{ id: 'i1', productId: 'p1', weight: Number.POSITIVE_INFINITY }],
+      [{ id: 'i1', productId: 'p1', weight: -0.1 }],
+      [{ id: 'i1', productId: 'p1', weight: 1 }, { id: 'i2', productId: 'p1', weight: 2 }],
+      [{ id: '', productId: 'p1', weight: 1 }],
+    ]) {
+      const state = baselineDeps()
+      state.deps.findBaseline = async () => ({ id: 'base-1', generation: 1, baselineDate: d('2026-06-19'), status: 'DRAFT', items })
+      await expect(approveStockBaseline(state.deps, 'base-1', { userId: 'u', name: 'Owner' })).rejects.toThrow()
+    }
+  })
+  test('3c. approval requires an authenticated actor identity', async () => {
+    const state = baselineDeps()
+    await expect(approveStockBaseline(state.deps, 'base-1', { userId: '', name: '' })).rejects.toThrow('authenticated actor')
+  })
 })
 
 describe('ST-47 movement builders', () => {
@@ -108,6 +130,18 @@ describe('ST-47 read model and dry-run', () => {
   test('18. decimal accumulation is deterministic', () => {
     const moves = Array.from({ length: 10 }, () => ({ productId: 'p', businessDate: d('2026-06-20'), signedWeight: .1 }))
     expect(calculateClosingStock({ id: 'b', generation: 1, baselineDate: d('2026-06-19'), status: 'APPROVED', items: [{ productId: 'p', weight: 0 }] }, '2026-06-20', moves)[0].expectedClosingWeight).toBe(1)
+  })
+  test('18a. authoritative six-decimal weight units prevent reconciliation drift', () => {
+    const moves = [0.1, 0.2, 0.38, 1.7, -0.38].map(signedWeight => ({
+      productId: 'p', businessDate: d('2026-06-20'), signedWeight,
+    }))
+    const row = calculateClosingStock(
+      { id: 'b', generation: 1, baselineDate: d('2026-06-19'), status: 'APPROVED', items: [{ productId: 'p', weight: 0 }] },
+      '2026-06-20', moves,
+    )[0]
+    expect(row.movementInWeight).toBe(2.38)
+    expect(row.movementOutWeight).toBe(0.38)
+    expect(row.expectedClosingWeight).toBe(2)
   })
   test('19. fixture movement total reconciles with StockLot total', () => {
     const movementNet = buildSortingMovements({ id: 'x', date: d('2026-06-20'), sourceProductId: 'p1', sourceWeight: 5, items: [{ id: 'o', productId: 'p2', weight: 4.5 }] }).reduce((s, r) => s + r.signedWeight, 0)

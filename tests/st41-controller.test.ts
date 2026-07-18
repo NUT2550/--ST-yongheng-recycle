@@ -245,59 +245,45 @@ describe('ST-41 controller: successful yesterday case — full path', () => {
   });
 });
 
-// ============ 4. Failure after deduction — ST-11 compensation ============
+// ============ 4. Failure after deduction — atomic transaction rollback ============
 
-describe('ST-41 controller: failure after deduction invokes compensation', () => {
-  test('17. createStockTransfer failure → compensation + ROLLED_BACK AuditLog + no orphan lots', async () => {
+describe('ST-41 controller: failure after deduction rolls back atomically', () => {
+  test('17. createStockTransfer failure leaves no partial state', async () => {
     const { deps, state } = createMockDeps({
       createTransferShouldThrow: new Error('DB connection lost'),
     });
     const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(500);
-    // Deduction happened
-    expect(state.deductSourceLotsCalls).toHaveLength(1);
-    // Compensation invoked
-    expect(state.compensateCalls).toHaveLength(1);
-    expect(state.compensateCalls[0].deductedLots).toHaveLength(1);
-    expect(state.compensateCalls[0].requestId).toBe(REQUEST_ID);
-    // No StockTransfer created
-    expect(state.createStockTransferCalls).toHaveLength(1); // the failed call
-    // No output lots created
+    expect(state.deductSourceLotsCalls).toHaveLength(0);
+    expect(state.compensateCalls).toHaveLength(0);
+    expect(state.createStockTransferCalls).toHaveLength(0);
     expect(state.createOutputStockLotCalls).toHaveLength(0);
-    // ST-11: exactly one ROLLED_BACK AuditLog (best-effort failure audit)
-    expect(state.createAuditLogCalls).toHaveLength(1);
-    const audit = state.createAuditLogCalls[0];
-    expect(audit.entityType).toBe('STOCK_TRANSFER');
-    const details = JSON.parse(audit.details);
-    expect(details.status).toBe('ROLLED_BACK');
-    expect(details.requestId).toBe(REQUEST_ID);
-    expect(details.error).toContain('DB connection lost');
+    expect(state.createAuditLogCalls).toHaveLength(0);
   });
 
-  test('18. createOutputStockLot failure → compensation + cleanup', async () => {
+  test('18. createOutputStockLot failure leaves no partial state', async () => {
     const { deps, state } = createMockDeps({
       createLotShouldThrow: new Error('StockLot insert failed'),
     });
     const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(500);
-    // Transfer was created, then lots failed → cleanup
-    expect(state.createStockTransferCalls).toHaveLength(1);
-    expect(state.deletePartialOutputLotsCalls).toHaveLength(1);
-    expect(state.deletePartialTransferCalls).toHaveLength(1);
-    expect(state.compensateCalls).toHaveLength(1);
+    expect(state.deductSourceLotsCalls).toHaveLength(0);
+    expect(state.createStockTransferCalls).toHaveLength(0);
+    expect(state.createOutputStockLotCalls).toHaveLength(0);
+    expect(state.createStockMovementCalls).toHaveLength(0);
+    expect(state.compensateCalls).toHaveLength(0);
   });
 
-  test('19. business-date fields do not break compensation idempotency', async () => {
-    // Compensation uses requestId (not businessDate) — idempotency unaffected
-    const { deps, state } = createMockDeps({
-      createTransferShouldThrow: new Error('fail'),
-    });
-    await createStockTransfer(deps, makeValidInput({ date: '2026-07-14' }), AUTH, REQUEST_ID);
-    expect(state.compensateCalls[0].requestId).toBe(REQUEST_ID);
-    // The compensation requestId does NOT include the business date
-    expect(state.compensateCalls[0].requestId).not.toContain('2026-07-14');
+  test('19. ledger insertion failure leaves no partial state', async () => {
+    const { deps, state } = createMockDeps({ createMovementShouldThrow: new Error('ledger insert failed') });
+    const result = await createStockTransfer(deps, makeValidInput({ date: '2026-07-14' }), AUTH, REQUEST_ID);
+    expect(result.ok).toBe(false);
+    expect(state.deductSourceLotsCalls).toHaveLength(0);
+    expect(state.createStockTransferCalls).toHaveLength(0);
+    expect(state.createOutputStockLotCalls).toHaveLength(0);
+    expect(state.createStockMovementCalls).toHaveLength(0);
   });
 });
 

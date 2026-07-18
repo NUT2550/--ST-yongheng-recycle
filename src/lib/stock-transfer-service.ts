@@ -114,6 +114,9 @@ export interface AuditLogInput {
 
 /** Injectable dependencies — production wraps Prisma; tests inject mocks. */
 export interface StockTransferDeps {
+  /** True only for a client already scoped to the active database transaction. */
+  isTransactionScoped?: boolean;
+  transaction<T>(fn: (tx: StockTransferDeps) => Promise<T>): Promise<T>;
   findSourceProduct(productId: string): Promise<SourceProductRow | null>;
   findOutputProduct(productId: string): Promise<SourceProductRow | null>;
   findSourceLots(productId: string): Promise<SourceLotRow[]>;
@@ -565,7 +568,29 @@ export async function createStockTransfer(
     };
   }
 
-  // 9. Execute: deduct source lots
+  // 9. Re-enter the mutation phase with a transaction-scoped dependency set.
+  // A failure result is converted to a throw inside the callback so Prisma
+  // rolls back source deductions, document/output rows, and ledger rows.
+  if (!deps.isTransactionScoped) {
+    let failed: Exclude<ServiceResult, { ok: true }> | null = null;
+    const rollback = Symbol('stock-transfer-rollback');
+    try {
+      return await deps.transaction(async tx => {
+        const result = await createStockTransfer(tx, input, auth, requestId);
+        if (!result.ok) {
+          failed = result;
+          throw rollback;
+        }
+        return result;
+      });
+    } catch (error) {
+      if (error === rollback && failed) return failed;
+      const classified = classifyServiceError(error);
+      return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
+    }
+  }
+
+  // 10. Execute using the transaction-scoped dependency set.
   const billNumber = await deps.generateBillNumber();
   let fifoResult: DeductResult;
   try {

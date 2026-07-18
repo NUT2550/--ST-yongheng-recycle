@@ -206,41 +206,65 @@ async function compensateDeductedLots(
  * Production implementation of StockTransferDeps using the real Prisma `db`.
  * The route constructs one instance per request and passes it to the service.
  */
-export function createPrismaStockTransferDeps(): StockTransferDeps {
+export function createPrismaStockTransferDeps(
+  client: typeof db | Prisma.TransactionClient = db,
+  isTransactionScoped = false,
+): StockTransferDeps {
   return {
+    isTransactionScoped,
+    transaction: <T>(fn: (tx: StockTransferDeps) => Promise<T>): Promise<T> =>
+      db.$transaction(async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true))),
     async findSourceProduct(productId: string): Promise<SourceProductRow | null> {
-      return db.product.findUnique({
+      return client.product.findUnique({
         where: { id: productId },
         select: { id: true, name: true },
       });
     },
 
     async findOutputProduct(productId: string): Promise<SourceProductRow | null> {
-      return db.product.findUnique({
+      return client.product.findUnique({
         where: { id: productId },
         select: { id: true, name: true },
       });
     },
 
     async findSourceLots(productId: string): Promise<SourceLotRow[]> {
-      return db.stockLot.findMany({
+      return client.stockLot.findMany({
         where: { productId, remainingWeight: { gt: 0 } },
         orderBy: FIFO_ORDER_BY,
       });
     },
 
     async generateBillNumber(): Promise<string> {
-      return generateBillNumber(db, 'TRANSFER');
+      return generateBillNumber(client as typeof db, 'TRANSFER');
     },
 
     async deductSourceLots(productId: string, weightToDeduct: number): Promise<DeductResult> {
-      return deductStockFIFO(productId, weightToDeduct);
+      if (!isTransactionScoped) return deductStockFIFO(productId, weightToDeduct);
+      const lots = await client.stockLot.findMany({
+        where: { productId, remainingWeight: { gt: 0 } },
+        orderBy: FIFO_ORDER_BY,
+      });
+      const totalAvailable = lots.reduce((sum, lot) => sum + lot.remainingWeight, 0);
+      if (totalAvailable < weightToDeduct) throw new Error(`Insufficient stock for product ${productId}. Available: ${totalAvailable}, Requested: ${weightToDeduct}`);
+      let remaining = weightToDeduct;
+      let totalCost = 0;
+      const deductedLots: { id: string; deducted: number }[] = [];
+      for (const lot of lots) {
+        if (remaining <= 0) break;
+        const deducted = Math.min(lot.remainingWeight, remaining);
+        remaining -= deducted;
+        totalCost += deducted * lot.costPerKg;
+        await client.stockLot.update({ where: { id: lot.id }, data: { remainingWeight: lot.remainingWeight - deducted } });
+        deductedLots.push({ id: lot.id, deducted });
+      }
+      return { costPerKg: Math.round((totalCost / weightToDeduct) * 100) / 100, totalCost: Math.round(totalCost * 100) / 100, deductedLots };
     },
 
     async createStockTransfer(data: Record<string, unknown>): Promise<CreatedTransfer> {
       // The service builds the data via buildStockTransferCreateData; cast to the
       // Prisma-expected input shape and include the same relations as the old route.
-      const created = await db.stockTransfer.create({
+      const created = await client.stockTransfer.create({
         data: data as Prisma.StockTransferCreateInput,
         include: {
           sourceProduct: { select: { id: true, name: true } },
@@ -251,19 +275,19 @@ export function createPrismaStockTransferDeps(): StockTransferDeps {
     },
 
     async createOutputStockLot(data: Record<string, unknown>): Promise<void> {
-      await db.stockLot.create({
+      await client.stockLot.create({
         data: data as Prisma.StockLotCreateInput,
       });
     },
 
     async createStockMovements(data): Promise<void> {
-      await db.stockMovement.createMany({
+      await client.stockMovement.createMany({
         data: data as Prisma.StockMovementCreateManyInput[],
       });
     },
 
     async createAuditLog(data: AuditLogInput): Promise<void> {
-      await db.auditLog.create({
+      await client.auditLog.create({
         data: {
           action: data.action,
           entityType: data.entityType,
@@ -276,15 +300,15 @@ export function createPrismaStockTransferDeps(): StockTransferDeps {
     },
 
     async compensate(deductedLots, requestId, reason?): Promise<void> {
-      await compensateDeductedLots(deductedLots, requestId, reason);
+      if (!isTransactionScoped) await compensateDeductedLots(deductedLots, requestId, reason);
     },
 
     async deletePartialTransfer(transferId: string): Promise<void> {
-      await db.stockTransfer.delete({ where: { id: transferId } });
+      await client.stockTransfer.delete({ where: { id: transferId } });
     },
 
     async deletePartialOutputLots(transferId: string): Promise<void> {
-      await db.stockLot.deleteMany({
+      await client.stockLot.deleteMany({
         where: { sourceId: transferId, source: 'TRANSFER' },
       });
     },

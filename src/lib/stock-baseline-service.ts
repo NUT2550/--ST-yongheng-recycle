@@ -31,6 +31,17 @@ export async function approveStockBaseline(
   if (!baseline) throw new Error('Baseline not found')
   if (baseline.status === 'SUPERSEDED') throw new Error('Superseded baseline cannot be approved')
   if (baseline.status === 'APPROVED') return { movementCount: 0, alreadyApproved: true }
+  if (!actor.userId.trim() || !actor.name.trim()) throw new Error('Baseline approval requires an authenticated actor')
+  if (baseline.items.length === 0) throw new Error('Empty baseline cannot be approved')
+  const productIds = new Set<string>()
+  for (const item of baseline.items) {
+    if (!item.id || !item.productId) throw new Error('Baseline contains an incomplete item')
+    if (productIds.has(item.productId)) throw new Error('Baseline contains a duplicate product')
+    productIds.add(item.productId)
+    if (!Number.isFinite(item.weight) || preciseWeight(item.weight) < 0) {
+      throw new Error('Baseline item weight must be finite and non-negative')
+    }
+  }
   const active = await deps.findApprovedBaseline()
   if (active && active.id !== baseline.id) throw new Error('An approved baseline already exists')
   const movements: StockMovementDraft[] = baseline.items

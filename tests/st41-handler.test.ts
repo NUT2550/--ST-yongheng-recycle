@@ -154,9 +154,9 @@ describe('ST-41 handler: FIFO mismatch HTTP mapping', () => {
     expect(body.sourceProductId).toBe('prod-src-1');
     expect(body.previewCost).toBe(40);
     expect(body.actualCost).toBe(99);
-    // Mismatch triggers compensation (deduction happened, then rolled back)
-    expect(state.deductSourceLotsCalls).toHaveLength(1);
-    expect(state.compensateCalls).toHaveLength(1);
+    // The transaction rollback removes the attempted deduction without compensation.
+    expect(state.deductSourceLotsCalls).toHaveLength(0);
+    expect(state.compensateCalls).toHaveLength(0);
     // No StockTransfer created on mismatch
     expect(state.createStockTransferCalls).toHaveLength(0);
   });

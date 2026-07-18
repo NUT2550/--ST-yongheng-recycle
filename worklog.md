@@ -3152,3 +3152,20 @@ Stage Summary:
 - Branch: `st-47-stock-movement-ledger-baseline`, based on `origin/main` c66e38779ae5eb180aea21d7f0a0b9e57c5944b8.
 - Baseline values remain DRAFT/UNKNOWN pending explicit Owner review; no Production baseline exists.
 - Legacy/import Sorting/StockLot dates before normal operation remain classified as unsupported/ambiguous and are not silently backfilled.
+
+---
+Task ID: ST-47-REVIEW
+Agent: Codex
+Date: 2026-07-18
+Task: Independent Draft PR review and validated defect hardening
+
+Work Log:
+- Reviewed the approved PR head, linked Notion/Linear/GitHub context, complete ST-47 diff, migration, write paths, date/idempotency/reversal/read-model behavior, and ST-47 permissions surface.
+- Replaced compensated multi-step Sorting and StockTransfer creation with transaction-scoped stock, document, output-lot, and StockMovement writes.
+- Added rollback regression coverage for transfer creation, output-lot creation, ledger insertion, and FIFO mismatch failures.
+- Hardened baseline approval against empty evidence, duplicate/incomplete items, non-finite or negative weights, and missing authenticated approver identity.
+- Added the requested 0.10/0.20/0.38/1.70 precision regression and revalidated the additive migration on a fresh disposable PostgreSQL-compatible database.
+
+Stage Summary:
+- Full regression: 643 passed; ST-47 tests: 28 passed; TypeScript, lint, Prisma format/generate, and application production compilation passed.
+- Remaining design decisions are documented in Draft PR #17; no Production migration, baseline insert, backfill write, stock correction, merge, or Production deployment was performed.

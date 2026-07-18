@@ -37,6 +37,7 @@ export function createMockDeps(options: {
   deductShouldThrow?: Error;
   createTransferShouldThrow?: Error;
   createLotShouldThrow?: Error;
+  createMovementShouldThrow?: Error;
   transferId?: string;
 } = {}): { deps: StockTransferDeps; state: MockState } {
   const state: MockState = {
@@ -55,6 +56,21 @@ export function createMockDeps(options: {
   };
 
   const deps: StockTransferDeps = {
+    isTransactionScoped: false,
+    async transaction(fn) {
+      const snapshot = structuredClone(state);
+      deps.isTransactionScoped = true;
+      try {
+        return await fn(deps);
+      } catch (error) {
+        for (const key of Object.keys(state) as Array<keyof MockState>) {
+          (state[key] as unknown[]) = snapshot[key] as unknown[];
+        }
+        throw error;
+      } finally {
+        deps.isTransactionScoped = false;
+      }
+    },
     async findSourceProduct(productId: string) {
       state.findSourceProductCalls.push(productId);
       return options.sourceProduct ?? { id: productId, name: 'Test Product' };
@@ -102,6 +118,7 @@ export function createMockDeps(options: {
     },
     async createStockMovements(data) {
       state.createStockMovementCalls.push(...data);
+      if (options.createMovementShouldThrow) throw options.createMovementShouldThrow;
     },
     async createAuditLog(data: AuditLogInput) {
       state.createAuditLogCalls.push(data);
