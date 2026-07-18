@@ -5,7 +5,7 @@ export interface BaselineDraft {
   generation: number
   baselineDate: Date
   status: 'DRAFT' | 'APPROVED' | 'SUPERSEDED'
-  items: Array<{ id: string; productId: string; weight: number }>
+  items: Array<{ id: string; productId: string; weight: number; effectiveStartDate: Date }>
 }
 
 export interface BaselineApprovalDeps {
@@ -36,6 +36,9 @@ export async function approveStockBaseline(
   const productIds = new Set<string>()
   for (const item of baseline.items) {
     if (!item.id || !item.productId) throw new Error('Baseline contains an incomplete item')
+    if (!(item.effectiveStartDate instanceof Date) || !Number.isFinite(item.effectiveStartDate.getTime())) {
+      throw new Error('Baseline item effective start date is invalid')
+    }
     if (productIds.has(item.productId)) throw new Error('Baseline contains a duplicate product')
     productIds.add(item.productId)
     if (!Number.isFinite(item.weight) || preciseWeight(item.weight) < 0) {
@@ -48,7 +51,7 @@ export async function approveStockBaseline(
     .filter(item => preciseWeight(item.weight) > 0)
     .map(item => ({
       productId: item.productId,
-      businessDate: baseline.baselineDate,
+      businessDate: item.effectiveStartDate,
       movementType: 'BASELINE',
       signedWeight: preciseWeight(item.weight),
       sourceType: 'STOCK_BASELINE',
@@ -57,7 +60,7 @@ export async function approveStockBaseline(
       sourceDocumentNumber: `BASELINE-G${baseline.generation}`,
       idempotencyKey: movementKey(['STOCK_BASELINE', baseline.id, item.id, 'baseline']),
       reason: 'Owner-approved closing baseline',
-      metadata: { generation: baseline.generation, interpretation: 'CLOSING_END_OF_BUSINESS_DATE' },
+      metadata: { generation: baseline.generation, interpretation: 'OPENING_START_OF_BUSINESS_DATE', effectiveStartDate: item.effectiveStartDate.toISOString() },
       createdById: actor.userId,
       createdByName: actor.name,
     }))

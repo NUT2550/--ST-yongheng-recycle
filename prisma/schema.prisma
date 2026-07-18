@@ -110,19 +110,21 @@ model StockBaseline {
 }
 
 model StockBaselineItem {
-  id         String        @id @default(cuid())
-  baselineId String
-  baseline   StockBaseline @relation(fields: [baselineId], references: [id], onDelete: Restrict)
-  productId  String
-  product    Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
-  weight     Float
-  source     String
-  confidence String
-  note       String?
-  createdAt  DateTime      @default(now())
+  id                 String        @id @default(cuid())
+  baselineId         String
+  baseline           StockBaseline @relation(fields: [baselineId], references: [id], onDelete: Restrict)
+  productId          String
+  product            Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  weight             Float
+  /// Opening stock at the beginning of this product's Thailand business day.
+  effectiveStartDate DateTime
+  source             String
+  confidence         String
+  note               String?
+  createdAt          DateTime      @default(now())
 
   @@unique([baselineId, productId])
-  @@index([productId])
+  @@index([productId, effectiveStartDate])
 }
 
 model StockLot {
