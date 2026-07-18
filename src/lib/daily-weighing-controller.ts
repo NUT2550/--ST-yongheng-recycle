@@ -22,6 +22,7 @@ import {
 } from './daily-purchase-weighing-service';
 import { hasDailyPurchaseWeighingPermission } from './daily-weighing-permission';
 import { isValidWeighingDate, isValidWeighingCategory } from './daily-purchase-weighing';
+import type { AggregationResult } from './daily-purchase-weighing';
 
 export interface AuthPayload {
   userId: string;
@@ -114,13 +115,14 @@ export async function getDetailController(
 export async function postSaveController(
   repo: DailyPurchaseWeighingRepository,
   payload: AuthPayload,
-  body: unknown
+  body: unknown,
+  aggregationOverride?: AggregationResult
 ): Promise<ControllerResponse> {
   if (!hasDailyPurchaseWeighingPermission(payload)) {
     return { status: 403, data: { error: 'ไม่มีสิทธิ์บันทึกผลชั่ง' } };
   }
 
-  const result = await saveDailyPurchaseWeighing(repo, body, payload.userId, payload.name);
+  const result = await saveDailyPurchaseWeighing(repo, body, payload.userId, payload.name, aggregationOverride);
 
   if (result.success) {
     return { status: 201, data: { session: result.session } };

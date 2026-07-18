@@ -7,6 +7,8 @@ import {
   postSaveController,
   type AuthPayload,
 } from '@/lib/daily-weighing-controller';
+import { getExpectedClosingStock } from '@/lib/stock-ledger-read-service';
+import { hasDailyPurchaseWeighingPermission } from '@/lib/daily-weighing-permission';
 
 const repo = new PrismaDailyPurchaseWeighingRepository();
 
@@ -26,6 +28,20 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'list';
+
+  if (action === 'closing-stock') {
+    if (!hasDailyPurchaseWeighingPermission(authPayload)) {
+      return NextResponse.json({ error: 'ไม่มีสิทธิ์ใช้งานการชั่งยอด' }, { status: 403 });
+    }
+    const dateStr = searchParams.get('date');
+    const category = searchParams.get('category');
+    if (!dateStr || !category) return NextResponse.json({ error: 'กรุณาระบุวันที่และหมวดหมู่' }, { status: 400 });
+    try {
+      return NextResponse.json(await getExpectedClosingStock(dateStr, category));
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'unknown' }, { status: 400 });
+    }
+  }
 
   if (action === 'aggregate') {
     const dateStr = searchParams.get('date');
@@ -56,7 +72,38 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const result = await postSaveController(repo, authPayload, body);
+    const input = body as { weighingDate?: string; category?: string };
+    if (!input.weighingDate || !input.category) {
+      const result = await postSaveController(repo, authPayload, body);
+      return NextResponse.json(result.data, { status: result.status });
+    }
+    const closing = await getExpectedClosingStock(input.weighingDate, input.category);
+    if (closing.baselineStatus !== 'APPROVED') {
+      return NextResponse.json({ error: 'ต้องมีฐานสต็อกที่ Owner อนุมัติก่อนบันทึกผลเปรียบเทียบ' }, { status: 409 });
+    }
+    const aggregation = {
+      date: input.weighingDate,
+      category: input.category,
+      totalBills: closing.items.reduce((sum, item) => sum + item.movementCount, 0),
+      productCount: closing.items.length,
+      totalPurchaseWeight: closing.items.reduce((sum, item) => sum + item.purchaseInWeight, 0),
+      totalSortingWeight: closing.items.reduce((sum, item) => sum + item.sortingOutputInWeight, 0),
+      totalDismantlingWeight: closing.items.reduce((sum, item) => sum + item.transferOutputInWeight, 0),
+      totalExpectedWeight: closing.items.reduce((sum, item) => sum + item.expectedClosingWeight, 0),
+      items: closing.items.map(item => ({
+        productId: item.productId,
+        productName: item.productName,
+        purchaseWeight: item.purchaseInWeight,
+        purchaseBillCount: item.movementCounts.PURCHASE_IN || 0,
+        sortingOutputWeight: item.sortingOutputInWeight,
+        sortingBillCount: item.movementCounts.SORTING_OUTPUT_IN || 0,
+        dismantlingOutputWeight: item.transferOutputInWeight,
+        dismantlingRecordCount: item.movementCounts.TRANSFER_OUTPUT_IN || 0,
+        expectedTotalWeight: item.expectedClosingWeight,
+        totalAmount: 0,
+      })),
+    };
+    const result = await postSaveController(repo, authPayload, body, aggregation);
     return NextResponse.json(result.data, { status: result.status });
   } catch (error) {
     console.error('Error creating daily weighing:', error);
