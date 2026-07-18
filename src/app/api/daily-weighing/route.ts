@@ -81,6 +81,10 @@ export async function POST(request: NextRequest) {
     if (closing.baselineStatus !== 'APPROVED') {
       return NextResponse.json({ error: 'ต้องมีฐานสต็อกที่ Owner อนุมัติก่อนบันทึกผลเปรียบเทียบ' }, { status: 409 });
     }
+    const notStarted = closing.items.filter(item => item.state === 'NOT_STARTED')
+    if (notStarted.length > 0) {
+      return NextResponse.json({ error: `ยังไม่ถึงวันเริ่มนับสต็อก: ${notStarted.map(item => item.productName).join(', ')}` }, { status: 409 });
+    }
     const aggregation = {
       date: input.weighingDate,
       category: input.category,
@@ -89,7 +93,7 @@ export async function POST(request: NextRequest) {
       totalPurchaseWeight: closing.items.reduce((sum, item) => sum + item.purchaseInWeight, 0),
       totalSortingWeight: closing.items.reduce((sum, item) => sum + item.sortingOutputInWeight, 0),
       totalDismantlingWeight: closing.items.reduce((sum, item) => sum + item.transferOutputInWeight, 0),
-      totalExpectedWeight: closing.items.reduce((sum, item) => sum + item.expectedClosingWeight, 0),
+      totalExpectedWeight: closing.items.reduce((sum, item) => sum + (item.expectedClosingWeight ?? 0), 0),
       items: closing.items.map(item => ({
         productId: item.productId,
         productName: item.productName,
@@ -99,7 +103,7 @@ export async function POST(request: NextRequest) {
         sortingBillCount: item.movementCounts.SORTING_OUTPUT_IN || 0,
         dismantlingOutputWeight: item.transferOutputInWeight,
         dismantlingRecordCount: item.movementCounts.TRANSFER_OUTPUT_IN || 0,
-        expectedTotalWeight: item.expectedClosingWeight,
+        expectedTotalWeight: item.expectedClosingWeight ?? 0,
         totalAmount: 0,
       })),
     };

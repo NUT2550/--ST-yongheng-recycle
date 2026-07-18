@@ -8,8 +8,9 @@ function calculate(movements: Array<{ productId: string; movementType: any; sign
   return calculateClosingStockBreakdown({
     selectedDate: '2026-07-16', baselineDate,
     baselineItems: [
-      { productId: 'wire', productName: 'สายไฟทองแดง', weight: 10 },
-      { productId: 'large', productName: 'ทองแดงใหญ่', weight: 5 },
+      { productId: 'wire', productName: 'สายไฟทองแดง', weight: 10, effectiveStartDate: baselineDate },
+      { productId: 'large', productName: 'ทองแดงใหญ่', weight: 5, effectiveStartDate: baselineDate },
+      { productId: 'shot', productName: 'ทองแดงช็อต', weight: 0, effectiveStartDate: baselineDate },
     ],
     products: [
       { id: 'wire', name: 'สายไฟทองแดง' },
@@ -72,10 +73,19 @@ describe('ST-43 expected closing stock', () => {
     expect(result.items.find(item => item.productId === 'shot')!.expectedClosingWeight).toBe(0.38)
   })
 
-  test('product absent from baseline starts at zero and no movement preserves opening', () => {
+  test('zero owner opening is explicit and no movement preserves opening', () => {
     const result = calculate([{ productId: 'shot', movementType: 'PURCHASE_IN', signedWeight: 0.2 }])
     expect(result.items.find(item => item.productId === 'shot')!.openingWeight).toBe(0)
     expect(result.items.find(item => item.productId === 'wire')!.expectedClosingWeight).toBe(10)
+  })
+
+  test('date before an item boundary is not presented as verified zero', () => {
+    const result = calculateClosingStockBreakdown({
+      selectedDate: '2026-07-04', baselineDate,
+      baselineItems: [{ productId: 'shot', productName: 'ทองแดงช็อต', weight: 0, effectiveStartDate: new Date('2026-07-05T00:00:00+07:00') }],
+      products: [{ id: 'shot', name: 'ทองแดงช็อต' }], movements: [],
+    })
+    expect(result.items[0]).toMatchObject({ state: 'NOT_STARTED', expectedClosingWeight: null })
   })
 
   test('six-decimal integer aggregation avoids floating drift', () => {

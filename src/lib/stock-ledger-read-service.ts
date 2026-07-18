@@ -16,8 +16,10 @@ export interface ClosingStockBreakdownRow {
   adjustmentOutWeight: number
   adjustmentNetWeight: number
   netMovementWeight: number
-  expectedClosingWeight: number
+  expectedClosingWeight: number | null
   movementCount: number
+  state: 'ACTIVE' | 'NOT_STARTED'
+  effectiveStartDate: string
   movementCounts: Partial<Record<StockMovementType, number>>
   warnings: string[]
 }
@@ -50,35 +52,39 @@ function units(weight: number): number {
 export function calculateClosingStockBreakdown(input: {
   selectedDate: string
   baselineDate: Date
-  baselineItems: Array<{ productId: string; productName: string; weight: number }>
+  baselineItems: Array<{ productId: string; productName: string; weight: number; effectiveStartDate: Date }>
   products: Array<{ id: string; name: string }>
   movements: MovementRow[]
 }): ClosingStockResult {
   const baselineDate = formatThailandBusinessDate(input.baselineDate)
-  if (input.selectedDate < baselineDate) throw new Error('Selected date predates the approved baseline')
-  const baselineEnd = parseThailandBusinessDate(baselineDate).getTime() + 86_400_000
   const selectedEnd = parseThailandBusinessDate(input.selectedDate).getTime() + 86_400_000
   const names = new Map(input.products.map(product => [product.id, product.name]))
-  const rows = new Map<string, { opening: number; buckets: Record<StockMovementType, number>; counts: Partial<Record<StockMovementType, number>> }>()
+  const rows = new Map<string, { opening: number; start: number; startDate: string; buckets: Record<StockMovementType, number>; counts: Partial<Record<StockMovementType, number>> }>()
   const emptyBuckets = () => Object.fromEntries(bucketTypes.map(type => [type, 0])) as Record<StockMovementType, number>
 
   for (const item of input.baselineItems) {
     names.set(item.productId, item.productName)
-    rows.set(item.productId, { opening: units(item.weight), buckets: emptyBuckets(), counts: {} })
-  }
-  for (const product of input.products) {
-    if (!rows.has(product.id)) rows.set(product.id, { opening: 0, buckets: emptyBuckets(), counts: {} })
+    const startDate = formatThailandBusinessDate(item.effectiveStartDate)
+    rows.set(item.productId, { opening: units(item.weight), start: parseThailandBusinessDate(startDate).getTime(), startDate, buckets: emptyBuckets(), counts: {} })
   }
   for (const movement of input.movements) {
     const time = movement.businessDate.getTime()
-    if (time < baselineEnd || time >= selectedEnd) continue
-    const row = rows.get(movement.productId) || { opening: 0, buckets: emptyBuckets(), counts: {} }
+    const row = rows.get(movement.productId)
+    if (!row || time < row.start || time >= selectedEnd) continue
     row.buckets[movement.movementType] = (row.buckets[movement.movementType] || 0) + units(movement.signedWeight)
     row.counts[movement.movementType] = (row.counts[movement.movementType] || 0) + 1
     rows.set(movement.productId, row)
   }
 
   const items = [...rows.entries()].map(([productId, row]) => {
+    if (input.selectedDate < row.startDate) return {
+      productId, productName: names.get(productId) || productId, openingWeight: preciseWeight(row.opening / STOCK_WEIGHT_SCALE),
+      purchaseInWeight: 0, saleOutWeight: 0, sortingSourceOutWeight: 0, sortingOutputInWeight: 0,
+      transferSourceOutWeight: 0, transferOutputInWeight: 0, adjustmentInWeight: 0, adjustmentOutWeight: 0,
+      adjustmentNetWeight: 0, netMovementWeight: 0, expectedClosingWeight: null, movementCount: 0,
+      movementCounts: {}, state: 'NOT_STARTED' as const, effectiveStartDate: row.startDate,
+      warnings: ['Stock tracking has not started for this product'],
+    }
     const b = row.buckets
     const purchaseIn = Math.max(0, b.PURCHASE_IN)
     const saleOut = Math.max(0, -b.SALE_OUT)
@@ -107,17 +113,19 @@ export function calculateClosingStockBreakdown(input: {
       expectedClosingWeight: preciseWeight((row.opening + net) / STOCK_WEIGHT_SCALE),
       movementCount,
       movementCounts: row.counts,
+      state: 'ACTIVE' as const,
+      effectiveStartDate: row.startDate,
       warnings: row.opening + net < 0 ? ['Expected closing stock is negative'] : [],
     }
   })
   return { baselineStatus: 'APPROVED', baselineDate, selectedDate: input.selectedDate, items }
 }
 
-/** Read-only shared interface for ST-43. Baseline is closing end-of-day. */
+/** Read-only shared interface for ST-43. Each item is opening start-of-day. */
 export async function getExpectedClosingStock(selectedDate: string, category?: string): Promise<ClosingStockResult> {
   const selectedEnd = new Date(parseThailandBusinessDate(selectedDate).getTime() + 86_400_000)
   const baseline = await db.stockBaseline.findFirst({
-    where: { status: 'APPROVED', baselineDate: { lt: selectedEnd } },
+    where: { status: 'APPROVED' },
     orderBy: { generation: 'desc' },
     include: { items: { include: { product: { select: { name: true } } } } },
   })
@@ -130,16 +138,22 @@ export async function getExpectedClosingStock(selectedDate: string, category?: s
   })
   const productIds = products.map(product => product.id)
   const productIdSet = new Set(productIds)
+  const relevantItems = baseline.items.filter(item => !category || productIdSet.has(item.productId))
+  const earliestStart = relevantItems.reduce((min, item) => item.effectiveStartDate < min ? item.effectiveStartDate : min, relevantItems[0]?.effectiveStartDate ?? selectedEnd)
   const movements = await db.stockMovement.findMany({
-    where: { productId: { in: productIds }, businessDate: { gt: baseline.baselineDate, lt: selectedEnd } },
+    where: {
+      productId: { in: productIds },
+      movementType: { not: 'BASELINE' },
+      businessDate: { gte: earliestStart, lt: selectedEnd },
+    },
     select: { productId: true, businessDate: true, signedWeight: true, movementType: true },
   })
   return calculateClosingStockBreakdown({
     selectedDate,
     baselineDate: baseline.baselineDate,
-    baselineItems: baseline.items.reduce<Array<{ productId: string; productName: string; weight: number }>>((items, item) => {
+    baselineItems: baseline.items.reduce<Array<{ productId: string; productName: string; weight: number; effectiveStartDate: Date }>>((items, item) => {
       if (!category || productIdSet.has(item.productId)) {
-        items.push({ productId: item.productId, productName: item.product.name, weight: item.weight })
+        items.push({ productId: item.productId, productName: item.product.name, weight: item.weight, effectiveStartDate: item.effectiveStartDate })
       }
       return items
     }, []),

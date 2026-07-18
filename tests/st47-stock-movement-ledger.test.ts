@@ -7,6 +7,7 @@ import {
 import { approveStockBaseline, type BaselineApprovalDeps } from '../src/lib/stock-baseline-service'
 import { dryRunStockMovementBackfill } from '../src/lib/stock-ledger-backfill'
 import { parseThailandBusinessDate } from '../src/lib/thailand-date'
+import { assertUniqueOwnerProductBoundaries, ST47_OWNER_PRODUCT_BOUNDARIES } from '../src/lib/st47-owner-product-boundaries'
 
 const d = (value: string) => parseThailandBusinessDate(value)
 
@@ -14,7 +15,7 @@ function baselineDeps(status: 'DRAFT' | 'APPROVED' = 'DRAFT') {
   const movements: unknown[] = []
   let approved = status === 'APPROVED'
   const deps: BaselineApprovalDeps = {
-    async findBaseline() { return { id: 'base-1', generation: 1, baselineDate: d('2026-06-19'), status: approved ? 'APPROVED' : 'DRAFT', items: [{ id: 'bi-1', productId: 'p1', weight: 10 }] } },
+    async findBaseline() { return { id: 'base-1', generation: 1, baselineDate: d('2026-06-19'), status: approved ? 'APPROVED' : 'DRAFT', items: [{ id: 'bi-1', productId: 'p1', weight: 10, effectiveStartDate: d('2026-06-20') }] } },
     async findApprovedBaseline() { return approved ? { id: 'base-1' } : null },
     async transaction(fn) { return fn({
       async approveBaseline() { approved = true },
@@ -47,12 +48,13 @@ describe('ST-47 trusted baseline', () => {
     await expect(approveStockBaseline(state.deps, 'base-1', { userId: 'u', name: 'Owner' })).rejects.toThrow('Empty baseline')
   })
   test('3b. invalid, duplicate, and incomplete baseline evidence is rejected', async () => {
-    for (const items of [
+    for (const rawItems of [
       [{ id: 'i1', productId: 'p1', weight: Number.POSITIVE_INFINITY }],
       [{ id: 'i1', productId: 'p1', weight: -0.1 }],
       [{ id: 'i1', productId: 'p1', weight: 1 }, { id: 'i2', productId: 'p1', weight: 2 }],
       [{ id: '', productId: 'p1', weight: 1 }],
     ]) {
+      const items = rawItems.map(item => ({ ...item, effectiveStartDate: d('2026-06-20') }))
       const state = baselineDeps()
       state.deps.findBaseline = async () => ({ id: 'base-1', generation: 1, baselineDate: d('2026-06-19'), status: 'DRAFT', items })
       await expect(approveStockBaseline(state.deps, 'base-1', { userId: 'u', name: 'Owner' })).rejects.toThrow()
@@ -169,5 +171,63 @@ describe('ST-47 page regression contracts', () => {
   })
   test('24. daily weighing page stays present', async () => {
     expect(await Bun.file('src/components/daily-weighing-page.tsx').exists()).toBe(true)
+  })
+})
+
+describe('ST-47 per-product effective start boundaries', () => {
+  const approved = (items: Array<{ productId: string; weight: number; effectiveStartDate: Date }>) => ({
+    id: 'per-product', generation: 2, baselineDate: d('2026-01-01'), status: 'APPROVED' as const, items,
+  })
+
+  test('25. products use independent inclusive start dates', () => {
+    const rows = calculateClosingStock(approved([
+      { productId: 'a', weight: 10, effectiveStartDate: d('2026-02-05') },
+      { productId: 'b', weight: 20, effectiveStartDate: d('2026-07-04') },
+    ]), '2026-07-04', [
+      { productId: 'a', businessDate: d('2026-02-04'), signedWeight: 99 },
+      { productId: 'a', businessDate: d('2026-02-05'), signedWeight: 1 },
+      { productId: 'b', businessDate: d('2026-07-04'), signedWeight: -2 },
+    ])
+    expect(rows.find(r => r.productId === 'a')?.expectedClosingWeight).toBe(11)
+    expect(rows.find(r => r.productId === 'b')?.expectedClosingWeight).toBe(18)
+  })
+
+  test('26. a date before the product boundary is explicitly not started', () => {
+    expect(calculateClosingStock(approved([
+      { productId: 'p', weight: 0, effectiveStartDate: d('2026-07-05') },
+    ]), '2026-07-04', [])[0]).toMatchObject({ state: 'NOT_STARTED', expectedClosingWeight: null })
+  })
+
+  test('27. explicit opening stock is not double-counted with same-day movements', () => {
+    const row = calculateClosingStock(approved([
+      { productId: 'p', weight: 658, effectiveStartDate: d('2026-01-01') },
+    ]), '2026-01-01', [{ productId: 'p', businessDate: d('2026-01-01'), signedWeight: 2 }])[0]
+    expect(row.expectedClosingWeight).toBe(660)
+    expect(row.movementCount).toBe(1)
+  })
+
+  test('28. dry-run applies each boundary and remains write-free', () => {
+    const result = dryRunStockMovementBackfill({
+      baselineDate: d('2025-12-31'),
+      productBoundaries: {
+        a: { effectiveStartDate: d('2026-02-05'), startingWeight: 0 },
+        b: { effectiveStartDate: d('2026-07-04'), startingWeight: 1000 },
+      },
+      documents: [
+        { kind: 'BUY', id: 'old', date: d('2026-02-04'), createdAt: d('2026-02-04'), isCancelled: false, items: [{ id: 'i1', productId: 'a', weight: 5 }] },
+        { kind: 'BUY', id: 'start', date: d('2026-02-05'), createdAt: d('2026-02-05'), isCancelled: false, items: [{ id: 'i2', productId: 'a', weight: 2 }] },
+        { kind: 'SELL', id: 'sale', date: d('2026-07-04'), createdAt: d('2026-07-04'), isCancelled: false, items: [{ id: 'i3', productId: 'b', weight: 10 }] },
+      ],
+    })
+    expect(result.totalsByProduct).toEqual({ a: 2, b: 990 })
+    expect(result.writesAttempted).toBe(0)
+  })
+
+  test('29. deterministic Owner mapping rejects duplicate Product IDs', () => {
+    expect(() => assertUniqueOwnerProductBoundaries()).not.toThrow()
+    expect(() => assertUniqueOwnerProductBoundaries([
+      ST47_OWNER_PRODUCT_BOUNDARIES[0],
+      { ...ST47_OWNER_PRODUCT_BOUNDARIES[1], productId: ST47_OWNER_PRODUCT_BOUNDARIES[0].productId },
+    ])).toThrow('Duplicate Product ID')
   })
 })

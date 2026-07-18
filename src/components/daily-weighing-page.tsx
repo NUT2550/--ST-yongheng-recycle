@@ -35,7 +35,9 @@ interface AggregateItem {
   transferSourceOutWeight: number;
   transferOutputInWeight: number;
   adjustmentNetWeight: number;
-  expectedClosingWeight: number;
+  expectedClosingWeight: number | null;
+  state: 'ACTIVE' | 'NOT_STARTED';
+  effectiveStartDate: string;
   movementCount: number;
 }
 
@@ -52,7 +54,9 @@ interface WeighingItem {
   transferSourceOutWeight: number;
   transferOutputInWeight: number;
   adjustmentNetWeight: number;
-  expectedClosingWeight: number;
+  expectedClosingWeight: number | null;
+  state: 'ACTIVE' | 'NOT_STARTED';
+  effectiveStartDate: string;
   movementCount: number;
   actualWeighedWeight: string;
   note: string;
@@ -219,7 +223,8 @@ export default function DailyWeighingPage() {
   const totalPurchase = weighingItems.reduce((s, i) => s + i.purchaseInWeight, 0);
   const totalSorting = weighingItems.reduce((s, i) => s - i.sortingSourceOutWeight + i.sortingOutputInWeight, 0);
   const totalDismantling = weighingItems.reduce((s, i) => s - i.transferSourceOutWeight + i.transferOutputInWeight, 0);
-  const totalExpected = weighingItems.reduce((s, i) => s + i.expectedClosingWeight, 0);
+  const totalExpected = weighingItems.reduce((s, i) => s + (i.expectedClosingWeight ?? 0), 0);
+  const hasNotStarted = weighingItems.some(item => item.state === 'NOT_STARTED');
   const totalActual = weighingItems.reduce((s, i) => s + (parseFloat(i.actualWeighedWeight) || 0), 0);
   const totalDiff = Math.round((totalActual - totalExpected) * 100) / 100;
 
@@ -266,7 +271,7 @@ export default function DailyWeighingPage() {
               {weighingItems.length > 0 && (
                 <Button
                   onClick={handleSave}
-                  disabled={saving || baselineMissing}
+                  disabled={saving || baselineMissing || hasNotStarted}
                   className="w-full bg-green-600 hover:bg-green-700 text-white"
                 >
                   {saving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
@@ -306,13 +311,13 @@ export default function DailyWeighingPage() {
               {weighingItems.map((item, idx) => {
                 const actual = parseFloat(item.actualWeighedWeight);
                 const hasActual = item.actualWeighedWeight !== '' && Number.isFinite(actual);
-                const diff = hasActual ? Math.round((actual - item.expectedClosingWeight) * 100) / 100 : null;
+                const diff = hasActual && item.expectedClosingWeight !== null ? Math.round((actual - item.expectedClosingWeight) * 100) / 100 : null;
                 const status = diff === null ? 'NOT_WEIGHED' : Math.abs(diff) <= TOLERANCE ? 'MATCH' : 'DIFFERENCE';
                 return (
                   <section key={item.productId} className="rounded-lg border bg-white p-3" aria-label={item.productName}>
                     <div className="flex items-start justify-between gap-3">
                       <div><p className="font-medium">{item.productName}</p><p className="text-xs text-gray-500">คงเหลือตามระบบ</p></div>
-                      <p className="text-lg font-semibold tabular-nums">{formatWeight(item.expectedClosingWeight)} กก.</p>
+                      <p className="text-lg font-semibold tabular-nums">{item.expectedClosingWeight === null ? 'ยังไม่เริ่มนับ' : `${formatWeight(item.expectedClosingWeight)} กก.`}</p>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <div><Label className="text-xs">น้ำหนักชั่งจริง</Label><Input type="number" min="0" step="0.01" value={item.actualWeighedWeight} onChange={event => setWeighingItems(previous => previous.map((row, rowIndex) => rowIndex === idx ? { ...row, actualWeighedWeight: event.target.value } : row))} /></div>
@@ -346,7 +351,7 @@ export default function DailyWeighingPage() {
                 <TableBody>
                   {weighingItems.map((item, idx) => {
                     const actual = parseFloat(item.actualWeighedWeight) || null;
-                    const diff = actual !== null ? Math.round((actual - item.expectedClosingWeight) * 100) / 100 : null;
+                    const diff = actual !== null && item.expectedClosingWeight !== null ? Math.round((actual - item.expectedClosingWeight) * 100) / 100 : null;
                     const status = actual === null ? 'NOT_WEIGHED' : Math.abs(diff!) <= TOLERANCE ? 'MATCH' : 'DIFFERENCE';
                     return (
                       <TableRow key={item.productId}>
@@ -359,7 +364,7 @@ export default function DailyWeighingPage() {
                         <TableCell className="text-right text-sm">{formatWeight(item.transferSourceOutWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.transferOutputInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.adjustmentNetWeight)}</TableCell>
-                        <TableCell className="text-right text-sm font-semibold">{formatWeight(item.expectedClosingWeight)}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold">{item.expectedClosingWeight === null ? 'ยังไม่เริ่มนับ' : formatWeight(item.expectedClosingWeight)}</TableCell>
                         <TableCell className="text-right">
                           <Input
                             type="number"

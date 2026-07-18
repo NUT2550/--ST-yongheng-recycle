@@ -160,7 +160,7 @@ export interface ApprovedBaselineRow {
   generation: number
   baselineDate: Date
   status: 'DRAFT' | 'APPROVED' | 'SUPERSEDED'
-  items: Array<{ productId: string; weight: number }>
+  items: Array<{ productId: string; weight: number; effectiveStartDate?: Date }>
 }
 
 export interface ClosingStockRow {
@@ -169,8 +169,10 @@ export interface ClosingStockRow {
   movementInWeight: number
   movementOutWeight: number
   netMovementWeight: number
-  expectedClosingWeight: number
+  expectedClosingWeight: number | null
   movementCount: number
+  state: 'ACTIVE' | 'NOT_STARTED'
+  effectiveStartDate: string
   warnings: string[]
 }
 
@@ -180,16 +182,16 @@ export function calculateClosingStock(
   movements: Array<{ productId: string; businessDate: Date; signedWeight: number }>,
 ): ClosingStockRow[] {
   if (baseline.status !== 'APPROVED') return []
-  const baselineDate = formatThailandBusinessDate(baseline.baselineDate)
-  if (selectedDate < baselineDate) throw new Error('Selected date predates the approved baseline')
   const selectedEnd = parseThailandBusinessDate(selectedDate).getTime() + 24 * 60 * 60 * 1000
-  const baselineEnd = parseThailandBusinessDate(baselineDate).getTime() + 24 * 60 * 60 * 1000
-  const byProduct = new Map<string, { base: number; inbound: number; outbound: number; count: number }>()
-  for (const item of baseline.items) byProduct.set(item.productId, { base: units(item.weight), inbound: 0, outbound: 0, count: 0 })
+  const byProduct = new Map<string, { base: number; start: number; startDate: string; inbound: number; outbound: number; count: number }>()
+  for (const item of baseline.items) {
+    const startDate = formatThailandBusinessDate(item.effectiveStartDate ?? baseline.baselineDate)
+    byProduct.set(item.productId, { base: units(item.weight), start: parseThailandBusinessDate(startDate).getTime(), startDate, inbound: 0, outbound: 0, count: 0 })
+  }
   for (const movement of movements) {
     const time = movement.businessDate.getTime()
-    if (time < baselineEnd || time >= selectedEnd) continue
-    const row = byProduct.get(movement.productId) || { base: 0, inbound: 0, outbound: 0, count: 0 }
+    const row = byProduct.get(movement.productId)
+    if (!row || time < row.start || time >= selectedEnd) continue
     const weight = units(movement.signedWeight)
     if (weight > 0) row.inbound += weight
     else row.outbound += -weight
@@ -197,6 +199,12 @@ export function calculateClosingStock(
     byProduct.set(movement.productId, row)
   }
   return [...byProduct.entries()].map(([productId, row]) => {
+    if (selectedDate < row.startDate) return {
+      productId, baselineWeight: row.base / STOCK_WEIGHT_SCALE, movementInWeight: 0,
+      movementOutWeight: 0, netMovementWeight: 0, expectedClosingWeight: null,
+      movementCount: 0, state: 'NOT_STARTED' as const, effectiveStartDate: row.startDate,
+      warnings: ['Stock tracking has not started for this product'],
+    }
     const net = row.inbound - row.outbound
     return {
       productId,
@@ -206,6 +214,8 @@ export function calculateClosingStock(
       netMovementWeight: net / STOCK_WEIGHT_SCALE,
       expectedClosingWeight: (row.base + net) / STOCK_WEIGHT_SCALE,
       movementCount: row.count,
+      state: 'ACTIVE' as const,
+      effectiveStartDate: row.startDate,
       warnings: [],
     }
   })

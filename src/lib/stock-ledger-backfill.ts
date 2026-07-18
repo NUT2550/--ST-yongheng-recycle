@@ -34,9 +34,15 @@ export interface BackfillResult {
   writesAttempted: 0
 }
 
+export interface ProductBoundary {
+  effectiveStartDate: Date
+  startingWeight: number
+}
+
 /** Pure dry-run. It has no repository/write dependency by design. */
 export function dryRunStockMovementBackfill(input: {
   baselineDate: Date
+  productBoundaries?: Record<string, ProductBoundary>
   documents: BackfillDocument[]
   existingIdempotencyKeys?: Set<string>
   currentStockLotTotals?: Record<string, number>
@@ -45,10 +51,13 @@ export function dryRunStockMovementBackfill(input: {
   const duplicates: string[] = []
   const findings: BackfillResult['findings'] = []
   const keys = new Set(input.existingIdempotencyKeys || [])
-  const baselineEnd = input.baselineDate.getTime() + 24 * 60 * 60 * 1000
+  const defaultStart = input.baselineDate.getTime() + 24 * 60 * 60 * 1000
 
   for (const doc of input.documents) {
-    if (doc.date.getTime() < baselineEnd) {
+    const relevantStarts = [doc.sourceProductId, ...doc.items.map(item => item.productId)]
+      .filter((id): id is string => Boolean(id))
+      .map(id => input.productBoundaries?.[id]?.effectiveStartDate.getTime() ?? defaultStart)
+    if (relevantStarts.length > 0 && relevantStarts.every(start => doc.date.getTime() < start)) {
       findings.push({ sourceId: doc.id, classification: 'UNSUPPORTED_LEGACY', reason: 'Document predates baseline closing boundary' })
       continue
     }
@@ -73,6 +82,9 @@ export function dryRunStockMovementBackfill(input: {
     }
     let duplicate = false
     for (const movement of drafts) {
+      const boundary = input.productBoundaries?.[movement.productId]
+      const start = boundary?.effectiveStartDate.getTime() ?? defaultStart
+      if (movement.businessDate.getTime() < start) continue
       if (keys.has(movement.idempotencyKey)) {
         duplicates.push(movement.idempotencyKey)
         duplicate = true
@@ -85,6 +97,9 @@ export function dryRunStockMovementBackfill(input: {
   }
 
   const totalsByProduct: Record<string, number> = {}
+  for (const [productId, boundary] of Object.entries(input.productBoundaries || {})) {
+    totalsByProduct[productId] = preciseWeight(boundary.startingWeight)
+  }
   for (const movement of proposedMovements) {
     totalsByProduct[movement.productId] = preciseWeight((totalsByProduct[movement.productId] || 0) + movement.signedWeight)
   }

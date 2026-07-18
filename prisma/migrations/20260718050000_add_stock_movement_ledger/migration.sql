@@ -33,6 +33,7 @@ CREATE TABLE "StockBaselineItem" (
   "baselineId" TEXT NOT NULL,
   "productId" TEXT NOT NULL,
   "weight" DOUBLE PRECISION NOT NULL,
+  "effectiveStartDate" TIMESTAMP(3) NOT NULL,
   "source" TEXT NOT NULL,
   "confidence" TEXT NOT NULL,
   "note" TEXT,
@@ -66,7 +67,7 @@ CREATE TABLE "StockMovement" (
 CREATE UNIQUE INDEX "StockBaseline_generation_key" ON "StockBaseline"("generation");
 CREATE INDEX "StockBaseline_status_baselineDate_idx" ON "StockBaseline"("status", "baselineDate");
 CREATE UNIQUE INDEX "StockBaselineItem_baselineId_productId_key" ON "StockBaselineItem"("baselineId", "productId");
-CREATE INDEX "StockBaselineItem_productId_idx" ON "StockBaselineItem"("productId");
+CREATE INDEX "StockBaselineItem_productId_effectiveStartDate_idx" ON "StockBaselineItem"("productId", "effectiveStartDate");
 CREATE UNIQUE INDEX "StockMovement_idempotencyKey_key" ON "StockMovement"("idempotencyKey");
 CREATE INDEX "StockMovement_productId_businessDate_idx" ON "StockMovement"("productId", "businessDate");
 CREATE INDEX "StockMovement_businessDate_idx" ON "StockMovement"("businessDate");
