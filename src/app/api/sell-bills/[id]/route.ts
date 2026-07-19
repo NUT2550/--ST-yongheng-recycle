@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
+import { resolveRestoredCostPerKg } from '@/lib/st52-sell-cancel-cost';
 
 async function requireEditPermission(request: NextRequest) {
   const token = getTokenFromRequest(request);
@@ -181,15 +182,34 @@ export async function DELETE(
 
     await db.$transaction(async (tx) => {
       const cancelledAt = new Date();
-      // Restore stock: create NEW StockLots for each sold item
+      // Restore stock: create NEW StockLots for each sold item.
+      // ST-52: Use resolveRestoredCostPerKg to preserve cost when SellBillItem.costPerKg is 0.
+      // Falls back to product historical weighted-average cost to avoid zero-cost compensation lots.
       const now = new Date();
       for (const item of existing.items) {
         if (item.weight > 0) {
+          const { costPerKg: restoredCostPerKg } = await resolveRestoredCostPerKg(
+            item.costPerKg,
+            item.productId,
+            {
+              async getProductHistoricalAvgCost(productId: string) {
+                const result = await tx.$queryRawUnsafe<{ avg_cost: number; obs_count: bigint }[]>(
+                  `SELECT COALESCE(AVG("costPerKg"), 0)::float8 AS avg_cost,
+                          COUNT(*)::bigint AS obs_count
+                     FROM "StockLot"
+                    WHERE "productId" = $1 AND "costPerKg" > 0`,
+                  productId,
+                );
+                if (result.length === 0 || Number(result[0].avg_cost) <= 0) return null;
+                return { avgCost: Number(result[0].avg_cost), obsCount: Number(result[0].obs_count) };
+              },
+            },
+          );
           await tx.stockLot.create({
             data: {
               productId: item.productId,
               remainingWeight: item.weight,
-              costPerKg: item.costPerKg,
+              costPerKg: restoredCostPerKg,
               dateAdded: now,
               source: 'SELL_CANCEL',
               sourceId: existing.id,

@@ -75,3 +75,61 @@ describe('ST-52 preserve FIFO cost during sell cancellation', () => {
     expect(result.source).toBe('ZERO_FALLBACK')
   })
 })
+
+// ============ Integration tests: verify cancellation route uses resolveRestoredCostPerKg ============
+
+describe('ST-52 cancellation path integration', () => {
+  test('11. cancellation route imports resolveRestoredCostPerKg', async () => {
+    // Verify the import exists in the route source
+    const routeSource = await Bun.file('src/app/api/sell-bills/[id]/route.ts').text()
+    expect(routeSource).toContain("from '@/lib/st52-sell-cancel-cost'")
+    expect(routeSource).toContain('resolveRestoredCostPerKg')
+  })
+
+  test('12. cancellation route uses resolved cost (not raw item.costPerKg)', async () => {
+    const routeSource = await Bun.file('src/app/api/sell-bills/[id]/route.ts').text()
+    // The route should call resolveRestoredCostPerKg and use the result
+    expect(routeSource).toContain('const { costPerKg: restoredCostPerKg } = await resolveRestoredCostPerKg')
+    expect(routeSource).toContain('costPerKg: restoredCostPerKg')
+  })
+
+  test('13. historical average query runs inside the transaction', async () => {
+    const routeSource = await Bun.file('src/app/api/sell-bills/[id]/route.ts').text()
+    // The query should use tx (transaction), not db
+    expect(routeSource).toContain('tx.$queryRawUnsafe')
+    expect(routeSource).toContain('"costPerKg" > 0')
+  })
+
+  test('14. existing non-zero SellBillItem cost is preserved (EXACT_SELL_ITEM priority)', async () => {
+    // When item.costPerKg > 0, resolveRestoredCostPerKg returns it unchanged
+    const result = await resolveRestoredCostPerKg(15.5, 'p1', makeDeps(10.0, 5))
+    expect(result.costPerKg).toBe(15.5)
+    expect(result.source).toBe('EXACT_SELL_ITEM')
+  })
+
+  test('15. zero SellBillItem cost with valid history uses HISTORICAL_AVERAGE', async () => {
+    const result = await resolveRestoredCostPerKg(0, 'p1', makeDeps(12.0, 5))
+    expect(result.costPerKg).toBe(12.0)
+    expect(result.source).toBe('HISTORICAL_AVERAGE')
+  })
+
+  test('16. zero SellBillItem cost with no history uses ZERO_FALLBACK', async () => {
+    const result = await resolveRestoredCostPerKg(0, 'p1', makeDeps(null))
+    expect(result.costPerKg).toBe(0)
+    expect(result.source).toBe('ZERO_FALLBACK')
+  })
+
+  test('17. no historical bill or COGS rewrite (cost-only restoration)', async () => {
+    // The DELETE (cancel) handler only creates new StockLot rows — it does not modify
+    // SellBillItem costPerKg or totalCost. The PATCH handler (price edit) does update
+    // SellBillItem.pricePerKg, but that is a separate feature, not cancellation.
+    const routeSource = await Bun.file('src/app/api/sell-bills/[id]/route.ts').text()
+    // Extract just the DELETE handler
+    const deleteStart = routeSource.indexOf('// DELETE /api/sell-bills/[id]')
+    const deleteSection = routeSource.slice(deleteStart)
+    expect(deleteSection).not.toContain('sellBillItem.update')
+    expect(deleteSection).not.toContain('sellBillItem.delete')
+    // The cancellation should only CREATE StockLot, not modify existing lots
+    expect(deleteSection).toContain('stockLot.create')
+  })
+})
