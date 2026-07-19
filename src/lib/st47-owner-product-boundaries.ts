@@ -8,6 +8,19 @@ export interface OwnerProductBoundary {
   currentTarget?: number
 }
 
+export interface OwnerAcceptedVariance {
+  /** Owner-approved opening stock (kg) — preserved exactly, never force-adjusted. */
+  approvedOpening: number
+  /** Owner-reported comparison value at the reporting date (kg). */
+  comparisonValue: number
+  /** Accepted signed variance (kg) = calculatedClosing − comparisonValue. */
+  acceptedVariance: number
+  /** Reporting date the comparison value applies to (Thailand business date). */
+  comparisonDate: string
+  /** Human-readable Owner decision note. */
+  note: string
+}
+
 /** Owner-approved, deterministic Production mapping. No fuzzy matching at runtime. */
 const OWNER_BOUNDARY_ROWS: ReadonlyArray<readonly [string, string, string, string, string, number?, number?]> = [
   ['ทองแดงปอก','prod_mqgp9aevp2yb18adpkyr3qtr','ทองแดงปอกเงา','2026-07-04','2026-07-04'],['ทองแดงช็อต','prod_mqgp9alick357v31bqqrlv43','ทองแดงช็อต','2026-07-04','2026-07-04'],['ทองแดงใหญ่','prod_mqgp9arb37xlm6b54b0xa44v','ทองแดงใหญ่','2026-07-04','2026-07-04'],['ทองแดงเล็ก','prod_mqgp9axign3hnk45ex03l4aw','ทองแดงเล็ก','2026-07-04','2026-07-04'],['ทองแดงชุบ','prod_mqgp9bgavns7vxc8rzrlsn65','ทองแดงชุบ','2026-07-04','2026-07-04'],['หม้อน้ำทองแดง','prod_mqgp9b9ouoxmoeq34ccaydfj','หม้อน้ำทองแดง','2026-07-04','2026-07-04'],
@@ -24,6 +37,27 @@ const DERIVED_OWNER_OPENINGS: Readonly<Record<string, number>> = {
   'แผงวงจรติดสายไฟ': 0,
   'สายไฟไม่ปอก': 925.5,
   'เปลือกสายไฟ': 987.8,
+}
+
+/**
+ * Owner-approved accepted variances between the calculated closing stock and the
+ * Owner-reported comparison value. The opening stock is preserved exactly; the
+ * variance is NOT eliminated by force-adjusting the opening.
+ *
+ * Key: ownerLabel. Value: the accepted variance evidence.
+ */
+export const OWNER_ACCEPTED_VARIANCES: Readonly<Record<string, OwnerAcceptedVariance>> = {
+  'สายไฟไม่ปอก': {
+    approvedOpening: 925.5,
+    comparisonValue: 987.8,
+    acceptedVariance: 7.6,
+    comparisonDate: '2026-07-18',
+    note: 'Owner-approved opening 925.50 kg. Dry-run calculated closing 995.40 kg. ' +
+      'Owner-reported comparison value 987.80 kg at 2026-07-18. ' +
+      'Accepted variance +7.60 kg (calc − comparison). ' +
+      'Opening is NOT changed to 917.90 to force equality. ' +
+      'The variance remains visible in baseline evidence and audit notes.',
+  },
 }
 
 export const ST47_OWNER_PRODUCT_BOUNDARIES: readonly OwnerProductBoundary[] = OWNER_BOUNDARY_ROWS.map(

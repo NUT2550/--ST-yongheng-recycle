@@ -7,7 +7,7 @@ import {
 import { approveStockBaseline, type BaselineApprovalDeps } from '../src/lib/stock-baseline-service'
 import { dryRunStockMovementBackfill } from '../src/lib/stock-ledger-backfill'
 import { parseThailandBusinessDate } from '../src/lib/thailand-date'
-import { assertUniqueOwnerProductBoundaries, ST47_OWNER_PRODUCT_BOUNDARIES } from '../src/lib/st47-owner-product-boundaries'
+import { assertUniqueOwnerProductBoundaries, ST47_OWNER_PRODUCT_BOUNDARIES, OWNER_ACCEPTED_VARIANCES } from '../src/lib/st47-owner-product-boundaries'
 
 const d = (value: string) => parseThailandBusinessDate(value)
 
@@ -229,5 +229,46 @@ describe('ST-47 per-product effective start boundaries', () => {
       ST47_OWNER_PRODUCT_BOUNDARIES[0],
       { ...ST47_OWNER_PRODUCT_BOUNDARIES[1], productId: ST47_OWNER_PRODUCT_BOUNDARIES[0].productId },
     ])).toThrow('Duplicate Product ID')
+  })
+
+  test('30. Owner-approved wire opening 925.50 kg is preserved with accepted +7.60 variance', () => {
+    // Owner decision: สายไฟไม่ปอก opening = 925.50 kg (NOT 917.90 to force equality).
+    // Dry-run calculated closing at 2026-07-18 = 995.40 kg.
+    // Owner-reported comparison value = 987.80 kg.
+    // Accepted variance = +7.60 kg (calc − comparison).
+    const wire = ST47_OWNER_PRODUCT_BOUNDARIES.find(b => b.ownerLabel === 'สายไฟไม่ปอก')!
+    expect(wire.productId).toBe('cmr09vcvj0024l1052pb03lfk')
+    expect(wire.effectiveStartDate).toBe('2026-01-01')
+    expect(wire.startingWeight).toBe(925.5)
+    expect(wire.currentTarget).toBe(987.8)
+
+    // The accepted variance is explicitly documented — not force-eliminated.
+    const variance = OWNER_ACCEPTED_VARIANCES['สายไฟไม่ปอก']!
+    expect(variance.approvedOpening).toBe(925.5)
+    expect(variance.comparisonValue).toBe(987.8)
+    expect(variance.acceptedVariance).toBe(7.6)
+    expect(variance.comparisonDate).toBe('2026-07-18')
+
+    // Verify the opening was NOT changed to 917.90 to force the closing to equal 987.80.
+    expect(wire.startingWeight).not.toBe(917.9)
+
+    // Verify the read model produces the expected calculated closing from the approved opening.
+    // Production movements for สายไฟไม่ปอก (2026-01-01 → 2026-07-18):
+    //   purchase in +37.9, sorting output in +28.2, transfer source out net +3.8 (ST-40 negative yield artifact)
+    //   net movement = +69.9 → calculated closing = 925.5 + 69.9 = 995.4
+    const rows = calculateClosingStock({
+      id: 'wire-baseline', generation: 1, baselineDate: d('2026-01-01'), status: 'APPROVED' as const,
+      items: [{ productId: wire.productId, weight: 925.5, effectiveStartDate: d('2026-01-01') }],
+    }, '2026-07-18', [
+      { productId: wire.productId, businessDate: d('2026-03-15'), signedWeight: 37.9 },   // purchase in
+      { productId: wire.productId, businessDate: d('2026-04-20'), signedWeight: 28.2 },   // sorting output in
+      { productId: wire.productId, businessDate: d('2026-05-10'), signedWeight: 3.8 },     // transfer source: ST-40 negative sourceWeight → net positive contribution
+    ])
+    const row = rows[0]
+    expect(row.state).toBe('ACTIVE')
+    expect(row.expectedClosingWeight).toBe(995.4)  // 925.5 + 37.9 + 28.2 + 3.8
+    // The +7.60 variance vs 987.80 is NOT an exact match — it is an accepted variance.
+    expect(row.expectedClosingWeight).not.toBe(987.8)
+    expect(Math.round((row.expectedClosingWeight! - 987.8) * 100) / 100).toBe(7.6)
   })
 })
