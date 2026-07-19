@@ -283,21 +283,100 @@ export async function generateRevaluationPlan(deps: RevaluationDeps, cutoff: str
 
 /**
  * APPLY MODE — BLOCKED.
- * This function exists to document the intended apply mechanism but is
- * permanently blocked. A separate Owner Production release approval is
- * required before apply mode can be enabled.
+ *
+ * The apply function below documents the full intended apply mechanism with all
+ * 17 safety controls. It is permanently blocked by APPLY_MODE_ENABLED = false.
+ * A separate Owner Production release approval is required before apply mode
+ * can be enabled.
+ *
+ * Controls (17):
+ *  1. dry-run default
+ *  2. apply disabled by default (APPLY_MODE_ENABLED = false)
+ *  3. explicit apply flag required
+ *  4. exact allowlist checksum argument required
+ *  5. explicit final Owner approval reference/token required
+ *  6. Production project identity check
+ *  7. exact expected-value guards (current costPerKg must be 0)
+ *  8. exact exclusion of the four legacy lots
+ *  9. one database transaction
+ * 10. deterministic operation ID
+ * 11. idempotency check (rejects duplicate operation)
+ * 12. durable before/after audit evidence (AuditLog per operation)
+ * 13. rollback artifact generation
+ * 14. post-write verification
+ * 15. rollback on any failure
+ * 16. no remainingWeight changes
+ * 17. no bill, COGS, ledger or baseline changes
  */
 export const APPLY_MODE_ENABLED = false
 
-export interface ApplyResult {
-  applied: false
-  reason: string
+export interface ApplyConfig {
+  apply: boolean // must be true to apply; false = dry-run
+  allowlistChecksum: string // SHA-256 of the canonical allowlist JSON
+  ownerApprovalReference: string // explicit Owner approval token/reference
+  productionProjectId: string // must match 'wefqhunzjvsxciiwdhjx'
+  releaseOperationId: string // deterministic operation ID
 }
 
-export async function applyRevaluationPlan(): Promise<ApplyResult> {
+export interface ApplyResult {
+  applied: boolean
+  reason: string
+  dryRun: boolean
+  lotCount?: number
+  totalValueIncrease?: number
+  rollbackArtifactPath?: string
+}
+
+export function validateApplyConfig(config: ApplyConfig): string | null {
   if (!APPLY_MODE_ENABLED) {
-    return { applied: false, reason: 'APPLY MODE IS BLOCKED — requires separate Owner Production release approval' }
+    return 'APPLY MODE IS BLOCKED — requires separate Owner Production release approval'
   }
+  if (!config.apply) {
+    return 'Apply flag is false — use dry-run mode'
+  }
+  if (!config.allowlistChecksum || config.allowlistChecksum.length !== 64) {
+    return 'Invalid allowlist checksum — must be a 64-character SHA-256 hex string'
+  }
+  if (!config.ownerApprovalReference || config.ownerApprovalReference.trim().length < 10) {
+    return 'Missing or invalid Owner approval reference'
+  }
+  if (config.productionProjectId !== 'wefqhunzjvsxciiwdhjx') {
+    return `Wrong Production project: expected wefqhunzjvsxciiwdhjx, got ${config.productionProjectId}`
+  }
+  if (!config.releaseOperationId) {
+    return 'Missing release operation ID'
+  }
+  return null // OK
+}
+
+export async function applyRevaluationPlan(config?: ApplyConfig): Promise<ApplyResult> {
+  // Control 2: apply disabled by default
+  if (!APPLY_MODE_ENABLED) {
+    return { applied: false, reason: 'APPLY MODE IS BLOCKED — requires separate Owner Production release approval', dryRun: true }
+  }
+
+  // Control 1: dry-run default (if config not provided or apply=false)
+  if (!config || !config.apply) {
+    return { applied: false, reason: 'Dry-run mode — set apply=true to execute', dryRun: true }
+  }
+
+  // Control 3-6: validate config
+  const error = validateApplyConfig(config)
+  if (error) {
+    return { applied: false, reason: error, dryRun: false }
+  }
+
+  // Controls 7-17 would be executed here in a real apply:
+  // - Load allowlist and verify checksum (Control 4, 7)
+  // - Verify no legacy lot in allowlist (Control 8)
+  // - Begin database transaction (Control 9)
+  // - Check idempotency — reject if operation ID already applied (Control 11)
+  // - For each lot: verify expected costPerKg=0, verify remainingWeight, update costPerKg only (Control 7, 16, 17)
+  // - Create AuditLog entry per lot (Control 12)
+  // - Generate rollback artifact (Control 13)
+  // - Post-write verification (Control 14)
+  // - Commit or rollback on failure (Control 15)
+  //
   // This path is unreachable while APPLY_MODE_ENABLED is false.
-  return { applied: false, reason: 'Unreachable' }
+  return { applied: false, reason: 'Unreachable — APPLY_MODE_ENABLED is false', dryRun: false }
 }
