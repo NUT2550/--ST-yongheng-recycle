@@ -136,13 +136,15 @@ async function main() {
       const movement = movementMap.get(b.productId)
       const stockLotTotal = stockLotMap.get(b.productId) ?? null
       const startingWeight = b.startingWeight ?? 0
-      const purchaseIn = movement?.purchaseIn ?? 0
-      const salesOut = movement?.salesOut ?? 0
-      const sortingSourceOut = movement?.sortingSourceOut ?? 0
-      const sortingOutputIn = movement?.sortingOutputIn ?? 0
-      const transferSourceOut = movement?.transferSourceOut ?? 0
-      const transferOutputIn = movement?.transferOutputIn ?? 0
-      const netMovement = purchaseIn - salesOut - sortingSourceOut + sortingOutputIn - transferSourceOut + transferOutputIn
+      // All movement fields are SIGNED (the SQL stores -weight for OUT categories).
+      // netMovement is the direct sum of all signed components — no double negation.
+      const purchaseIn = movement?.purchaseIn ?? 0        // positive (in)
+      const salesOut = movement?.salesOut ?? 0            // negative (out)
+      const sortingSourceOut = movement?.sortingSourceOut ?? 0  // negative (out)
+      const sortingOutputIn = movement?.sortingOutputIn ?? 0    // positive (in)
+      const transferSourceOut = movement?.transferSourceOut ?? 0  // negative (out)
+      const transferOutputIn = movement?.transferOutputIn ?? 0    // positive (in)
+      const netMovement = purchaseIn + salesOut + sortingSourceOut + sortingOutputIn + transferSourceOut + transferOutputIn
       const calculatedClosing = round6(startingWeight + netMovement)
       const ownerTarget = b.currentTarget ?? ownerConfirmedClosing[b.ownerLabel]
       const stockLotDiff = stockLotTotal == null ? null : round6(calculatedClosing - stockLotTotal)
@@ -153,8 +155,6 @@ async function main() {
       if (!product) classification = 'MISSING_PRODUCT'
       else if (acceptedVariance && ownerDiff !== null &&
                Math.abs(round6(ownerDiff - acceptedVariance.acceptedVariance)) < 0.01) {
-        // Owner has explicitly approved the variance between calculated closing and
-        // the comparison value. The opening is preserved; the variance is documented.
         classification = 'OWNER_ACCEPTED_VARIANCE'
       }
       else if (ownerTarget != null && ownerDiff !== null && Math.abs(ownerDiff) < 0.01) classification = 'OWNER_VALUE_MATCH'
