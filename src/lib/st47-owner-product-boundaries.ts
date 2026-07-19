@@ -45,19 +45,18 @@ const DERIVED_OWNER_OPENINGS: Readonly<Record<string, number>> = {
  * variance is NOT eliminated by force-adjusting the opening.
  *
  * Key: ownerLabel. Value: the accepted variance evidence.
+ *
+ * Audit note (2026-07-19): The previous สายไฟไม่ปอก entry (acceptedVariance +7.60,
+ * calculated closing 995.40) was SUPERSEDED because the +7.60 kg variance was caused
+ * by a double-negation bug in the dry-run reconciliation script's TRANSFER_SOURCE_OUT
+ * formula. After fixing the sign bug, the authoritative ledger (calculateClosingStock)
+ * produces calculated closing 987.80 — an exact match with the Owner-reported
+ * comparison value. The product now classifies as OWNER_VALUE_MATCH. No artificial
+ * adjustment is inserted. Opening remains 925.50.
  */
 export const OWNER_ACCEPTED_VARIANCES: Readonly<Record<string, OwnerAcceptedVariance>> = {
-  'สายไฟไม่ปอก': {
-    approvedOpening: 925.5,
-    comparisonValue: 987.8,
-    acceptedVariance: 7.6,
-    comparisonDate: '2026-07-18',
-    note: 'Owner-approved opening 925.50 kg. Dry-run calculated closing 995.40 kg. ' +
-      'Owner-reported comparison value 987.80 kg at 2026-07-18. ' +
-      'Accepted variance +7.60 kg (calc − comparison). ' +
-      'Opening is NOT changed to 917.90 to force equality. ' +
-      'The variance remains visible in baseline evidence and audit notes.',
-  },
+  // สายไฟไม่ปอก entry removed — superseded by OWNER_VALUE_MATCH after sign-bug fix.
+  // The +7.60 kg variance was a reporting artifact, not a real data discrepancy.
 }
 
 export const ST47_OWNER_PRODUCT_BOUNDARIES: readonly OwnerProductBoundary[] = OWNER_BOUNDARY_ROWS.map(

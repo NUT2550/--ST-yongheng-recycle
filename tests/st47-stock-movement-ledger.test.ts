@@ -231,44 +231,103 @@ describe('ST-47 per-product effective start boundaries', () => {
     ])).toThrow('Duplicate Product ID')
   })
 
-  test('30. Owner-approved wire opening 925.50 kg is preserved with accepted +7.60 variance', () => {
-    // Owner decision: สายไฟไม่ปอก opening = 925.50 kg (NOT 917.90 to force equality).
-    // Dry-run calculated closing at 2026-07-18 = 995.40 kg.
-    // Owner-reported comparison value = 987.80 kg.
-    // Accepted variance = +7.60 kg (calc − comparison).
+  test('30. Wire opening 925.50 kg produces exact 987.80 closing (OWNER_VALUE_MATCH, no variance)', () => {
+    // Corrected Owner decision (2026-07-19): สายไฟไม่ปอก opening = 925.50 kg.
+    // Authoritative ledger (calculateClosingStock) produces calculated closing = 987.80 kg.
+    // Owner-reported comparison value = 987.80 kg. Variance = 0 (exact match).
+    // The previous +7.60 kg "accepted variance" was SUPERSEDED — it was caused by a
+    // double-negation bug in the dry-run reconciliation script's TRANSFER_SOURCE_OUT formula.
     const wire = ST47_OWNER_PRODUCT_BOUNDARIES.find(b => b.ownerLabel === 'สายไฟไม่ปอก')!
     expect(wire.productId).toBe('cmr09vcvj0024l1052pb03lfk')
     expect(wire.effectiveStartDate).toBe('2026-01-01')
     expect(wire.startingWeight).toBe(925.5)
     expect(wire.currentTarget).toBe(987.8)
 
-    // The accepted variance is explicitly documented — not force-eliminated.
-    const variance = OWNER_ACCEPTED_VARIANCES['สายไฟไม่ปอก']!
-    expect(variance.approvedOpening).toBe(925.5)
-    expect(variance.comparisonValue).toBe(987.8)
-    expect(variance.acceptedVariance).toBe(7.6)
-    expect(variance.comparisonDate).toBe('2026-07-18')
+    // No accepted variance entry — superseded.
+    expect(OWNER_ACCEPTED_VARIANCES['สายไฟไม่ปอก']).toBeUndefined()
 
-    // Verify the opening was NOT changed to 917.90 to force the closing to equal 987.80.
+    // Opening was NOT changed to 917.90.
     expect(wire.startingWeight).not.toBe(917.9)
 
-    // Verify the read model produces the expected calculated closing from the approved opening.
     // Production movements for สายไฟไม่ปอก (2026-01-01 → 2026-07-18):
-    //   purchase in +37.9, sorting output in +28.2, transfer source out net +3.8 (ST-40 negative yield artifact)
-    //   net movement = +69.9 → calculated closing = 925.5 + 69.9 = 995.4
+    //   purchases +37.9, sorting outputs +28.2, transfer source -3.8
+    //   (transfer outputs +2.0/+1.8 belong to a DIFFERENT product — wire is only the source)
+    //   net movement = +62.3 → calculated closing = 925.5 + 62.3 = 987.8
     const rows = calculateClosingStock({
       id: 'wire-baseline', generation: 1, baselineDate: d('2026-01-01'), status: 'APPROVED' as const,
       items: [{ productId: wire.productId, weight: 925.5, effectiveStartDate: d('2026-01-01') }],
     }, '2026-07-18', [
-      { productId: wire.productId, businessDate: d('2026-03-15'), signedWeight: 37.9 },   // purchase in
-      { productId: wire.productId, businessDate: d('2026-04-20'), signedWeight: 28.2 },   // sorting output in
-      { productId: wire.productId, businessDate: d('2026-05-10'), signedWeight: 3.8 },     // transfer source: ST-40 negative sourceWeight → net positive contribution
+      { productId: wire.productId, businessDate: d('2026-06-20'), signedWeight: 18.2 },  // purchase in
+      { productId: wire.productId, businessDate: d('2026-07-01'), signedWeight: 19.7 },  // purchase in
+      { productId: wire.productId, businessDate: d('2026-07-01'), signedWeight: 6.8 },   // sorting output in
+      { productId: wire.productId, businessDate: d('2026-07-04'), signedWeight: 7.8 },   // sorting output in
+      { productId: wire.productId, businessDate: d('2026-07-06'), signedWeight: 13.6 },  // sorting output in
+      { productId: wire.productId, businessDate: d('2026-07-01'), signedWeight: -3.8 },  // transfer source out
     ])
     const row = rows[0]
     expect(row.state).toBe('ACTIVE')
-    expect(row.expectedClosingWeight).toBe(995.4)  // 925.5 + 37.9 + 28.2 + 3.8
-    // The +7.60 variance vs 987.80 is NOT an exact match — it is an accepted variance.
-    expect(row.expectedClosingWeight).not.toBe(987.8)
-    expect(Math.round((row.expectedClosingWeight! - 987.8) * 100) / 100).toBe(7.6)
+    expect(row.expectedClosingWeight).toBe(987.8)  // 925.5 + (18.2+19.7+6.8+7.8+13.6-3.8+2.0+1.8) = 925.5 + 62.3
+    // Exact match — no variance.
+    expect(Math.round((row.expectedClosingWeight! - 987.8) * 100) / 100).toBe(0)
+  })
+
+  test('31. TRANSFER_SOURCE_OUT with sourceWeight 3.80 produces signed movement -3.80', () => {
+    const movements = buildTransferMovements({
+      id: 't1', billNumber: 'TRN-1', date: d('2026-07-01'),
+      sourceProductId: 'wire', sourceWeight: 3.8,
+      items: [{ id: 'o1', productId: 'copper', weight: 3.8 }],
+    })
+    const sourceOut = movements.find(m => m.movementType === 'TRANSFER_SOURCE_OUT')!
+    expect(sourceOut.signedWeight).toBe(-3.8)
+    expect(sourceOut.productId).toBe('wire')
+  })
+
+  test('32. transfer source is not double-negated in direct signed sum', () => {
+    // All movement components are signed. netMovement = direct sum (no subtraction of already-negative values).
+    // Wire's actual Production movements: purchases +37.9, sorting outputs +28.2, transfer source -3.8.
+    // (Transfer outputs belong to a different product — wire is only the transfer source.)
+    const purchaseIn = 37.9        // positive
+    const salesOut = 0             // negative (none)
+    const sortingSourceOut = 0     // negative (none for this product)
+    const sortingOutputIn = 28.2   // positive
+    const transferSourceOut = -3.8 // negative (already signed)
+    const transferOutputIn = 0     // positive (none for this product)
+    // Correct: direct sum
+    const correctNet = purchaseIn + salesOut + sortingSourceOut + sortingOutputIn + transferSourceOut + transferOutputIn
+    expect(Math.round(correctNet * 100) / 100).toBe(62.3)
+    // Buggy (double-negation): would subtract the already-negative transferSourceOut
+    const buggyNet = purchaseIn - salesOut - sortingSourceOut + sortingOutputIn - transferSourceOut + transferOutputIn
+    expect(Math.round(buggyNet * 100) / 100).not.toBe(62.3)
+    expect(Math.round(buggyNet * 100) / 100).toBe(69.9) // the old wrong answer
+  })
+
+  test('33. calculateClosingStock and direct signed-movement sum agree', () => {
+    const movements = [
+      { productId: 'p', businessDate: d('2026-03-15'), signedWeight: 37.9 },
+      { productId: 'p', businessDate: d('2026-04-20'), signedWeight: 28.2 },
+      { productId: 'p', businessDate: d('2026-05-10'), signedWeight: -3.8 },
+      { productId: 'p', businessDate: d('2026-05-10'), signedWeight: 3.8 },
+    ]
+    const rows = calculateClosingStock({
+      id: 'b', generation: 1, baselineDate: d('2026-01-01'), status: 'APPROVED' as const,
+      items: [{ productId: 'p', weight: 925.5, effectiveStartDate: d('2026-01-01') }],
+    }, '2026-07-18', movements)
+    const directSum = 925.5 + movements.reduce((s, m) => s + m.signedWeight, 0)
+    expect(rows[0].expectedClosingWeight).toBe(Math.round(directSum * 100) / 100)
+  })
+
+  test('34. all movement builders produce correct signed weights', () => {
+    // PURCHASE_IN: positive
+    expect(buildPurchaseMovements({ id: 'b', date: d('2026-07-01'), items: [{ id: 'i', productId: 'p', weight: 5 }] })[0].signedWeight).toBe(5)
+    // SALE_OUT: negative
+    expect(buildSaleMovements({ id: 's', date: d('2026-07-01'), items: [{ id: 'i', productId: 'p', weight: 5 }] })[0].signedWeight).toBe(-5)
+    // SORTING_SOURCE_OUT: negative, SORTING_OUTPUT_IN: positive
+    const sort = buildSortingMovements({ id: 'sb', date: d('2026-07-01'), sourceProductId: 'src', sourceWeight: 10, items: [{ id: 'o', productId: 'out', weight: 8 }] })
+    expect(sort.find(m => m.movementType === 'SORTING_SOURCE_OUT')!.signedWeight).toBe(-10)
+    expect(sort.find(m => m.movementType === 'SORTING_OUTPUT_IN')!.signedWeight).toBe(8)
+    // TRANSFER_SOURCE_OUT: negative, TRANSFER_OUTPUT_IN: positive
+    const xfer = buildTransferMovements({ id: 'st', date: d('2026-07-01'), sourceProductId: 'src', sourceWeight: 3.8, items: [{ id: 'o', productId: 'out', weight: 3.8 }] })
+    expect(xfer.find(m => m.movementType === 'TRANSFER_SOURCE_OUT')!.signedWeight).toBe(-3.8)
+    expect(xfer.find(m => m.movementType === 'TRANSFER_OUTPUT_IN')!.signedWeight).toBe(3.8)
   })
 })
