@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
+import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
 
 async function requireEditPermission(request: NextRequest) {
   const token = getTokenFromRequest(request);
@@ -179,6 +180,7 @@ export async function DELETE(
     try { const body = await request.json(); reason = (body?.reason || '').toString().trim(); } catch {}
 
     await db.$transaction(async (tx) => {
+      const cancelledAt = new Date();
       // Restore stock: create NEW StockLots for each sold item
       const now = new Date();
       for (const item of existing.items) {
@@ -205,8 +207,10 @@ export async function DELETE(
       // Mark bill as cancelled
       await tx.sellBill.update({
         where: { id },
-        data: { isCancelled: true, cancelledAt: new Date(), cancelledBy: auth.userId, cancelReason: reason || null },
+        data: { isCancelled: true, cancelledAt, cancelledBy: auth.userId, cancelReason: reason || null },
       });
+
+      await reverseSourceMovements(tx, 'SELL_BILL', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Sale cancelled');
 
       // Audit log
       await tx.auditLog.create({

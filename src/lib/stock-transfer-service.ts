@@ -46,6 +46,7 @@ import {
   formatThailandBusinessDate,
   checkSourceLotCausality,
 } from './thailand-date';
+import { buildTransferMovements, type StockMovementDraft } from './stock-movement-ledger';
 import { isRealFormula } from './safe-math';
 
 // ============ Types ============
@@ -113,6 +114,9 @@ export interface AuditLogInput {
 
 /** Injectable dependencies — production wraps Prisma; tests inject mocks. */
 export interface StockTransferDeps {
+  /** True only for a client already scoped to the active database transaction. */
+  isTransactionScoped?: boolean;
+  transaction<T>(fn: (tx: StockTransferDeps) => Promise<T>): Promise<T>;
   findSourceProduct(productId: string): Promise<SourceProductRow | null>;
   findOutputProduct(productId: string): Promise<SourceProductRow | null>;
   findSourceLots(productId: string): Promise<SourceLotRow[]>;
@@ -120,6 +124,7 @@ export interface StockTransferDeps {
   deductSourceLots(productId: string, weightToDeduct: number): Promise<DeductResult>;
   createStockTransfer(data: Record<string, unknown>): Promise<CreatedTransfer>;
   createOutputStockLot(data: Record<string, unknown>): Promise<void>;
+  createStockMovements(data: StockMovementDraft[]): Promise<void>;
   createAuditLog(data: AuditLogInput): Promise<void>;
   compensate(deductedLots: Array<{ id: string; deducted: number }>, requestId: string, reason?: string): Promise<void>;
   deletePartialTransfer(transferId: string): Promise<void>;
@@ -563,7 +568,29 @@ export async function createStockTransfer(
     };
   }
 
-  // 9. Execute: deduct source lots
+  // 9. Re-enter the mutation phase with a transaction-scoped dependency set.
+  // A failure result is converted to a throw inside the callback so Prisma
+  // rolls back source deductions, document/output rows, and ledger rows.
+  if (!deps.isTransactionScoped) {
+    let failed: Exclude<ServiceResult, { ok: true }> | null = null;
+    const rollback = Symbol('stock-transfer-rollback');
+    try {
+      return await deps.transaction(async tx => {
+        const result = await createStockTransfer(tx, input, auth, requestId);
+        if (!result.ok) {
+          failed = result;
+          throw rollback;
+        }
+        return result;
+      });
+    } catch (error) {
+      if (error === rollback && failed) return failed;
+      const classified = classifyServiceError(error);
+      return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
+    }
+  }
+
+  // 10. Execute using the transaction-scoped dependency set.
   const billNumber = await deps.generateBillNumber();
   let fifoResult: DeductResult;
   try {
@@ -660,7 +687,35 @@ export async function createStockTransfer(
     return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
   }
 
-  // 14. Create AuditLog
+  // 14. Emit the source/output ledger rows as one idempotent createMany call.
+  // Failure uses the existing ST-11 compensation and partial cleanup path.
+  try {
+    await deps.createStockMovements(buildTransferMovements({
+      id: created.id,
+      billNumber,
+      date: dateValidation.storedBusinessDate,
+      sourceProductId: input.sourceProductId,
+      sourceWeight: input.sourceWeight,
+      gainWeight,
+      lossWeight,
+      businessType: input.businessType,
+      items: input.items.map((item, index) => ({
+        id: created.items[index]?.id || `item-${index}`,
+        productId: item.productId,
+        weight: item.weight,
+        isWaste: item.isWaste,
+      })),
+    }));
+  } catch (err) {
+    await deps.deletePartialOutputLots(created.id);
+    await deps.deletePartialTransfer(created.id);
+    await deps.compensate(fifoResult.deductedLots, requestId, err instanceof Error ? err.message : 'ledger create error');
+    await writeRollbackAuditLog(deps, auth, requestId, billNumber, created.id, fifoResult.deductedLots, err);
+    const classified = classifyServiceError(err);
+    return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
+  }
+
+  // 15. Create AuditLog
   const fifoAuditDetails = buildFifoAuditDetails(fifoPreview, { type: 'TRANSFER', hasNonWasteOutput: true });
   const auditDetails = buildTransferAuditDetails({
     billNumber,

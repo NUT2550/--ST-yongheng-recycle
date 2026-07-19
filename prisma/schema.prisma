@@ -32,8 +32,99 @@ model Product {
   transferItems      StockTransferItem[]
   physicalCountItems PhysicalCountItem[]
   dailyWeighingItems DailyPurchaseWeighingItem[]
+  stockMovements     StockMovement[]
+  stockBaselineItems StockBaselineItem[]
   createdAt          DateTime                    @default(now())
   updatedAt          DateTime                    @updatedAt
+}
+
+enum StockMovementType {
+  BASELINE
+  PURCHASE_IN
+  SALE_OUT
+  SORTING_SOURCE_OUT
+  SORTING_OUTPUT_IN
+  TRANSFER_SOURCE_OUT
+  TRANSFER_OUTPUT_IN
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
+  CANCELLATION_REVERSAL
+  COMPENSATION_REVERSAL
+}
+
+enum StockBaselineStatus {
+  DRAFT
+  APPROVED
+  SUPERSEDED
+}
+
+/// ST-47: append-only weight ledger. Application code creates rows only;
+/// corrections are inverse rows linked through reversalOfId.
+model StockMovement {
+  id                   String            @id @default(cuid())
+  productId            String
+  product              Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  businessDate         DateTime
+  movementType         StockMovementType
+  signedWeight         Float
+  sourceType           String
+  sourceId             String
+  sourceItemId         String?
+  sourceDocumentNumber String?
+  reversalOfId         String?
+  reversalOf           StockMovement?    @relation("StockMovementReversal", fields: [reversalOfId], references: [id], onDelete: Restrict)
+  reversals            StockMovement[]   @relation("StockMovementReversal")
+  idempotencyKey       String            @unique
+  reason               String?
+  metadata             Json?
+  createdById          String?
+  createdByName        String?
+  createdAt            DateTime          @default(now())
+
+  @@index([productId, businessDate])
+  @@index([businessDate])
+  @@index([sourceType, sourceId])
+  @@index([reversalOfId])
+}
+
+/// A baseline is closing stock at the end of baselineDate in Asia/Bangkok.
+/// Only APPROVED baselines affect the read model. Approval is immutable by
+/// application policy; a replacement uses a new generation.
+model StockBaseline {
+  id               String              @id @default(cuid())
+  generation       Int                 @unique
+  baselineDate     DateTime
+  status           StockBaselineStatus @default(DRAFT)
+  migrationVersion String
+  note             String?
+  approvedAt       DateTime?
+  approvedById     String?
+  approvedByName   String?
+  createdById      String?
+  createdByName    String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  items            StockBaselineItem[]
+
+  @@index([status, baselineDate])
+}
+
+model StockBaselineItem {
+  id                 String        @id @default(cuid())
+  baselineId         String
+  baseline           StockBaseline @relation(fields: [baselineId], references: [id], onDelete: Restrict)
+  productId          String
+  product            Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  weight             Float
+  /// Opening stock at the beginning of this product's Thailand business day.
+  effectiveStartDate DateTime
+  source             String
+  confidence         String
+  note               String?
+  createdAt          DateTime      @default(now())
+
+  @@unique([baselineId, productId])
+  @@index([productId, effectiveStartDate])
 }
 
 model StockLot {

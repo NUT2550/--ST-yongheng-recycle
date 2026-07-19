@@ -12,6 +12,7 @@ import type {
   CreatedTransfer,
   AuditLogInput,
 } from '../src/lib/stock-transfer-service';
+import type { StockMovementDraft } from '../src/lib/stock-movement-ledger';
 
 export interface MockState {
   findSourceProductCalls: string[];
@@ -21,6 +22,7 @@ export interface MockState {
   deductSourceLotsCalls: Array<{ productId: string; weightToDeduct: number }>;
   createStockTransferCalls: Record<string, unknown>[];
   createOutputStockLotCalls: Record<string, unknown>[];
+  createStockMovementCalls: StockMovementDraft[];
   createAuditLogCalls: AuditLogInput[];
   compensateCalls: Array<{ deductedLots: Array<{ id: string; deducted: number }>; requestId: string; reason?: string }>;
   deletePartialTransferCalls: string[];
@@ -35,6 +37,7 @@ export function createMockDeps(options: {
   deductShouldThrow?: Error;
   createTransferShouldThrow?: Error;
   createLotShouldThrow?: Error;
+  createMovementShouldThrow?: Error;
   transferId?: string;
 } = {}): { deps: StockTransferDeps; state: MockState } {
   const state: MockState = {
@@ -45,6 +48,7 @@ export function createMockDeps(options: {
     deductSourceLotsCalls: [],
     createStockTransferCalls: [],
     createOutputStockLotCalls: [],
+    createStockMovementCalls: [],
     createAuditLogCalls: [],
     compensateCalls: [],
     deletePartialTransferCalls: [],
@@ -52,6 +56,21 @@ export function createMockDeps(options: {
   };
 
   const deps: StockTransferDeps = {
+    isTransactionScoped: false,
+    async transaction(fn) {
+      const snapshot = structuredClone(state);
+      deps.isTransactionScoped = true;
+      try {
+        return await fn(deps);
+      } catch (error) {
+        for (const key of Object.keys(state) as Array<keyof MockState>) {
+          (state[key] as unknown[]) = snapshot[key] as unknown[];
+        }
+        throw error;
+      } finally {
+        deps.isTransactionScoped = false;
+      }
+    },
     async findSourceProduct(productId: string) {
       state.findSourceProductCalls.push(productId);
       return options.sourceProduct ?? { id: productId, name: 'Test Product' };
@@ -96,6 +115,10 @@ export function createMockDeps(options: {
     async createOutputStockLot(data: Record<string, unknown>) {
       state.createOutputStockLotCalls.push(data);
       if (options.createLotShouldThrow) throw options.createLotShouldThrow;
+    },
+    async createStockMovements(data) {
+      state.createStockMovementCalls.push(...data);
+      if (options.createMovementShouldThrow) throw options.createMovementShouldThrow;
     },
     async createAuditLog(data: AuditLogInput) {
       state.createAuditLogCalls.push(data);

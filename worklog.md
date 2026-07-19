@@ -3134,3 +3134,92 @@ Stage Summary:
 - Removal scope (9 files): DELETE physical-count-page.tsx + 3 API routes; EDIT page.tsx (import/tab/case), permissions.ts (perm+label+comment), types.ts (PageTab), st35 test (remove legacy-apply describe), st38 test (remove legacy-apply describe).
 - DO NOT TOUCH: prisma/schema.prisma, reconciliation/, debug/, daily-weighing page+API+lib (Page B / ST-43).
 - No migration, no schema change, no DB write. Branch: st-44-remove-legacy-physical-count from 5cbaa0d.
+
+---
+Task ID: ST-47
+Agent: Codex
+Date: 2026-07-18
+Task: Add append-only StockMovement ledger and trusted baseline foundation
+
+Work Log:
+- Added additive Prisma models/enums and migration for StockMovement, StockBaseline, and StockBaselineItem.
+- Integrated deterministic ledger emission into Purchase, Sale, Sorting, and StockTransfer creation paths and append-only reversal emission into cancellation paths.
+- Added approved-baseline initialization, Thailand-date-safe closing-stock read model, adjustment builder, and dry-run-only historical backfill/reconciliation service.
+- Used read-only Production evidence to propose 2026-06-19 closing as the candidate baseline boundary; no Production writes or migration apply were performed.
+- Added 24 ST-47 tests; full regression passed 639 tests, TypeScript passed, targeted lint passed, and local production build passed.
+
+Stage Summary:
+- Branch: `st-47-stock-movement-ledger-baseline`, based on `origin/main` c66e38779ae5eb180aea21d7f0a0b9e57c5944b8.
+- Baseline values remain DRAFT/UNKNOWN pending explicit Owner review; no Production baseline exists.
+- Legacy/import Sorting/StockLot dates before normal operation remain classified as unsupported/ambiguous and are not silently backfilled.
+
+---
+Task ID: ST-47-REVIEW
+Agent: Codex
+Date: 2026-07-18
+Task: Independent Draft PR review and validated defect hardening
+
+Work Log:
+- Reviewed the approved PR head, linked Notion/Linear/GitHub context, complete ST-47 diff, migration, write paths, date/idempotency/reversal/read-model behavior, and ST-47 permissions surface.
+- Replaced compensated multi-step Sorting and StockTransfer creation with transaction-scoped stock, document, output-lot, and StockMovement writes.
+- Added rollback regression coverage for transfer creation, output-lot creation, ledger insertion, and FIFO mismatch failures.
+- Hardened baseline approval against empty evidence, duplicate/incomplete items, non-finite or negative weights, and missing authenticated approver identity.
+- Added the requested 0.10/0.20/0.38/1.70 precision regression and revalidated the additive migration on a fresh disposable PostgreSQL-compatible database.
+
+Stage Summary:
+- Full regression: 643 passed; ST-47 tests: 28 passed; TypeScript, lint, Prisma format/generate, and application production compilation passed.
+- Remaining design decisions are documented in Draft PR #17; no Production migration, baseline insert, backfill write, stock correction, merge, or Production deployment was performed.
+
+---
+Task ID: ST-47-ZAI-CONTINUATION
+Agent: Z.ai cloud workspace (main)
+Task: Continue ST-47/ST-43 from pushed GitHub state. Product-mapping gate, dry-run reconciliation, verify implementation completeness, push.
+
+Work Log:
+- Cloud workspace recovery: fetched all remotes. Verified origin/st-47=430252533c31d7f070dc198e63f82e9fdfc8d694 and origin/st-43=ed11fc99fad6c72fde90e4e585ae20141270f124 (exact matches). Did NOT access local-only Codex files.
+- Used dedicated git worktrees (/home/z/st47-work, /home/z/st43-work) to avoid branch-switching issues with the diverged local main.
+- Inspected both Draft PRs: PR #17 (ST-47, 22 files, 3 commits, base=main, mergeable=clean), PR #18 (ST-43, 6 files, 2 commits, base=st-47, mergeable=clean, correctly stacked). CI green on both. 0 review threads on both.
+- Read the full ST-47 implementation: StockMovement/StockBaseline/StockBaselineItem models (item-level effectiveStartDate), stock-movement-ledger.ts (calculateClosingStock with per-product boundaries, NOT_STARTED, six-decimal arithmetic, no double counting), stock-baseline-service.ts, stock-ledger-read-service.ts, stock-ledger-backfill.ts, st47-owner-product-boundaries.ts (58 products, all 3 Owner-approved mappings present).
+- Verified the existing Codex implementation (commit 4302525) already satisfies ALL task requirements: per-product effectiveStartDate, movements before start ignored, movements on start included (inclusive), NOT_STARTED for dates before start, no double counting, append-only idempotency. 33 ST-47 tests cover all required cases. No code changes needed.
+- Product-mapping gate: ran read-only Production verification. All 58 product IDs exist (0 missing). All mappings unique (0 ambiguous). The 3 Owner-approved mappings confirmed: อลูมิเนียมล้อแม็ก→prod_mqgp9dhn9ryniksnud8q714g, สายไฟอลูมิเนียมไม่ปอก→cmr7uoxjq0001mzw7705kqqe7 (2026-07-05), สายไฟไม่ปอก→cmr09vcvj0024l1052pb03lfk (2026-01-01).
+- Dry-run reconciliation: wrote scripts/st47-dry-run-reconciliation.ts (READ-ONLY, SELECT queries only). Ran against Production. Results: 4 OWNER_VALUE_MATCH (ขี้กลึงทองเหลืองเนื้อแดง=0, แท็บเล็ต=0, แผงวงจรติดสายไฟ=0, เปลือกสายไฟ=1000), 6 MATCH, 33 STOCKLOT_MISMATCH (expected for legacy pre-2026 products), 15 NOT_VERIFIED. สายไฟไม่ปอก: calc 995.40 vs owner 987.80, diff +7.6 kg (opening 925.5 needs Owner review).
+- ST-47 commit 027a4c3: added dry-run script. Verification: 648 tests pass/0 fail, typecheck, lint, prisma validate, prisma format, build all pass. CI run 29673560366 success. Vercel Preview 5507889454 success. Pushed (non-force, fast-forward 4302525..027a4c3). Remote head verified 027a4c33f8cdf0afa6618caf515bd63a15bce80c.
+- ST-43: merged new ST-47 head 027a4c3 into ST-43 (clean merge, no conflicts — only additive scripts/ file). ST-43 per-product boundary adaptation preserved (effectiveStartDate in calculateClosingStockBreakdown, NOT_STARTED state). Verification: 657 tests pass/0 fail (648 ST-47 + 9 ST-43), typecheck, lint, prisma validate, build all pass. CI run 29673614117 success. Vercel Preview 5507900013 success. Pushed (non-force, fast-forward ed11fc9..b1696d6). Remote head verified b1696d6bc63d6c21e13c70293aebfb5b96c53d75. Still stacked on PR #17.
+- Write-back: posted PR #17 comment (5014338841), PR #18 comment (5014338945), Issue #16 comment (5014340869, not closing), Issue #11 comment (5014340941, not closing). Created Notion doc at deployment-triggers/ST-47-43-STATUS-2026-07-19.md.
+
+Stage Summary:
+- ST-47 pushed head: 027a4c33f8cdf0afa6618caf515bd63a15bce80c (from 4302525, non-force).
+- ST-43 pushed head: b1696d6bc63d6c21e13c70293aebfb5b96c53d75 (from ed11fc9, non-force, stacked on ST-47).
+- Product-mapping gate: PASSED (58 products, 0 missing, 0 ambiguous).
+- Dry-run reconciliation: 4 OWNER_VALUE_MATCH, 6 MATCH, 33 STOCKLOT_MISMATCH, 15 NOT_VERIFIED. สายไฟไม่ปอก has +7.6 kg gap (needs Owner review).
+- All verification green on both branches (tests, typecheck, lint, prisma validate, build, CI, Vercel Preview).
+- No merge, no Production migration, no baseline insert, no StockMovement insert, no StockLot change, no Production deployment, no force-push.
+- Issues #11 and #16 remain OPEN. Not marked Done.
+- STATUS: READY FOR OWNER BASELINE APPROVAL (technical implementation complete; awaiting Owner review of สายไฟไม่ปอก opening gap + explicit baseline approval before any Production write).
+- Z.ai did NOT access or depend on local-only Codex files. All durable Z.ai changes committed and pushed. Z.ai cloud working trees are clean.
+
+---
+Task ID: ST-47-WIRE-VARIANCE
+Agent: Z.ai cloud workspace (main)
+Task: Finalize Owner-approved baseline evidence for สายไฟไม่ปอก. Preserve opening 925.50, document +7.60 accepted variance, do NOT force-adjust to 917.90.
+
+Work Log:
+- Verified exact remote heads: st-47=2958881, st-43=95b76cd (both match). Did NOT access local-only Codex files.
+- Inspected src/lib/st47-owner-product-boundaries.ts: สายไฟไม่ปอก already configured with effectiveStartDate=2026-01-01, startingWeight=925.5 (via DERIVED_OWNER_OPENINGS), currentTarget=987.8 (comparison value). No 917.90 value anywhere in codebase. The existing code was already correct — no opening value change needed.
+- Code changes (commit f24c5cc):
+  1. st47-owner-product-boundaries.ts: added OwnerAcceptedVariance interface + OWNER_ACCEPTED_VARIANCES export map with สายไฟไม่ปอก entry (approvedOpening 925.5, comparisonValue 987.8, acceptedVariance 7.6, comparisonDate 2026-07-18, note documenting opening NOT changed to 917.90).
+  2. scripts/st47-dry-run-reconciliation.ts: imported OWNER_ACCEPTED_VARIANCES, added OWNER_ACCEPTED_VARIANCE classification (checked before STOCKLOT_MISMATCH when ownerDiff matches the acceptedVariance), added acceptedVariance field to output.
+  3. tests/st47-stock-movement-ledger.test.ts: added test 30 verifying exact Owner decision — wire productId, effectiveStartDate 2026-01-01, startingWeight 925.5, currentTarget 987.8, OWNER_ACCEPTED_VARIANCES values, startingWeight NOT 917.9, calculateClosingStock produces 995.4 from 925.5 + movements (37.9+28.2+3.8), variance 7.6 vs 987.8.
+- Reran Production read-only dry-run reconciliation: สายไฟไม่ปอก now classifies as OWNER_ACCEPTED_VARIANCE (was STOCKLOT_MISMATCH). calculatedClosing=995.4, ownerConfirmedClosing=987.8, ownerDiff=7.6. All other 57 products unchanged.
+- Verification on f24c5cc: 649 tests pass/0 fail (648+1 new), typecheck, lint, prisma validate, prisma format, build all pass. CI run 29676664312 success. Vercel Preview success.
+- Pushed ST-47: f24c5ccb58ee9868bd96923ea6add8f6b125e17b (non-force, fast-forward from 2958881).
+- ST-43: merged ST-47 f24c5cc into ST-43 (clean merge, no conflicts). Verification on 55d6c2c: 658 tests pass/0 fail (657+1 new), typecheck, lint, build all pass. CI run 29676705446 success. Vercel Preview success. Pushed: 55d6c2cf25dab2b0c8c0444a36a6305679c7508d (non-force, fast-forward from 95b76cd, still stacked on PR #17).
+- Write-back: posted PR #17 comment, PR #18 comment, Issue #16 comment (not closing), Issue #11 comment (not closing). Created Notion doc at deployment-triggers/ST-47-WIRE-VARIANCE-2026-07-19.md.
+
+Stage Summary:
+- ST-47 pushed head: f24c5ccb58ee9868bd96923ea6add8f6b125e17b
+- ST-43 pushed head: 55d6c2cf25dab2b0c8c0444a36a6305679c7508d
+- Opening 925.50 kg preserved (NOT changed to 917.90). +7.60 kg variance documented as OWNER_ACCEPTED_VARIANCE.
+- All 57 other product mappings unchanged. No Production write, no migration, no baseline insert, no StockMovement insert, no StockLot change, no merge, no Production deployment.
+- Issues #11 and #16 remain OPEN. Not marked Done.
+- STATUS: READY FOR PRODUCTION RELEASE APPROVAL (baseline evidence finalized; awaiting separate Owner Production release approval).

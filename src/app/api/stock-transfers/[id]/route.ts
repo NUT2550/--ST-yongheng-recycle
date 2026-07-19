@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
+import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
 
 async function requireEditPermission(request: NextRequest) {
   const token = getTokenFromRequest(request);
@@ -127,6 +128,7 @@ export async function DELETE(
     }
 
     await db.$transaction(async (tx) => {
+      const cancelledAt = new Date();
       // STRICT CHECK: verify no output stock lot has been consumed downstream.
       // For each non-waste output item, find the StockLot created by this transfer
       // (source='TRANSFER', sourceId=id, productId=item.productId) and confirm its
@@ -171,11 +173,13 @@ export async function DELETE(
         where: { id },
         data: {
           isCancelled: true,
-          cancelledAt: new Date(),
+          cancelledAt,
           cancelledBy: auth.userId,
           cancelReason: reason || null,
         },
       });
+
+      await reverseSourceMovements(tx, 'STOCK_TRANSFER', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Transfer cancelled');
 
       // Audit log
       await tx.auditLog.create({
