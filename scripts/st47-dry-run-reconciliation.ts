@@ -8,7 +8,7 @@
  * Output: a reconciliation table for all mapped products.
  */
 import { PrismaClient } from '@prisma/client'
-import { ST47_OWNER_PRODUCT_BOUNDARIES, assertUniqueOwnerProductBoundaries } from '../src/lib/st47-owner-product-boundaries'
+import { ST47_OWNER_PRODUCT_BOUNDARIES, OWNER_ACCEPTED_VARIANCES, assertUniqueOwnerProductBoundaries } from '../src/lib/st47-owner-product-boundaries'
 
 const SUPABASE_POOLER_URL =
   'postgresql://postgres.wefqhunzjvsxciiwdhjx:8sY.%23thcN%24Bk5%25G@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1'
@@ -147,9 +147,16 @@ async function main() {
       const ownerTarget = b.currentTarget ?? ownerConfirmedClosing[b.ownerLabel]
       const stockLotDiff = stockLotTotal == null ? null : round6(calculatedClosing - stockLotTotal)
       const ownerDiff = ownerTarget == null ? null : round6(calculatedClosing - ownerTarget)
+      const acceptedVariance = OWNER_ACCEPTED_VARIANCES[b.ownerLabel]
 
       let classification = 'NOT_VERIFIED'
       if (!product) classification = 'MISSING_PRODUCT'
+      else if (acceptedVariance && ownerDiff !== null &&
+               Math.abs(round6(ownerDiff - acceptedVariance.acceptedVariance)) < 0.01) {
+        // Owner has explicitly approved the variance between calculated closing and
+        // the comparison value. The opening is preserved; the variance is documented.
+        classification = 'OWNER_ACCEPTED_VARIANCE'
+      }
       else if (ownerTarget != null && ownerDiff !== null && Math.abs(ownerDiff) < 0.01) classification = 'OWNER_VALUE_MATCH'
       else if (stockLotTotal != null && stockLotDiff !== null && Math.abs(stockLotDiff) < 0.01) classification = 'MATCH'
       else if (stockLotTotal != null && stockLotDiff !== null) classification = 'STOCKLOT_MISMATCH'
@@ -175,6 +182,7 @@ async function main() {
         ownerConfirmedClosing: ownerTarget ?? null,
         stockLotDiff,
         ownerDiff,
+        acceptedVariance: acceptedVariance ?? null,
         classification,
       }
     })
