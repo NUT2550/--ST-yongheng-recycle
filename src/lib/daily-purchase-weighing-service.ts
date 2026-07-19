@@ -118,7 +118,8 @@ export async function saveDailyPurchaseWeighing(
   repo: DailyPurchaseWeighingRepository,
   body: unknown,
   userId: string,
-  userName: string
+  userName: string,
+  aggregationOverride?: AggregationResult
 ): Promise<SaveOutcome> {
   // 1. Validate input
   const validation = validateWeighingPostInput(body);
@@ -130,7 +131,7 @@ export async function saveDailyPurchaseWeighing(
   // 2. Server-side aggregation
   let aggregation: AggregationResult;
   try {
-    aggregation = await aggregateDailyPurchasesWithRepository(repo, weighingDate, category);
+    aggregation = aggregationOverride || await aggregateDailyPurchasesWithRepository(repo, weighingDate, category);
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : 'unknown', status: 400 };
   }
