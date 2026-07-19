@@ -77,7 +77,9 @@ export function categorizeLot(source: string, sourceId: string): string {
   if (sourceId === 'manual-steel') return 'G_LEGACY_OPENING'
   if (source === 'SORTING') return 'D_SORTING_OUTPUT'
   if (source === 'SELL_CANCEL') return 'E_SELL_CANCEL'
-  if (source === 'BUY' && sourceId?.startsWith('cmr')) return 'B_MANUAL_PURCHASE'
+  // Any BUY source that isn't 'manual' or 'manual-steel' is a real BuyBill reference.
+  // No prefix heuristic — the sourceId is resolved deterministically via getBuyBillItemCost.
+  if (source === 'BUY') return 'B_MANUAL_PURCHASE'
   return 'K_UNKNOWN'
 }
 
