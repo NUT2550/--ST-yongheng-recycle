@@ -3197,3 +3197,29 @@ Stage Summary:
 - Issues #11 and #16 remain OPEN. Not marked Done.
 - STATUS: READY FOR OWNER BASELINE APPROVAL (technical implementation complete; awaiting Owner review of สายไฟไม่ปอก opening gap + explicit baseline approval before any Production write).
 - Z.ai did NOT access or depend on local-only Codex files. All durable Z.ai changes committed and pushed. Z.ai cloud working trees are clean.
+
+---
+Task ID: ST-47-WIRE-VARIANCE
+Agent: Z.ai cloud workspace (main)
+Task: Finalize Owner-approved baseline evidence for สายไฟไม่ปอก. Preserve opening 925.50, document +7.60 accepted variance, do NOT force-adjust to 917.90.
+
+Work Log:
+- Verified exact remote heads: st-47=2958881, st-43=95b76cd (both match). Did NOT access local-only Codex files.
+- Inspected src/lib/st47-owner-product-boundaries.ts: สายไฟไม่ปอก already configured with effectiveStartDate=2026-01-01, startingWeight=925.5 (via DERIVED_OWNER_OPENINGS), currentTarget=987.8 (comparison value). No 917.90 value anywhere in codebase. The existing code was already correct — no opening value change needed.
+- Code changes (commit f24c5cc):
+  1. st47-owner-product-boundaries.ts: added OwnerAcceptedVariance interface + OWNER_ACCEPTED_VARIANCES export map with สายไฟไม่ปอก entry (approvedOpening 925.5, comparisonValue 987.8, acceptedVariance 7.6, comparisonDate 2026-07-18, note documenting opening NOT changed to 917.90).
+  2. scripts/st47-dry-run-reconciliation.ts: imported OWNER_ACCEPTED_VARIANCES, added OWNER_ACCEPTED_VARIANCE classification (checked before STOCKLOT_MISMATCH when ownerDiff matches the acceptedVariance), added acceptedVariance field to output.
+  3. tests/st47-stock-movement-ledger.test.ts: added test 30 verifying exact Owner decision — wire productId, effectiveStartDate 2026-01-01, startingWeight 925.5, currentTarget 987.8, OWNER_ACCEPTED_VARIANCES values, startingWeight NOT 917.9, calculateClosingStock produces 995.4 from 925.5 + movements (37.9+28.2+3.8), variance 7.6 vs 987.8.
+- Reran Production read-only dry-run reconciliation: สายไฟไม่ปอก now classifies as OWNER_ACCEPTED_VARIANCE (was STOCKLOT_MISMATCH). calculatedClosing=995.4, ownerConfirmedClosing=987.8, ownerDiff=7.6. All other 57 products unchanged.
+- Verification on f24c5cc: 649 tests pass/0 fail (648+1 new), typecheck, lint, prisma validate, prisma format, build all pass. CI run 29676664312 success. Vercel Preview success.
+- Pushed ST-47: f24c5ccb58ee9868bd96923ea6add8f6b125e17b (non-force, fast-forward from 2958881).
+- ST-43: merged ST-47 f24c5cc into ST-43 (clean merge, no conflicts). Verification on 55d6c2c: 658 tests pass/0 fail (657+1 new), typecheck, lint, build all pass. CI run 29676705446 success. Vercel Preview success. Pushed: 55d6c2cf25dab2b0c8c0444a36a6305679c7508d (non-force, fast-forward from 95b76cd, still stacked on PR #17).
+- Write-back: posted PR #17 comment, PR #18 comment, Issue #16 comment (not closing), Issue #11 comment (not closing). Created Notion doc at deployment-triggers/ST-47-WIRE-VARIANCE-2026-07-19.md.
+
+Stage Summary:
+- ST-47 pushed head: f24c5ccb58ee9868bd96923ea6add8f6b125e17b
+- ST-43 pushed head: 55d6c2cf25dab2b0c8c0444a36a6305679c7508d
+- Opening 925.50 kg preserved (NOT changed to 917.90). +7.60 kg variance documented as OWNER_ACCEPTED_VARIANCE.
+- All 57 other product mappings unchanged. No Production write, no migration, no baseline insert, no StockMovement insert, no StockLot change, no merge, no Production deployment.
+- Issues #11 and #16 remain OPEN. Not marked Done.
+- STATUS: READY FOR PRODUCTION RELEASE APPROVAL (baseline evidence finalized; awaiting separate Owner Production release approval).
