@@ -3169,3 +3169,31 @@ Work Log:
 Stage Summary:
 - Full regression: 643 passed; ST-47 tests: 28 passed; TypeScript, lint, Prisma format/generate, and application production compilation passed.
 - Remaining design decisions are documented in Draft PR #17; no Production migration, baseline insert, backfill write, stock correction, merge, or Production deployment was performed.
+
+---
+Task ID: ST-47-ZAI-CONTINUATION
+Agent: Z.ai cloud workspace (main)
+Task: Continue ST-47/ST-43 from pushed GitHub state. Product-mapping gate, dry-run reconciliation, verify implementation completeness, push.
+
+Work Log:
+- Cloud workspace recovery: fetched all remotes. Verified origin/st-47=430252533c31d7f070dc198e63f82e9fdfc8d694 and origin/st-43=ed11fc99fad6c72fde90e4e585ae20141270f124 (exact matches). Did NOT access local-only Codex files.
+- Used dedicated git worktrees (/home/z/st47-work, /home/z/st43-work) to avoid branch-switching issues with the diverged local main.
+- Inspected both Draft PRs: PR #17 (ST-47, 22 files, 3 commits, base=main, mergeable=clean), PR #18 (ST-43, 6 files, 2 commits, base=st-47, mergeable=clean, correctly stacked). CI green on both. 0 review threads on both.
+- Read the full ST-47 implementation: StockMovement/StockBaseline/StockBaselineItem models (item-level effectiveStartDate), stock-movement-ledger.ts (calculateClosingStock with per-product boundaries, NOT_STARTED, six-decimal arithmetic, no double counting), stock-baseline-service.ts, stock-ledger-read-service.ts, stock-ledger-backfill.ts, st47-owner-product-boundaries.ts (58 products, all 3 Owner-approved mappings present).
+- Verified the existing Codex implementation (commit 4302525) already satisfies ALL task requirements: per-product effectiveStartDate, movements before start ignored, movements on start included (inclusive), NOT_STARTED for dates before start, no double counting, append-only idempotency. 33 ST-47 tests cover all required cases. No code changes needed.
+- Product-mapping gate: ran read-only Production verification. All 58 product IDs exist (0 missing). All mappings unique (0 ambiguous). The 3 Owner-approved mappings confirmed: อลูมิเนียมล้อแม็ก→prod_mqgp9dhn9ryniksnud8q714g, สายไฟอลูมิเนียมไม่ปอก→cmr7uoxjq0001mzw7705kqqe7 (2026-07-05), สายไฟไม่ปอก→cmr09vcvj0024l1052pb03lfk (2026-01-01).
+- Dry-run reconciliation: wrote scripts/st47-dry-run-reconciliation.ts (READ-ONLY, SELECT queries only). Ran against Production. Results: 4 OWNER_VALUE_MATCH (ขี้กลึงทองเหลืองเนื้อแดง=0, แท็บเล็ต=0, แผงวงจรติดสายไฟ=0, เปลือกสายไฟ=1000), 6 MATCH, 33 STOCKLOT_MISMATCH (expected for legacy pre-2026 products), 15 NOT_VERIFIED. สายไฟไม่ปอก: calc 995.40 vs owner 987.80, diff +7.6 kg (opening 925.5 needs Owner review).
+- ST-47 commit 027a4c3: added dry-run script. Verification: 648 tests pass/0 fail, typecheck, lint, prisma validate, prisma format, build all pass. CI run 29673560366 success. Vercel Preview 5507889454 success. Pushed (non-force, fast-forward 4302525..027a4c3). Remote head verified 027a4c33f8cdf0afa6618caf515bd63a15bce80c.
+- ST-43: merged new ST-47 head 027a4c3 into ST-43 (clean merge, no conflicts — only additive scripts/ file). ST-43 per-product boundary adaptation preserved (effectiveStartDate in calculateClosingStockBreakdown, NOT_STARTED state). Verification: 657 tests pass/0 fail (648 ST-47 + 9 ST-43), typecheck, lint, prisma validate, build all pass. CI run 29673614117 success. Vercel Preview 5507900013 success. Pushed (non-force, fast-forward ed11fc9..b1696d6). Remote head verified b1696d6bc63d6c21e13c70293aebfb5b96c53d75. Still stacked on PR #17.
+- Write-back: posted PR #17 comment (5014338841), PR #18 comment (5014338945), Issue #16 comment (5014340869, not closing), Issue #11 comment (5014340941, not closing). Created Notion doc at deployment-triggers/ST-47-43-STATUS-2026-07-19.md.
+
+Stage Summary:
+- ST-47 pushed head: 027a4c33f8cdf0afa6618caf515bd63a15bce80c (from 4302525, non-force).
+- ST-43 pushed head: b1696d6bc63d6c21e13c70293aebfb5b96c53d75 (from ed11fc9, non-force, stacked on ST-47).
+- Product-mapping gate: PASSED (58 products, 0 missing, 0 ambiguous).
+- Dry-run reconciliation: 4 OWNER_VALUE_MATCH, 6 MATCH, 33 STOCKLOT_MISMATCH, 15 NOT_VERIFIED. สายไฟไม่ปอก has +7.6 kg gap (needs Owner review).
+- All verification green on both branches (tests, typecheck, lint, prisma validate, build, CI, Vercel Preview).
+- No merge, no Production migration, no baseline insert, no StockMovement insert, no StockLot change, no Production deployment, no force-push.
+- Issues #11 and #16 remain OPEN. Not marked Done.
+- STATUS: READY FOR OWNER BASELINE APPROVAL (technical implementation complete; awaiting Owner review of สายไฟไม่ปอก opening gap + explicit baseline approval before any Production write).
+- Z.ai did NOT access or depend on local-only Codex files. All durable Z.ai changes committed and pushed. Z.ai cloud working trees are clean.
