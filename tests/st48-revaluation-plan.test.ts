@@ -176,3 +176,122 @@ describe('ST-48 Hybrid zero-cost revaluation plan', () => {
     }
   })
 })
+
+// ============ Legacy exclusion tests (Phase 2) ============
+
+import { KNOWN_LEGACY_LOTS, isLegacyLot, getLegacyGuard, verifyLegacyGuard } from '../src/lib/st48-revaluation-plan'
+
+describe('ST-48 legacy exclusion', () => {
+  test('18. all four legacy lots are excluded', async () => {
+    const plan = await generateRevaluationPlan(makeDeps({
+      async getZeroCostActiveLots() {
+        return [
+          ...KNOWN_LEGACY_LOTS.map(l => ({
+            id: l.lotId, productId: l.productId, productName: 'Legacy Lot',
+            remainingWeight: l.expectedRemainingWeight, costPerKg: 0,
+            dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'),
+            source: 'BUY', sourceId: 'manual',
+          })),
+          { id: 'lot-resolved', productId: 'p1', productName: 'Resolved Lot', remainingWeight: 100, costPerKg: 0, dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'), source: 'BUY', sourceId: 'manual' },
+        ]
+      },
+    }), '2026-07-19T13:40:07Z')
+    const legacyLots = plan.eligibleLots.filter(l => l.derivationMethod === 'KNOWN_LEGACY_ZERO_COST')
+    expect(legacyLots.length).toBe(4)
+    for (const l of legacyLots) {
+      expect(l.proposedCostPerKg).toBeNull()
+      expect(l.afterValue).toBeNull()
+    }
+  })
+
+  test('19. exclusion is deterministic', () => {
+    expect(KNOWN_LEGACY_LOTS.length).toBe(4)
+    // Verify all 4 lot IDs are unique
+    const ids = KNOWN_LEGACY_LOTS.map(l => l.lotId)
+    expect(new Set(ids).size).toBe(4)
+  })
+
+  test('20. exclusion requires matching Product ID', () => {
+    const guard = KNOWN_LEGACY_LOTS[0]
+    const error = verifyLegacyGuard(guard.lotId, 'wrong-product-id', guard.expectedRemainingWeight)
+    expect(error).toContain('productId mismatch')
+  })
+
+  test('21. exclusion requires expected remainingWeight', () => {
+    const guard = KNOWN_LEGACY_LOTS[0]
+    const error = verifyLegacyGuard(guard.lotId, guard.productId, 999.9)
+    expect(error).toContain('remainingWeight mismatch')
+  })
+
+  test('22. a mismatched legacy lot stops the plan', async () => {
+    // If a legacy lot's remainingWeight doesn't match the guard, the plan should throw
+    const guard = KNOWN_LEGACY_LOTS[0]
+    try {
+      await generateRevaluationPlan(makeDeps({
+        async getZeroCostActiveLots() {
+          return [{ id: guard.lotId, productId: guard.productId, productName: 'Legacy', remainingWeight: 999, costPerKg: 0, dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'), source: 'BUY', sourceId: 'manual' }]
+        },
+      }), '2026-07-19T13:40:07Z')
+      expect(true).toBe(false) // should have thrown
+    } catch (e: any) {
+      expect(e.message).toContain('legacy guard mismatch')
+    }
+  })
+
+  test('23. no other zero-cost lot is silently excluded', () => {
+    // Only the 4 known legacy lots should be excluded
+    expect(isLegacyLot('cmr0kk5va002ylb04x87wh44s')).toBe(true)
+    expect(isLegacyLot('some-other-lot-id')).toBe(false)
+  })
+
+  test('24. rerun remains deterministic', async () => {
+    const deps = makeDeps({
+      async getZeroCostActiveLots() {
+        return KNOWN_LEGACY_LOTS.map(l => ({
+          id: l.lotId, productId: l.productId, productName: 'Legacy',
+          remainingWeight: l.expectedRemainingWeight, costPerKg: 0,
+          dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'),
+          source: 'BUY', sourceId: 'manual',
+        }))
+      },
+    })
+    const plan1 = await generateRevaluationPlan(deps, '2026-07-19T13:40:07Z')
+    const plan2 = await generateRevaluationPlan(deps, '2026-07-19T13:40:07Z')
+    expect(plan2.legacyCount).toBe(plan1.legacyCount)
+    expect(plan2.eligibleForApplyCount).toBe(plan1.eligibleForApplyCount)
+  })
+
+  test('25. legacy lots retain cost 0', async () => {
+    const plan = await generateRevaluationPlan(makeDeps({
+      async getZeroCostActiveLots() {
+        return KNOWN_LEGACY_LOTS.map(l => ({
+          id: l.lotId, productId: l.productId, productName: 'Legacy',
+          remainingWeight: l.expectedRemainingWeight, costPerKg: 0,
+          dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'),
+          source: 'BUY', sourceId: 'manual',
+        }))
+      },
+    }), '2026-07-19T13:40:07Z')
+    for (const l of plan.eligibleLots) {
+      expect(l.currentCostPerKg).toBe(0)
+      expect(l.proposedCostPerKg).toBeNull()
+    }
+  })
+
+  test('26. eligible count is exactly derived, not hard-coded', async () => {
+    const plan = await generateRevaluationPlan(makeDeps({
+      async getZeroCostActiveLots() {
+        return [
+          ...KNOWN_LEGACY_LOTS.map(l => ({ id: l.lotId, productId: l.productId, productName: 'Legacy', remainingWeight: l.expectedRemainingWeight, costPerKg: 0, dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'), source: 'BUY', sourceId: 'manual' })),
+          { id: 'r1', productId: 'p1', productName: 'Resolved', remainingWeight: 100, costPerKg: 0, dateAdded: d('2026-06-21'), createdAt: d('2026-06-21'), source: 'BUY', sourceId: 'manual' },
+          { id: 'r2', productId: 'p2', productName: 'Resolved2', remainingWeight: 50, costPerKg: 0, dateAdded: d('2026-06-20'), createdAt: d('2026-06-20'), source: 'SORTING', sourceId: 'sort1' },
+        ]
+      },
+    }), '2026-07-19T13:40:07Z')
+    // 4 legacy + 2 resolved = 6 total, eligibleForApply = 2
+    expect(plan.totalLots).toBe(6)
+    expect(plan.legacyCount).toBe(4)
+    expect(plan.eligibleForApplyCount).toBe(2)
+    expect(plan.unresolvedCount).toBe(0)
+  })
+})
