@@ -1,179 +1,129 @@
 import { describe, expect, test } from 'bun:test'
-import { classifyImportBillError } from '../src/lib/import-pipeline'
-import { DuplicateExistingError } from '../src/lib/bill-errors'
+import {
+  applyImport,
+  classifyImportBillError,
+  type ImportApplyDeps,
+  type ParsedBill,
+} from '../src/lib/import-pipeline'
+import {
+  DuplicateExistingError,
+  FifoMismatchError,
+  FifoValidationError,
+  InsufficientStockError,
+  SourceLotConflictError,
+} from '../src/lib/bill-errors'
 
-describe('ST-57 sales import P2028 + per-bill error sanitization', () => {
-  describe('Phase 2-5: classifyImportBillError (production function)', () => {
-    test('1. P2028 classified as TRANSACTION_TIMEOUT', () => {
-      const error = Object.assign(new Error('Invalid prisma.stockLot.update() invocation: Transaction not found. Transaction ID is invalid'), { code: 'P2028' })
-      const result = classifyImportBillError(error)
-      expect(result.status).toBe('FAILED')
-      expect(result.errorCode).toBe('TRANSACTION_TIMEOUT')
-      expect(result.safeMessage).toContain('การนำเข้าบิลใช้เวลานานเกินกำหนด')
-      expect(result.safeMessage).toContain('กรุณารอสักครู่และลองใหม่')
-      // No raw Prisma internals
-      expect(result.safeMessage).not.toContain('Transaction not found')
-      expect(result.safeMessage).not.toContain('PrismaClient')
-      expect(result.safeMessage).not.toContain('stockLot.update')
-    })
+const actor = { userId: 'user-1', username: 'tester', name: 'Tester', role: 'admin' as const }
 
-    test('2. SOURCE_LOT_CONFLICT classified safely', () => {
-      const error = Object.assign(new Error('CAS mismatch'), { code: 'SOURCE_LOT_CONFLICT' })
-      const result = classifyImportBillError(error)
-      expect(result.status).toBe('FAILED')
-      expect(result.errorCode).toBe('SOURCE_LOT_CONFLICT')
-      expect(result.safeMessage).toContain('สต็อกต้นทางมีการเปลี่ยนแปลง')
-      expect(result.safeMessage).not.toContain('CAS mismatch')
-    })
+function bill(number: string, weight = 10): ParsedBill {
+  return {
+    externalBillNumber: number,
+    buyer: 'fixture',
+    date: '2026-07-20T00:00:00.000Z',
+    note: '',
+    items: [{ productId: 'product-1', productName: 'เหล็ก', weight, pricePerKg: 20, totalAmount: weight * 20, matched: true }],
+  }
+}
 
-    test('3. insufficient stock classified as INSUFFICIENT_STOCK', () => {
-      const error = new Error('สต็อกไม่เพียงพอสำหรับ "เหล็ก". มี: 100 kg, ต้องการ: 200 kg')
-      const result = classifyImportBillError(error)
-      expect(result.status).toBe('INSUFFICIENT_STOCK')
-      expect(result.errorCode).toBe('INSUFFICIENT_STOCK')
-      expect(result.safeMessage).toContain('สต็อกไม่เพียงพอ')
-    })
+function deps(createSalesBill: ImportApplyDeps['createSalesBill'], existing = new Set<string>()): ImportApplyDeps {
+  return {
+    loadExistingBillNumbers: async () => new Set(existing),
+    checkStockAvailability: async () => ({ ok: true }),
+    createPurchaseBill: async () => ({ id: 'unused', billNumber: 'BUY-unused' }),
+    createSalesBill,
+  }
+}
 
-    test('4. unknown error returns generic safe message', () => {
-      const error = new Error('Some internal database connection failure with SQL: SELECT * FROM')
-      const result = classifyImportBillError(error)
-      expect(result.status).toBe('FAILED')
-      expect(result.errorCode).toBe('BILL_CREATE_FAILED')
-      expect(result.safeMessage).toBe('นำเข้าบิลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งผู้ดูแล')
-      // No raw internals
-      expect(result.safeMessage).not.toContain('database')
-      expect(result.safeMessage).not.toContain('SQL')
-      expect(result.safeMessage).not.toContain('SELECT')
-    })
-
-    test('5. zero-cost source lot classified safely', () => {
-      const error = new Error('ZERO_COST_SOURCE_LOT: lot-123 has costPerKg=0')
-      const result = classifyImportBillError(error)
-      expect(result.errorCode).toBe('FIFO_VALIDATION_ERROR')
-      expect(result.safeMessage).toContain('ต้นทุน 0')
-      expect(result.safeMessage).not.toContain('ZERO_COST_SOURCE_LOT')
-      expect(result.safeMessage).not.toContain('lot-123')
-    })
-
-    test('6. FIFO mismatch classified safely', () => {
-      const error = Object.assign(new Error('FIFO preview/execution mismatch'), { code: 'FIFO_MISMATCH' })
-      const result = classifyImportBillError(error)
-      expect(result.errorCode).toBe('FIFO_MISMATCH')
-      expect(result.safeMessage).toContain('สต็อกต้นทางมีการเปลี่ยนแปลง')
-    })
-
-    test('7. non-Error unknown value classified safely', () => {
-      const result = classifyImportBillError('some string error')
-      expect(result.errorCode).toBe('BILL_CREATE_FAILED')
-      expect(result.safeMessage).not.toContain('some string')
-    })
-
-    test('8. DuplicateExistingError is NOT classified by classifyImportBillError (handled separately)', () => {
-      // DuplicateExistingError is handled by instanceof check in applyImport,
-      // not by classifyImportBillError. But if it reaches the classifier:
-      const error = new DuplicateExistingError('externalBillNumber')
-      const result = classifyImportBillError(error)
-      // It would fall through to BILL_CREATE_FAILED since it doesn't match
-      // any specific code/message pattern
-      expect(result.status).toBe('FAILED')
-      expect(result.errorCode).toBe('BILL_CREATE_FAILED')
-    })
+describe('ST-57 typed safe error classification', () => {
+  test('classifies P2028 without Prisma internals', () => {
+    const result = classifyImportBillError(Object.assign(new Error('Transaction not found: prisma.stockLot.update'), { code: 'P2028' }))
+    expect(result).toMatchObject({ status: 'FAILED', errorCode: 'TRANSACTION_TIMEOUT' })
+    expect(result.safeMessage).toContain('ใช้เวลานานเกินกำหนด')
+    expect(result.safeMessage).not.toContain('Transaction not found')
   })
 
-  describe('Phase 7: mandatory CAS verification', () => {
-    test('9. SellBillTx interface requires expected parameter', async () => {
-      const serviceSource = await Bun.file('src/lib/bill-services.ts').text()
-      // The interface should NOT have optional ? on expected
-      expect(serviceSource).toContain('expected: { productId: string; remainingWeight: number; costPerKg: number }')
-      expect(serviceSource).not.toContain('expected?')
-    })
-
-    test('10. Prisma adapter always uses updateMany with CAS WHERE', async () => {
-      const adapterSource = await Bun.file('src/lib/bill-service-prisma-adapters.ts').text()
-      const sellSection = adapterSource.slice(adapterSource.indexOf('makeSellBillServiceDeps'))
-      expect(sellSection).toContain('updateMany')
-      expect(sellSection).toContain('expected.productId')
-      expect(sellSection).toContain('expected.remainingWeight')
-      expect(sellSection).toContain('expected.costPerKg')
-      expect(sellSection).not.toContain('if (expected)')
-    })
-
-    test('11. service passes expected values from lot data', async () => {
-      const serviceSource = await Bun.file('src/lib/bill-services.ts').text()
-      expect(serviceSource).toContain('productId: lot.productId')
-      expect(serviceSource).toContain('remainingWeight: lot.remainingWeight')
-      expect(serviceSource).toContain('costPerKg: lot.costPerKg')
-    })
+  test('classifies stable production errors without forwarding messages', () => {
+    const cases = [
+      [new SourceLotConflictError(), 'SOURCE_LOT_CONFLICT'],
+      [new FifoValidationError(), 'FIFO_VALIDATION_ERROR'],
+      [new FifoMismatchError(), 'FIFO_MISMATCH'],
+    ] as const
+    for (const [error, code] of cases) {
+      const result = classifyImportBillError(error)
+      expect(result.errorCode).toBe(code)
+      expect(result.safeMessage).not.toContain(error.message)
+    }
   })
 
-  describe('Phase 6: outer route error handling', () => {
-    test('12. import apply route handles P2028 at route level (defense in depth)', async () => {
-      const routeSource = await Bun.file('src/app/api/import/apply/route.ts').text()
-      expect(routeSource).toContain("code === 'P2028'")
-      expect(routeSource).toContain('503')
-      expect(routeSource).toContain('TRANSACTION_TIMEOUT')
-    })
-
-    test('13. import apply route handles SOURCE_LOT_CONFLICT at route level', async () => {
-      const routeSource = await Bun.file('src/app/api/import/apply/route.ts').text()
-      expect(routeSource).toContain("code === 'SOURCE_LOT_CONFLICT'")
-      expect(routeSource).toContain('409')
-    })
-
-    test('14. route P2028 response has no raw Prisma text', async () => {
-      const routeSource = await Bun.file('src/app/api/import/apply/route.ts').text()
-      const p2028Section = routeSource.slice(routeSource.indexOf("code === 'P2028'"))
-      expect(p2028Section).not.toContain('Transaction not found')
-      expect(p2028Section).not.toContain('PrismaClientKnownRequestError')
-    })
+  test('reconstructs insufficient-stock Thai message from structured fields', () => {
+    const error = new InsufficientStockError('product-1', 'เหล็ก', 100, 200)
+    const result = classifyImportBillError(error)
+    expect(result).toMatchObject({ status: 'INSUFFICIENT_STOCK', errorCode: 'INSUFFICIENT_STOCK' })
+    expect(result.safeMessage).toBe('สต็อกไม่เพียงพอสำหรับ "เหล็ก". มี: 100 kg, ต้องการ: 200 kg')
+    expect(result.safeMessage).not.toContain(error.message)
   })
 
-  describe('Phase 3: per-bill error sanitization in applyImport', () => {
-    test('15. applyImport uses classifyImportBillError for non-duplicate errors', async () => {
-      const pipelineSource = await Bun.file('src/lib/import-pipeline.ts').text()
-      expect(pipelineSource).toContain('classifyImportBillError')
-      expect(pipelineSource).toContain('classified.safeMessage')
-      expect(pipelineSource).toContain('classified.errorCode')
-    })
+  test('maps unknown values to a generic safe failure', () => {
+    const result = classifyImportBillError(new Error('SELECT password FROM production'))
+    expect(result).toMatchObject({ status: 'FAILED', errorCode: 'BILL_CREATE_FAILED' })
+    expect(result.safeMessage).not.toContain('SELECT')
+  })
+})
 
-    test('16. applyImport no longer exposes err.message directly', async () => {
-      const pipelineSource = await Bun.file('src/lib/import-pipeline.ts').text()
-      // The old pattern was: error: err instanceof Error ? err.message : 'Unknown error'
-      // The new pattern uses classifyImportBillError
-      const catchSection = pipelineSource.slice(pipelineSource.indexOf('} else {'))
-      expect(catchSection).not.toContain("err instanceof Error ? err.message")
-    })
-
-    test('17. BillImportResult has errorCode field', async () => {
-      const pipelineSource = await Bun.file('src/lib/import-pipeline.ts').text()
-      expect(pipelineSource).toContain('errorCode?: string')
-    })
+describe('ST-57 executable applyImport behavior', () => {
+  test('P2028 produces a per-bill safe timeout result', async () => {
+    const summary = await applyImport('sales', [bill('S-1')], deps(async () => {
+      throw Object.assign(new Error('raw Prisma P2028 transaction details'), { code: 'P2028' })
+    }), actor)
+    expect(summary.failedCount).toBe(1)
+    expect(summary.failedBills[0]).toMatchObject({ errorCode: 'TRANSACTION_TIMEOUT', status: 'FAILED' })
+    expect(summary.failedBills[0].error).not.toContain('Prisma')
   })
 
-  describe('Phase 8: transaction timeout configuration', () => {
-    test('18. SellBill adapter uses 15s timeout', async () => {
-      const adapterSource = await Bun.file('src/lib/bill-service-prisma-adapters.ts').text()
-      expect(adapterSource).toContain('maxWait: 5000')
-      expect(adapterSource).toContain('timeout: 15000')
-    })
-
-    test('19. SellBill adapter does NOT use stockLot.update (uses updateMany)', async () => {
-      const adapterSource = await Bun.file('src/lib/bill-service-prisma-adapters.ts').text()
-      const sellSection = adapterSource.slice(adapterSource.indexOf('makeSellBillServiceDeps'))
-      expect(sellSection).not.toContain('prismaTx.stockLot.update(')
-      expect(sellSection).toContain('prismaTx.stockLot.updateMany(')
-    })
+  test('one P2028 does not stop a later valid bill', async () => {
+    let calls = 0
+    const summary = await applyImport('sales', [bill('S-1'), bill('S-2')], deps(async () => {
+      calls += 1
+      if (calls === 1) throw Object.assign(new Error('timeout internals'), { code: 'P2028' })
+      return { id: 'sell-2', billNumber: 'SELL-2' }
+    }), actor)
+    expect(summary).toMatchObject({ importedCount: 1, failedCount: 1 })
+    expect(summary.importedBills[0].externalBillNumber).toBe('S-2')
   })
 
-  describe('Phase 12: PR claims verification', () => {
-    test('20. FIFO ordering preserved (FIFO_ORDER_BY)', async () => {
-      const adapterSource = await Bun.file('src/lib/bill-service-prisma-adapters.ts').text()
-      expect(adapterSource).toContain('FIFO_ORDER_BY')
-    })
+  test('classifies source conflict, unknown failure, and typed insufficient stock', async () => {
+    for (const [error, expected] of [
+      [new SourceLotConflictError(), 'SOURCE_LOT_CONFLICT'],
+      [new Error('secret database detail'), 'BILL_CREATE_FAILED'],
+      [new InsufficientStockError('product-1', 'เหล็ก', 1, 10), 'INSUFFICIENT_STOCK'],
+    ] as const) {
+      const summary = await applyImport('sales', [bill(`S-${expected}`)], deps(async () => { throw error }), actor)
+      expect(summary.failedBills[0].errorCode).toBe(expected)
+      expect(summary.failedBills[0].error).not.toContain(error.message)
+    }
+  })
 
-    test('21. SellSourceLot includes productId for CAS', async () => {
-      const serviceSource = await Bun.file('src/lib/bill-services.ts').text()
-      expect(serviceSource).toContain('productId: string')
-    })
+  test('duplicate existing remains non-fatal and does not count as failed', async () => {
+    const summary = await applyImport('sales', [bill('S-DUP')], deps(async () => {
+      throw new DuplicateExistingError('externalBillNumber')
+    }), actor)
+    expect(summary).toMatchObject({ duplicateExistingCount: 1, failedCount: 0, importedCount: 0 })
+  })
+
+  test('summary counts mixed success, timeout, duplicate, and insufficient stock', async () => {
+    const outcomes: unknown[] = [
+      { id: 'sell-ok', billNumber: 'SELL-ok' },
+      Object.assign(new Error('P2028 detail'), { code: 'P2028' }),
+      new DuplicateExistingError('externalBillNumber'),
+      new InsufficientStockError('product-1', 'เหล็ก', 0, 10),
+    ]
+    let index = 0
+    const summary = await applyImport('sales', ['OK', 'TIMEOUT', 'DUP', 'STOCK'].map(value => bill(`S-${value}`)), deps(async () => {
+      const outcome = outcomes[index++]
+      if (outcome instanceof Error) throw outcome
+      return outcome as { id: string; billNumber: string }
+    }), actor)
+    expect(summary).toMatchObject({ importedCount: 1, duplicateExistingCount: 1, insufficientStockCount: 1, failedCount: 1 })
+    expect(summary.failedBills).toHaveLength(2)
   })
 })

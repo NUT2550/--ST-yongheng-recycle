@@ -48,7 +48,13 @@ import {
 } from './stock-movement-ledger'
 import { isRealFormula } from './safe-math'
 import { normalizeBillNumber } from './bill-identity'
-import { DuplicateExistingError, isPrismaP2002, isP2002OnField } from './bill-errors'
+import {
+  DuplicateExistingError,
+  FifoValidationError,
+  InsufficientStockError,
+  isPrismaP2002,
+  isP2002OnField,
+} from './bill-errors'
 import type { AuthPayload } from './permissions'
 
 // DuplicateExistingError + isPrismaP2002 imported from ./bill-errors (no circular dependency)
@@ -540,8 +546,11 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
 
   const stockCheck = await deps.checkStockAvailability(input.items)
   if (stockCheck.ok === false) {
-    throw new Error(
-      `สต็อกไม่เพียงพอสำหรับ "${stockCheck.productName || stockCheck.productId}". มี: ${stockCheck.available} kg, ต้องการ: ${stockCheck.requested} kg`
+    throw new InsufficientStockError(
+      stockCheck.productId,
+      stockCheck.productName,
+      stockCheck.available,
+      stockCheck.requested,
     )
   }
 
@@ -589,14 +598,22 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
           sourceLotsForPreview
         )
         if (preview.success === false) {
-          throw new Error(preview.message)
+          if (preview.code === 'INSUFFICIENT_STOCK') {
+            throw new InsufficientStockError(
+              preview.sourceProductId,
+              undefined,
+              preview.totalAvailable || 0,
+              preview.sourceWeight,
+            )
+          }
+          throw new FifoValidationError()
         }
         const costValidation = validateSourceLotCosts(preview, {
           type: 'TRANSFER',
           hasNonWasteOutput: true,
         })
         if (costValidation.valid === false) {
-          throw new Error(costValidation.message)
+          throw new FifoValidationError()
         }
 
         // Actual FIFO deduction - same lot order as the preview (deterministic).

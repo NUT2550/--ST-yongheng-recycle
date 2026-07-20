@@ -42,6 +42,7 @@
  */
 
 import { DuplicateExistingError } from './bill-errors'
+import { CodedBillError, InsufficientStockError } from './bill-errors'
 import { normalizeBillNumber } from './bill-identity';
 export { normalizeBillNumber } from './bill-identity'
 
@@ -123,7 +124,6 @@ export function classifyImportBillError(error: unknown): {
   safeMessage: string
 } {
   const code = (error as { code?: string })?.code
-  const message = error instanceof Error ? error.message : String(error)
 
   // P2028: Prisma transaction timeout
   if (code === 'P2028') {
@@ -131,6 +131,15 @@ export function classifyImportBillError(error: unknown): {
       status: 'FAILED',
       errorCode: 'TRANSACTION_TIMEOUT',
       safeMessage: 'การนำเข้าบิลใช้เวลานานเกินกำหนด ระบบได้ยกเลิกรายการทั้งหมดแล้ว กรุณารอสักครู่และลองใหม่ หากยังเกิดซ้ำให้แจ้งผู้ดูแล',
+    }
+  }
+
+  if (error instanceof InsufficientStockError) {
+    const product = error.productName || error.productId
+    return {
+      status: 'INSUFFICIENT_STOCK',
+      errorCode: 'INSUFFICIENT_STOCK',
+      safeMessage: `สต็อกไม่เพียงพอสำหรับ "${product}". มี: ${error.available} kg, ต้องการ: ${error.requested} kg`,
     }
   }
 
@@ -143,17 +152,8 @@ export function classifyImportBillError(error: unknown): {
     }
   }
 
-  // Insufficient stock (from pre-transaction check)
-  if (message.includes('สต็อกไม่เพียงพอ')) {
-    return {
-      status: 'INSUFFICIENT_STOCK',
-      errorCode: 'INSUFFICIENT_STOCK',
-      safeMessage: message, // already a safe Thai business message
-    }
-  }
-
   // FIFO validation errors (ST-20)
-  if (message.includes('ZERO_COST_SOURCE_LOT') || message.includes('NEGATIVE_COST_SOURCE_LOT') || message.includes('ZERO_SOURCE_COST')) {
+  if (error instanceof CodedBillError && code === 'FIFO_VALIDATION_ERROR') {
     return {
       status: 'FAILED',
       errorCode: 'FIFO_VALIDATION_ERROR',
@@ -162,7 +162,7 @@ export function classifyImportBillError(error: unknown): {
   }
 
   // FIFO mismatch
-  if (message.includes('FIFO preview/execution mismatch') || code === 'FIFO_MISMATCH') {
+  if (code === 'FIFO_MISMATCH') {
     return {
       status: 'FAILED',
       errorCode: 'FIFO_MISMATCH',

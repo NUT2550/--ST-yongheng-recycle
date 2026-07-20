@@ -20,6 +20,7 @@ import type {
   SellBillTx,
   SellBillCreatedBill,
 } from './bill-services';
+import { SourceLotConflictError } from './bill-errors';
 
 /**
  * Production Prisma adapter for createBuyBillService.
@@ -109,9 +110,7 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
               data: { remainingWeight: newRemaining },
             });
             if (result.count !== 1) {
-              const err = new Error('สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างบันทึก ระบบยกเลิกรายการทั้งหมดแล้ว กรุณาโหลดข้อมูลใหม่และบันทึกอีกครั้ง') as Error & { code?: string };
-              err.code = 'SOURCE_LOT_CONFLICT';
-              throw err;
+              throw new SourceLotConflictError();
             }
           },
           createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
