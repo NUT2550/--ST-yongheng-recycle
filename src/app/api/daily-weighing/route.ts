@@ -92,24 +92,21 @@ export async function POST(request: NextRequest) {
       const result = await postSaveController(repo, authPayload, body);
       return NextResponse.json(result.data, { status: result.status });
     }
-    const closing = await getExpectedClosingStock(input.weighingDate, input.category);
-    if (closing.baselineStatus !== 'APPROVED') {
-      return NextResponse.json({ error: 'ต้องมีฐานสต็อกที่ Owner อนุมัติก่อนบันทึกผลเปรียบเทียบ' }, { status: 409 });
-    }
-    const notStarted = closing.items.filter(item => item.state === 'NOT_STARTED')
-    if (notStarted.length > 0) {
-      return NextResponse.json({ error: `ยังไม่ถึงวันเริ่มนับสต็อก: ${notStarted.map(item => item.productName).join(', ')}` }, { status: 409 });
-    }
+    // ST-53: use daily movements (selected-day only), not cumulative closing stock.
+    // No baseline approval required for daily-only save.
+    // No NOT_STARTED gate — daily movements don't have an effective-start boundary.
+    const daily = await getDailyMovements(input.weighingDate, input.category);
     const aggregation = {
       date: input.weighingDate,
       category: input.category,
-      totalBills: closing.items.reduce((sum, item) => sum + item.movementCount, 0),
-      productCount: closing.items.length,
-      totalPurchaseWeight: closing.items.reduce((sum, item) => sum + item.purchaseInWeight, 0),
-      totalSortingWeight: closing.items.reduce((sum, item) => sum + item.sortingOutputInWeight, 0),
-      totalDismantlingWeight: closing.items.reduce((sum, item) => sum + item.transferOutputInWeight, 0),
-      totalExpectedWeight: closing.items.reduce((sum, item) => sum + (item.expectedClosingWeight ?? 0), 0),
-      items: closing.items.map(item => ({
+      totalBills: daily.items.reduce((sum, item) => sum + item.movementCount, 0),
+      productCount: daily.items.length,
+      totalPurchaseWeight: daily.items.reduce((sum, item) => sum + item.purchaseInWeight, 0),
+      totalSortingWeight: daily.items.reduce((sum, item) => sum + item.sortingOutputInWeight, 0),
+      totalDismantlingWeight: daily.items.reduce((sum, item) => sum + item.transferOutputInWeight, 0),
+      // ST-53: totalExpectedWeight = sum of dailyNet (not cumulative closing stock)
+      totalExpectedWeight: daily.totalDailyNet,
+      items: daily.items.map(item => ({
         productId: item.productId,
         productName: item.productName,
         purchaseWeight: item.purchaseInWeight,
@@ -118,7 +115,8 @@ export async function POST(request: NextRequest) {
         sortingBillCount: item.movementCounts.SORTING_OUTPUT_IN || 0,
         dismantlingOutputWeight: item.transferOutputInWeight,
         dismantlingRecordCount: item.movementCounts.TRANSFER_OUTPUT_IN || 0,
-        expectedTotalWeight: item.expectedClosingWeight ?? 0,
+        // ST-53: expectedTotalWeight = dailyNet (selected-day system net, not cumulative closing)
+        expectedTotalWeight: item.dailyNet,
         totalAmount: 0,
       })),
     };
