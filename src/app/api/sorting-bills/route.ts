@@ -3,62 +3,20 @@ import type { Prisma } from '@prisma/client';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { generateBillNumber, writeAuditLog } from '@/lib/bill-helpers';
-import { buildSortingMovements } from '@/lib/stock-movement-ledger';
 import { isRealFormula } from '@/lib/safe-math';
 import {
   previewFifoDeduction,
   validateSourceLotCosts,
-  verifyFifoMatch,
   buildFifoAuditDetails,
   FIFO_ORDER_BY,
 } from '@/lib/fifo-validation';
-
-// Helper: Deduct stock using FIFO and return weighted average cost
-async function deductStockFIFO(
-  productId: string,
-  weightToDeduct: number,
-  tx: Parameters<Parameters<typeof db.$transaction>[0]>[0]
-): Promise<{ costPerKg: number; totalCost: number; deductedLots: { id: string; deducted: number }[] }> {
-  const lots = await tx.stockLot.findMany({
-    where: {
-      productId,
-      remainingWeight: { gt: 0 },
-    },
-    orderBy: FIFO_ORDER_BY,
-  });
-
-  const totalAvailable = lots.reduce((sum, l) => sum + l.remainingWeight, 0);
-  if (totalAvailable < weightToDeduct) {
-    throw new Error(
-      `Insufficient stock for product ${productId}. Available: ${totalAvailable}, Requested: ${weightToDeduct}`
-    );
-  }
-
-  let remaining = weightToDeduct;
-  let totalCost = 0;
-  const deductedLots: { id: string; deducted: number }[] = [];
-
-  for (const lot of lots) {
-    if (remaining <= 0) break;
-
-    const deductFromLot = Math.min(lot.remainingWeight, remaining);
-    totalCost += deductFromLot * lot.costPerKg;
-    remaining -= deductFromLot;
-
-    await tx.stockLot.update({
-      where: { id: lot.id },
-      data: { remainingWeight: lot.remainingWeight - deductFromLot },
-    });
-    deductedLots.push({ id: lot.id, deducted: deductFromLot });
-  }
-
-  const costPerKg = weightToDeduct > 0 ? totalCost / weightToDeduct : 0;
-  return {
-    costPerKg: Math.round(costPerKg * 100) / 100,
-    totalCost: Math.round(totalCost * 100) / 100,
-    deductedLots,
-  };
-}
+import {
+  createSortingBillTransaction,
+  mapPrismaError,
+  SortingError,
+  type SortingBillInput,
+} from '@/lib/sorting-transaction-service';
+import { createPrismaSortingDeps } from '@/lib/sorting-prisma-adapter';
 
 // POST /api/sorting-bills - Create a sorting bill
 export async function POST(request: NextRequest) {
@@ -138,14 +96,12 @@ export async function POST(request: NextRequest) {
     }
 
     // --- ST-20 Phase 2: Pre-flight FIFO validation (no DB writes) ---
-    // Detect zero-cost source lot contamination BEFORE any deduction.
     const sourceProduct = await db.product.findUnique({
       where: { id: sourceProductId },
       select: { name: true },
     });
     const sourceProductName = sourceProduct?.name || sourceProductId;
 
-    // Determine if there are non-waste outputs (with positive weight)
     const hasNonWasteOutput = items.some((i) => !i.isWaste && i.weight > 0);
 
     const fifoPreview = previewFifoDeduction(
@@ -175,7 +131,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate source lot costs against SortingBill policy
     const costValidation = validateSourceLotCosts(fifoPreview, {
       type: 'SORTING',
       hasNonWasteOutput,
@@ -195,127 +150,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- Generate bill number BEFORE the transaction (avoids pgbouncer tx timeout) ---
+    // --- Generate bill number BEFORE the transaction ---
     const billNumber = await generateBillNumber(db, 'SORT');
 
-    // StockLot deduction, bill/output creation, and ledger emission commit together.
-    const transactionResult = await db.$transaction(async (tx) => {
-    const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, tx);
-    const sourceCostPerKg = fifoResult.costPerKg;
+    // --- Build service input ---
+    const serviceInput: SortingBillInput = {
+      date,
+      sourceProductId,
+      sourceWeight,
+      sourceWeightExpression,
+      sourcePricePerKg,
+      weighedTotal,
+      weighedTotalExpression,
+      roomNumber,
+      note,
+      items,
+      billNumber,
+    };
 
-    // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
-    // (detects race conditions / concurrent modifications between preview and deduction)
-    if (!verifyFifoMatch(fifoPreview, { ...fifoResult, deductedLots: fifoResult.deductedLots })) {
-      // Throwing here rolls the deduction back with the transaction.
-      console.error(
-        `[ST-20] FIFO mismatch detected | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`
-      );
-      const mismatch = new Error('FIFO preview/execution mismatch') as Error & { code?: string };
-      mismatch.code = 'FIFO_MISMATCH';
-      throw mismatch;
-    }
+    // --- Execute the transaction via the extracted service ---
+    const deps = createPrismaSortingDeps();
+    const result = await createSortingBillTransaction(deps, serviceInput, fifoPreview);
+    const { sortingBill: created, sourceCostPerKg, lossWeight, lossCost } = result;
 
-    // Calculate loss = sourceWeight - sum(item weights)
-    const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-    const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
-    const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
-
-    // Build sorting items with new bonus fields + weightExpression
-    const sortingItems = items.map((item) => ({
-      productId: item.productId,
-      weight: item.weight,
-      weightExpression: isRealFormula(item.weightExpression)
-        ? item.weightExpression!.trim()
-        : null,
-      isWaste: item.isWaste,
-      costPerKg: item.isWaste ? 0 : sourceCostPerKg,
-      totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
-      sortedPricePerKg: item.isWaste ? 0 : item.sortedPricePerKg,
-      bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
-    }));
-
-    // Step 2: Create the sorting bill
-    let sortingBill: any;
-    try {
-      sortingBill = await tx.sortingBill.create({
-        data: {
-          billNumber,
-          date: new Date(date),
-          sourceProductId,
-          sourceWeight,
-          sourceWeightExpression: isRealFormula(sourceWeightExpression)
-            ? sourceWeightExpression!.trim()
-            : null,
-          sourcePricePerKg: sourcePricePerKg || 0,
-          weighedTotal: weighedTotal || 0,
-          weighedTotalExpression: isRealFormula(weighedTotalExpression)
-            ? weighedTotalExpression!.trim()
-            : null,
-          lossWeight,
-          lossCost,
-          roomNumber: roomNumber?.trim() || null,
-          note: note || null,
-          items: {
-            create: sortingItems,
-          },
-        },
-        include: {
-          sourceProduct: { select: { id: true, name: true } },
-          items: { include: { product: { select: { id: true, name: true } } } },
-        },
-      });
-    } catch (createErr) {
-      // Prisma rolls the source deduction back when this error escapes.
-      throw createErr;
-    }
-
-    // Step 3: Create StockLots for non-waste sorted items
-    try {
-      for (const item of items) {
-        if (!item.isWaste && item.weight > 0) {
-          await tx.stockLot.create({
-            data: {
-              productId: item.productId,
-              remainingWeight: item.weight,
-              costPerKg: sourceCostPerKg,
-              dateAdded: new Date(date),
-              source: 'SORTING',
-              sourceId: sortingBill.id,
-            },
-          });
-        }
-      }
-    } catch (lotErr) {
-      // Prisma rolls the source, bill, and partial output writes back.
-      throw lotErr;
-    }
-
-    // Step 4: ledger emission is part of the same atomic transaction.
-    try {
-      await tx.stockMovement.createMany({
-        data: buildSortingMovements({
-          id: sortingBill.id,
-          billNumber,
-          date: new Date(date),
-          sourceProductId,
-          sourceWeight,
-          items: sortingBill.items.map((item: { id: string; productId: string; weight: number; isWaste: boolean }) => ({
-            id: item.id,
-            productId: item.productId,
-            weight: item.weight,
-            isWaste: item.isWaste,
-          })),
-        }) as Prisma.StockMovementCreateManyInput[],
-      });
-    } catch (ledgerErr) {
-      throw ledgerErr;
-    }
-    return { sortingBill, sourceCostPerKg, lossWeight, lossCost };
-    });
-    const { sortingBill: created, sourceCostPerKg, lossWeight, lossCost } = transactionResult;
-
-    // Step 5: Audit log (best-effort, non-fatal)
-    // ST-20 Phase 2: Enhanced audit with source lot breakdown + cost allocation details
+    // --- Audit log (best-effort, non-fatal, outside transaction) ---
     const fifoAuditDetails = buildFifoAuditDetails(fifoPreview, {
       type: 'SORTING',
       hasNonWasteOutput,
@@ -334,7 +192,6 @@ export async function POST(request: NextRequest) {
         lossCost,
         itemCount: created.items.length,
         nonWasteItemCount: items.filter((i) => !i.isWaste).length,
-        // ST-20 Phase 2: FIFO audit details (provides sourceProductId, sourceWeight, etc.)
         ...fifoAuditDetails,
         outputItems: items.map((item) => ({
           productId: item.productId,
@@ -347,37 +204,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ bill: created }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to create sorting bill';
     console.error('Error creating sorting bill:', error);
 
-    if ((error as { code?: string })?.code === 'FIFO_MISMATCH') {
-      return NextResponse.json({ error: message, code: 'FIFO_MISMATCH' }, { status: 409 });
-    }
-
-    if (message.includes('Insufficient stock')) {
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-
-    // ST-20 Phase 2: Surface FIFO validation errors with proper codes
-    if (message.includes('NEGATIVE_COST_SOURCE_LOT') || message.includes('ZERO_COST_SOURCE_LOT') || message.includes('ZERO_SOURCE_COST')) {
-      return NextResponse.json(
-        { error: message, code: 'FIFO_VALIDATION_ERROR' },
-        { status: 400 }
-      );
-    }
-
-    // Unique constraint on billNumber — should not happen after the
-    // max-sequence fix, but surface a clear message if it ever does.
-    if (message.includes('Unique constraint failed') && message.includes('billNumber')) {
-      return NextResponse.json(
-        { error: 'หมายเลขบิลซ้ำ — กรุณาลองบันทึกอีกครั้ง', details: message },
-        { status: 409 }
-      );
-    }
-
+    // ST-54: Use the extracted error mapper
+    const mapped = mapPrismaError(error);
     return NextResponse.json(
-      { error: 'Failed to create sorting bill', details: message },
-      { status: 500 }
+      { error: mapped.message, code: mapped.code },
+      { status: mapped.httpStatus }
     );
   }
 }
@@ -392,11 +225,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    // Pagination clamp: page min 1, limit min 1 max 100
     const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const skip = (page - 1) * limit;
-    // By default hide cancelled bills. Pass ?includeCancelled=true to include them.
     const includeCancelled = searchParams.get('includeCancelled') === 'true';
     const where = includeCancelled ? {} : { isCancelled: false };
 
@@ -404,16 +235,8 @@ export async function GET(request: NextRequest) {
       db.sortingBill.findMany({
         where,
         include: {
-          sourceProduct: {
-            select: { id: true, name: true },
-          },
-          items: {
-            include: {
-              product: {
-                select: { id: true, name: true },
-              },
-            },
-          },
+          sourceProduct: { select: { id: true, name: true } },
+          items: { include: { product: { select: { id: true, name: true } } } },
         },
         orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
         skip,
@@ -425,9 +248,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ bills, total });
   } catch (error) {
     console.error('Error fetching sorting bills:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch sorting bills' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch sorting bills' }, { status: 500 });
   }
 }
