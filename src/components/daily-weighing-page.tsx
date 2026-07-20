@@ -20,6 +20,15 @@ import { getAuthToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatWeight } from '@/lib/helpers';
 import { getThailandTodayDateString } from '@/lib/thailand-date';
+import { isTransferOnlyCategory } from '@/lib/daily-weighing-policy';
+import {
+  buildDailyWeighingColumns,
+  buildDailyWeighingMobileRows,
+  buildDailyWeighingTotalCells,
+  calculateDailyWeighingTotals,
+  buildHistoryColumns,
+  type DailyWeighingItem,
+} from '@/lib/daily-weighing-view-model';
 
 const TOLERANCE = 0.10;
 
@@ -211,12 +220,16 @@ export default function DailyWeighingPage() {
     return <Badge className="bg-gray-100 text-gray-500 text-[10px]">ยังไม่ชั่ง</Badge>;
   }
 
-  // Calculate totals
-  const totalPurchase = weighingItems.reduce((s, i) => s + i.purchaseInWeight, 0);
-  const totalSorting = weighingItems.reduce((s, i) => s - i.sortingSourceOutWeight + i.sortingOutputInWeight, 0);
-  const totalDismantling = weighingItems.reduce((s, i) => s - i.transferSourceOutWeight + i.transferOutputInWeight, 0);
-  const totalExpected = weighingItems.reduce((s, i) => s + i.dailyNet, 0);
-  const hasNotStarted = false; // ST-53: daily movements don't have NOT_STARTED state
+  // ST-55: Use shared production view model for totals and columns
+  const totals = calculateDailyWeighingTotals(weighingItems as unknown as DailyWeighingItem[]);
+  const totalExpected = totals.dailyNet;
+  const hasNotStarted = false;
+  const hideSorting = isTransferOnlyCategory(undefined, category);
+  const desktopColumns = buildDailyWeighingColumns(hideSorting);
+  const totalCells = buildDailyWeighingTotalCells(hideSorting, totals);
+  // ST-55: history detail uses the SESSION's category, not the current page category
+  const detailHideSorting = isTransferOnlyCategory(undefined, detailSession?.category);
+  const historyColumns = buildHistoryColumns(detailHideSorting);
   const totalActual = weighingItems.reduce((s, i) => s + (parseFloat(i.actualWeighedWeight) || 0), 0);
   const totalDiff = Math.round((totalActual - totalExpected) * 100) / 100;
 
@@ -315,7 +328,7 @@ export default function DailyWeighingPage() {
                       <div><Label className="text-xs">น้ำหนักชั่งจริง</Label><Input type="number" min="0" step="0.01" value={item.actualWeighedWeight} onChange={event => setWeighingItems(previous => previous.map((row, rowIndex) => rowIndex === idx ? { ...row, actualWeighedWeight: event.target.value } : row))} /></div>
                       <div><p className="text-xs text-gray-500">ส่วนต่าง</p><p className={`mt-2 font-semibold ${diff === null ? 'text-gray-400' : diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>{diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff}`}</p></div>
                     </div>
-                    <div className="mt-3 flex items-center justify-between">{getStatusBadge(status)}<details className="text-xs"><summary className="cursor-pointer text-blue-700">ดูรายการเคลื่อนไหว</summary><div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600"><span>ซื้อเข้า / ขายออก</span><span className="text-right">+{formatWeight(item.purchaseInWeight)} / -{formatWeight(item.saleOutWeight)}</span><span>คัดแยก เข้า / ออก</span><span className="text-right">+{formatWeight(item.sortingOutputInWeight)} / -{formatWeight(item.sortingSourceOutWeight)}</span><span>แกะ/ย้าย เข้า / ออก</span><span className="text-right">+{formatWeight(item.transferOutputInWeight)} / -{formatWeight(item.transferSourceOutWeight)}</span><span>ปรับยอดสุทธิ</span><span className="text-right">{formatWeight(item.adjustmentNetWeight)}</span></div></details></div>
+                    <div className="mt-3 flex items-center justify-between">{getStatusBadge(status)}<details className="text-xs"><summary className="cursor-pointer text-blue-700">ดูรายการเคลื่อนไหว</summary><div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600">{buildDailyWeighingMobileRows(hideSorting, item as unknown as DailyWeighingItem).map((row, ri) => (<span key={ri}>{row.label}</span>)).concat(buildDailyWeighingMobileRows(hideSorting, item as unknown as DailyWeighingItem).map((row, ri) => (<span key={`v-${ri}`} className="text-right">{row.value}</span>)))}</div></details></div>
                   </section>
                 );
               })}
@@ -327,10 +340,10 @@ export default function DailyWeighingPage() {
                     <TableHead className="min-w-40">สินค้า</TableHead>
                     <TableHead className="text-right min-w-24">ซื้อเข้า</TableHead>
                     <TableHead className="text-right min-w-24">ขายออก</TableHead>
-                    <TableHead className="text-right min-w-24">ต้นทางคัดแยก</TableHead>
-                    <TableHead className="text-right min-w-24">ผลผลิตคัดแยก</TableHead>
-                    <TableHead className="text-right min-w-24">ต้นทางแกะ/ย้าย</TableHead>
-                    <TableHead className="text-right min-w-24">ผลผลิตแกะ/ย้าย</TableHead>
+                    {!hideSorting && <TableHead className="text-right min-w-24">ต้นทางคัดแยก</TableHead>}
+                    {!hideSorting && <TableHead className="text-right min-w-24">ผลผลิตคัดแยก</TableHead>}
+                    <TableHead className="text-right min-w-24">ย้ายออก</TableHead>
+                    <TableHead className="text-right min-w-24">ย้ายเข้า/แกะของเข้า</TableHead>
                     <TableHead className="text-right min-w-24">ปรับยอดสุทธิ</TableHead>
                     <TableHead className="text-right min-w-28">ยอดสุทธิของวันในระบบ</TableHead>
                     <TableHead className="text-right min-w-28">น้ำหนักชั่งรวมจริง (กก.)</TableHead>
@@ -349,8 +362,8 @@ export default function DailyWeighingPage() {
                         <TableCell className="font-medium text-sm">{item.productName}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.purchaseInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.saleOutWeight)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.sortingSourceOutWeight)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputInWeight)}</TableCell>
+                        {!hideSorting && <TableCell className="text-right text-sm">{formatWeight(item.sortingSourceOutWeight)}</TableCell>}
+                        {!hideSorting && <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputInWeight)}</TableCell>}
                         <TableCell className="text-right text-sm">{formatWeight(item.transferSourceOutWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.transferOutputInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.adjustmentNetWeight)}</TableCell>
@@ -387,20 +400,17 @@ export default function DailyWeighingPage() {
                       </TableRow>
                     );
                   })}
-                  {/* Total row */}
+                  {/* Total row — ST-55: generated from shared production view model */}
                   <TableRow className="border-t-2 bg-gray-50">
-                    <TableCell className="font-bold text-sm">รวม</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalPurchase)}</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalSorting)}</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalDismantling)}</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalExpected)}</TableCell>
-                    <TableCell className="text-center text-sm">—</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalActual)}</TableCell>
-                    <TableCell className={`text-right font-bold text-sm ${Math.abs(totalDiff) <= TOLERANCE ? 'text-green-600' : 'text-red-600'}`}>
-                      {totalDiff > 0 ? '+' : ''}{totalDiff}
-                    </TableCell>
-                    <TableCell className="text-center">—</TableCell>
-                    <TableCell>—</TableCell>
+                    {totalCells.map((cell) => {
+                      if (cell.key === 'label') return <TableCell key={cell.key} className="font-bold text-sm">รวม</TableCell>
+                      if (cell.key === 'actual') return <TableCell key={cell.key} className="text-right font-bold text-sm">{formatWeight(totalActual)}</TableCell>
+                      if (cell.key === 'difference') return <TableCell key={cell.key} className={`text-right font-bold text-sm ${Math.abs(totalDiff) <= TOLERANCE ? 'text-green-600' : 'text-red-600'}`}>{totalDiff > 0 ? '+' : ''}{totalDiff}</TableCell>
+                      if (cell.key === 'status') return <TableCell key={cell.key} className="text-center">—</TableCell>
+                      if (cell.key === 'note') return <TableCell key={cell.key}>—</TableCell>
+                      if (cell.value === null) return <TableCell key={cell.key} className="text-center text-sm">—</TableCell>
+                      return <TableCell key={cell.key} className="text-right font-bold text-sm">{formatWeight(cell.value as number)}</TableCell>
+                    })}
                   </TableRow>
                 </TableBody>
               </Table>
@@ -456,8 +466,8 @@ export default function DailyWeighingPage() {
                   <TableRow>
                     <TableHead className="min-w-40">สินค้า</TableHead>
                     <TableHead className="text-right min-w-24">ซื้อเข้า</TableHead>
-                    <TableHead className="text-right min-w-24">คัดแยก</TableHead>
-                    <TableHead className="text-right min-w-24">แกะของ</TableHead>
+                    {!detailHideSorting && <TableHead className="text-right min-w-24">คัดแยก</TableHead>}
+                    <TableHead className="text-right min-w-24">แกะของ/ย้าย</TableHead>
                     <TableHead className="text-right min-w-28">รวมในระบบ</TableHead>
                     <TableHead className="text-center min-w-20">เอกสาร</TableHead>
                     <TableHead className="text-right min-w-24">ชั่งจริง</TableHead>
@@ -472,7 +482,7 @@ export default function DailyWeighingPage() {
                       <TableRow key={item.id}>
                         <TableCell className="text-sm font-medium">{item.product.name}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.purchaseWeight)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputWeight)}</TableCell>
+                        {!detailHideSorting && <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputWeight)}</TableCell>}
                         <TableCell className="text-right text-sm">{formatWeight(item.dismantlingOutputWeight)}</TableCell>
                         <TableCell className="text-right text-sm font-semibold">{formatWeight(item.expectedTotalWeight)}</TableCell>
                         <TableCell className="text-center text-sm">{totalDocCount}</TableCell>
@@ -488,7 +498,7 @@ export default function DailyWeighingPage() {
                   <TableRow className="border-t-2 bg-gray-50">
                     <TableCell className="font-bold text-sm">รวม</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.purchaseWeight, 0))}</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.sortingOutputWeight, 0))}</TableCell>
+                    {!detailHideSorting && <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.sortingOutputWeight, 0))}</TableCell>}
                     <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.dismantlingOutputWeight, 0))}</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.expectedTotalWeight, 0))}</TableCell>
                     <TableCell className="text-center text-sm">—</TableCell>

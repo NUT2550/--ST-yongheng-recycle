@@ -1,6 +1,8 @@
 import { db } from './db'
 import { preciseWeight, STOCK_WEIGHT_SCALE, type StockMovementType } from './stock-movement-ledger'
 import { formatThailandBusinessDate, parseThailandBusinessDate } from './thailand-date'
+import { getDailyWeighingMovementPolicy } from './daily-weighing-policy'
+import { calculatePolicyDailyMovement } from './daily-weighing-view-model'
 
 export interface ClosingStockBreakdownRow {
   productId: string
@@ -211,6 +213,9 @@ export async function getDailyMovements(selectedDate: string, category?: string)
   const productIds = products.map(p => p.id)
   const names = new Map(products.map(p => [p.id, p.name]))
 
+  // ST-55: Get category-specific movement policy
+  const policy = getDailyWeighingMovementPolicy(categoryRow?.id, category)
+
   // Query ONLY movements on the selected business date (Thailand timezone)
   const movements = await db.stockMovement.findMany({
     where: {
@@ -239,38 +244,27 @@ export async function getDailyMovements(selectedDate: string, category?: string)
 
   for (const [productId, row] of rows) {
     const b = row.buckets
-    const purchaseIn = Math.max(0, b.PURCHASE_IN)
-    const saleOut = Math.max(0, -b.SALE_OUT)
-    const sortingSourceOut = Math.max(0, -b.SORTING_SOURCE_OUT)
-    const sortingOutputIn = Math.max(0, b.SORTING_OUTPUT_IN)
-    const transferSourceOut = Math.max(0, -b.TRANSFER_SOURCE_OUT)
-    const transferOutputIn = Math.max(0, b.TRANSFER_OUTPUT_IN)
-    const adjustmentIn = Math.max(0, b.ADJUSTMENT_IN)
-    const adjustmentOut = Math.max(0, -b.ADJUSTMENT_OUT)
-    const adjustmentNet = adjustmentIn - adjustmentOut
-    // dailyNet = direct sum of all signed components
-    const dailyNet = b.PURCHASE_IN + b.SALE_OUT + b.SORTING_SOURCE_OUT + b.SORTING_OUTPUT_IN
-      + b.TRANSFER_SOURCE_OUT + b.TRANSFER_OUTPUT_IN + b.ADJUSTMENT_IN + b.ADJUSTMENT_OUT
-      + b.CANCELLATION_REVERSAL + b.COMPENSATION_REVERSAL
+    // ST-55: Use the shared production aggregation function
+    const computed = calculatePolicyDailyMovement(policy, b)
     const movementCount = Object.values(row.counts).reduce((sum, value) => sum + (value || 0), 0)
 
     // ST-53: include ALL active category Products, even with zero movements.
-    // A zero-movement Product has dailyNet=0, allowing actual-only reconciliation.
+    // ST-55: for copper/brass, sorting fields are zeroed by policy.
     items.push({
       productId,
       productName: names.get(productId) || productId,
-      purchaseInWeight: preciseWeight(purchaseIn / STOCK_WEIGHT_SCALE),
-      saleOutWeight: preciseWeight(saleOut / STOCK_WEIGHT_SCALE),
-      sortingSourceOutWeight: preciseWeight(sortingSourceOut / STOCK_WEIGHT_SCALE),
-      sortingOutputInWeight: preciseWeight(sortingOutputIn / STOCK_WEIGHT_SCALE),
-      transferSourceOutWeight: preciseWeight(transferSourceOut / STOCK_WEIGHT_SCALE),
-      transferOutputInWeight: preciseWeight(transferOutputIn / STOCK_WEIGHT_SCALE),
-      adjustmentNetWeight: preciseWeight(adjustmentNet / STOCK_WEIGHT_SCALE),
-      dailyNet: preciseWeight(dailyNet / STOCK_WEIGHT_SCALE),
+      purchaseInWeight: preciseWeight(computed.purchaseIn / STOCK_WEIGHT_SCALE),
+      saleOutWeight: preciseWeight(computed.saleOut / STOCK_WEIGHT_SCALE),
+      sortingSourceOutWeight: preciseWeight(computed.sortingSourceOut / STOCK_WEIGHT_SCALE),
+      sortingOutputInWeight: preciseWeight(computed.sortingOutputIn / STOCK_WEIGHT_SCALE),
+      transferSourceOutWeight: preciseWeight(computed.transferSourceOut / STOCK_WEIGHT_SCALE),
+      transferOutputInWeight: preciseWeight(computed.transferOutputIn / STOCK_WEIGHT_SCALE),
+      adjustmentNetWeight: preciseWeight(computed.adjustmentNet / STOCK_WEIGHT_SCALE),
+      dailyNet: preciseWeight(computed.dailyNet / STOCK_WEIGHT_SCALE),
       movementCount,
       movementCounts: row.counts,
     })
-    totalDailyNet += dailyNet
+    totalDailyNet += computed.dailyNet
   }
 
   return {
