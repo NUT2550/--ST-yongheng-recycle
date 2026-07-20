@@ -7,7 +7,7 @@ import {
   postSaveController,
   type AuthPayload,
 } from '@/lib/daily-weighing-controller';
-import { getExpectedClosingStock } from '@/lib/stock-ledger-read-service';
+import { getExpectedClosingStock, getDailyMovements } from '@/lib/stock-ledger-read-service';
 import { hasDailyPurchaseWeighingPermission } from '@/lib/daily-weighing-permission';
 
 const repo = new PrismaDailyPurchaseWeighingRepository();
@@ -38,6 +38,21 @@ export async function GET(request: NextRequest) {
     if (!dateStr || !category) return NextResponse.json({ error: 'กรุณาระบุวันที่และหมวดหมู่' }, { status: 400 });
     try {
       return NextResponse.json(await getExpectedClosingStock(dateStr, category));
+    } catch (error) {
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'unknown' }, { status: 400 });
+    }
+  }
+
+  // ST-53: daily-only movements (selected-day only, no opening/baseline/cumulative)
+  if (action === 'daily-movements') {
+    if (!hasDailyPurchaseWeighingPermission(authPayload)) {
+      return NextResponse.json({ error: 'ไม่มีสิทธิ์ใช้งานการชั่งยอด' }, { status: 403 });
+    }
+    const dateStr = searchParams.get('date');
+    const category = searchParams.get('category') || undefined;
+    if (!dateStr) return NextResponse.json({ error: 'กรุณาระบุวันที่' }, { status: 400 });
+    try {
+      return NextResponse.json(await getDailyMovements(dateStr, category));
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : 'unknown' }, { status: 400 });
     }

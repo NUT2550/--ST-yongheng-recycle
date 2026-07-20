@@ -27,7 +27,6 @@ const TOLERANCE = 0.10;
 interface AggregateItem {
   productId: string;
   productName: string;
-  openingWeight: number;
   purchaseInWeight: number;
   saleOutWeight: number;
   sortingSourceOutWeight: number;
@@ -35,9 +34,7 @@ interface AggregateItem {
   transferSourceOutWeight: number;
   transferOutputInWeight: number;
   adjustmentNetWeight: number;
-  expectedClosingWeight: number | null;
-  state: 'ACTIVE' | 'NOT_STARTED';
-  effectiveStartDate: string;
+  dailyNet: number;
   movementCount: number;
 }
 
@@ -46,7 +43,6 @@ interface AggregateItem {
 interface WeighingItem {
   productId: string;
   productName: string;
-  openingWeight: number;
   purchaseInWeight: number;
   saleOutWeight: number;
   sortingSourceOutWeight: number;
@@ -54,9 +50,7 @@ interface WeighingItem {
   transferSourceOutWeight: number;
   transferOutputInWeight: number;
   adjustmentNetWeight: number;
-  expectedClosingWeight: number | null;
-  state: 'ACTIVE' | 'NOT_STARTED';
-  effectiveStartDate: string;
+  dailyNet: number;
   movementCount: number;
   actualWeighedWeight: string;
   note: string;
@@ -120,7 +114,7 @@ export default function DailyWeighingPage() {
     setWeighingItems([]);
     try {
       const token = getAuthToken();
-      const res = await fetch(`/api/daily-weighing?action=closing-stock&date=${date}&category=${encodeURIComponent(category)}`, {
+      const res = await fetch(`/api/daily-weighing?action=daily-movements&date=${date}&category=${encodeURIComponent(category)}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
@@ -128,8 +122,8 @@ export default function DailyWeighingPage() {
         toast.error(data.error || 'โหลดข้อมูลไม่สำเร็จ');
         return;
       }
-      setBaselineMissing(data.baselineStatus === 'MISSING');
-      setBaselineDate(data.baselineDate || null);
+      setBaselineMissing(false); // ST-53: daily movements don't require a baseline
+      setBaselineDate(null);
       const items: AggregateItem[] = data.items || [];
       setAggregateItems(items);
       setWeighingItems(
@@ -139,9 +133,7 @@ export default function DailyWeighingPage() {
           note: '',
         }))
       );
-      if (data.baselineStatus === 'MISSING') {
-        toast.error('ยังไม่มีฐานสต็อกที่ Owner อนุมัติ จึงยังคำนวณและบันทึกผลเปรียบเทียบไม่ได้');
-      } else if (items.length === 0) {
+      if (items.length === 0) {
         toast.info(`ไม่มียอด${category}ของวันที่ ${toBuddhistDate(date)}`);
       }
     } catch {
@@ -223,8 +215,8 @@ export default function DailyWeighingPage() {
   const totalPurchase = weighingItems.reduce((s, i) => s + i.purchaseInWeight, 0);
   const totalSorting = weighingItems.reduce((s, i) => s - i.sortingSourceOutWeight + i.sortingOutputInWeight, 0);
   const totalDismantling = weighingItems.reduce((s, i) => s - i.transferSourceOutWeight + i.transferOutputInWeight, 0);
-  const totalExpected = weighingItems.reduce((s, i) => s + (i.expectedClosingWeight ?? 0), 0);
-  const hasNotStarted = weighingItems.some(item => item.state === 'NOT_STARTED');
+  const totalExpected = weighingItems.reduce((s, i) => s + i.dailyNet, 0);
+  const hasNotStarted = false; // ST-53: daily movements don't have NOT_STARTED state
   const totalActual = weighingItems.reduce((s, i) => s + (parseFloat(i.actualWeighedWeight) || 0), 0);
   const totalDiff = Math.round((totalActual - totalExpected) * 100) / 100;
 
@@ -292,7 +284,7 @@ export default function DailyWeighingPage() {
           )}
           {weighingItems.length > 0 && (
             <p className="text-[11px] text-gray-500 mt-2">
-              คงเหลือตามระบบ = ยอดยกมา + รายการเข้า - รายการออก ± การปรับยอด{baselineDate ? ` (ฐานอนุมัติ ณ ${toBuddhistDate(baselineDate)})` : ''}
+              ยอดสุทธิของวันในระบบ = รายการเข้า - รายการออก ± การปรับยอด (เฉพาะวันที่เลือกเท่านั้น ไม่รวมยอดยกมา)
             </p>
           )}
           {baselineMissing && (
@@ -311,19 +303,19 @@ export default function DailyWeighingPage() {
               {weighingItems.map((item, idx) => {
                 const actual = parseFloat(item.actualWeighedWeight);
                 const hasActual = item.actualWeighedWeight !== '' && Number.isFinite(actual);
-                const diff = hasActual && item.expectedClosingWeight !== null ? Math.round((actual - item.expectedClosingWeight) * 100) / 100 : null;
+                const diff = hasActual ? Math.round((actual - item.dailyNet) * 100) / 100 : null;
                 const status = diff === null ? 'NOT_WEIGHED' : Math.abs(diff) <= TOLERANCE ? 'MATCH' : 'DIFFERENCE';
                 return (
                   <section key={item.productId} className="rounded-lg border bg-white p-3" aria-label={item.productName}>
                     <div className="flex items-start justify-between gap-3">
-                      <div><p className="font-medium">{item.productName}</p><p className="text-xs text-gray-500">คงเหลือตามระบบ</p></div>
-                      <p className="text-lg font-semibold tabular-nums">{item.expectedClosingWeight === null ? 'ยังไม่เริ่มนับ' : `${formatWeight(item.expectedClosingWeight)} กก.`}</p>
+                      <div><p className="font-medium">{item.productName}</p><p className="text-xs text-gray-500">ยอดสุทธิของวันในระบบ</p></div>
+                      <p className="text-lg font-semibold tabular-nums">{formatWeight(item.dailyNet)} กก.</p>
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-3">
                       <div><Label className="text-xs">น้ำหนักชั่งจริง</Label><Input type="number" min="0" step="0.01" value={item.actualWeighedWeight} onChange={event => setWeighingItems(previous => previous.map((row, rowIndex) => rowIndex === idx ? { ...row, actualWeighedWeight: event.target.value } : row))} /></div>
                       <div><p className="text-xs text-gray-500">ส่วนต่าง</p><p className={`mt-2 font-semibold ${diff === null ? 'text-gray-400' : diff >= 0 ? 'text-green-600' : 'text-red-600'}`}>{diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff}`}</p></div>
                     </div>
-                    <div className="mt-3 flex items-center justify-between">{getStatusBadge(status)}<details className="text-xs"><summary className="cursor-pointer text-blue-700">ดูรายการเคลื่อนไหว</summary><div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600"><span>ยอดยกมา</span><span className="text-right">{formatWeight(item.openingWeight)}</span><span>ซื้อเข้า / ขายออก</span><span className="text-right">+{formatWeight(item.purchaseInWeight)} / -{formatWeight(item.saleOutWeight)}</span><span>คัดแยก เข้า / ออก</span><span className="text-right">+{formatWeight(item.sortingOutputInWeight)} / -{formatWeight(item.sortingSourceOutWeight)}</span><span>แกะ/ย้าย เข้า / ออก</span><span className="text-right">+{formatWeight(item.transferOutputInWeight)} / -{formatWeight(item.transferSourceOutWeight)}</span><span>ปรับยอดสุทธิ</span><span className="text-right">{formatWeight(item.adjustmentNetWeight)}</span></div></details></div>
+                    <div className="mt-3 flex items-center justify-between">{getStatusBadge(status)}<details className="text-xs"><summary className="cursor-pointer text-blue-700">ดูรายการเคลื่อนไหว</summary><div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-gray-600"><span>ซื้อเข้า / ขายออก</span><span className="text-right">+{formatWeight(item.purchaseInWeight)} / -{formatWeight(item.saleOutWeight)}</span><span>คัดแยก เข้า / ออก</span><span className="text-right">+{formatWeight(item.sortingOutputInWeight)} / -{formatWeight(item.sortingSourceOutWeight)}</span><span>แกะ/ย้าย เข้า / ออก</span><span className="text-right">+{formatWeight(item.transferOutputInWeight)} / -{formatWeight(item.transferSourceOutWeight)}</span><span>ปรับยอดสุทธิ</span><span className="text-right">{formatWeight(item.adjustmentNetWeight)}</span></div></details></div>
                   </section>
                 );
               })}
@@ -333,7 +325,6 @@ export default function DailyWeighingPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-40">สินค้า</TableHead>
-                    <TableHead className="text-right min-w-24">ยอดยกมา</TableHead>
                     <TableHead className="text-right min-w-24">ซื้อเข้า</TableHead>
                     <TableHead className="text-right min-w-24">ขายออก</TableHead>
                     <TableHead className="text-right min-w-24">ต้นทางคัดแยก</TableHead>
@@ -341,7 +332,7 @@ export default function DailyWeighingPage() {
                     <TableHead className="text-right min-w-24">ต้นทางแกะ/ย้าย</TableHead>
                     <TableHead className="text-right min-w-24">ผลผลิตแกะ/ย้าย</TableHead>
                     <TableHead className="text-right min-w-24">ปรับยอดสุทธิ</TableHead>
-                    <TableHead className="text-right min-w-28">คงเหลือตามระบบ</TableHead>
+                    <TableHead className="text-right min-w-28">ยอดสุทธิของวันในระบบ</TableHead>
                     <TableHead className="text-right min-w-28">น้ำหนักชั่งรวมจริง (กก.)</TableHead>
                     <TableHead className="text-right min-w-24">ส่วนต่าง (กก.)</TableHead>
                     <TableHead className="text-center min-w-20">สถานะ</TableHead>
@@ -351,12 +342,11 @@ export default function DailyWeighingPage() {
                 <TableBody>
                   {weighingItems.map((item, idx) => {
                     const actual = parseFloat(item.actualWeighedWeight) || null;
-                    const diff = actual !== null && item.expectedClosingWeight !== null ? Math.round((actual - item.expectedClosingWeight) * 100) / 100 : null;
+                    const diff = actual !== null ? Math.round((actual - item.dailyNet) * 100) / 100 : null;
                     const status = actual === null ? 'NOT_WEIGHED' : Math.abs(diff!) <= TOLERANCE ? 'MATCH' : 'DIFFERENCE';
                     return (
                       <TableRow key={item.productId}>
                         <TableCell className="font-medium text-sm">{item.productName}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.openingWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.purchaseInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.saleOutWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.sortingSourceOutWeight)}</TableCell>
@@ -364,7 +354,7 @@ export default function DailyWeighingPage() {
                         <TableCell className="text-right text-sm">{formatWeight(item.transferSourceOutWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.transferOutputInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.adjustmentNetWeight)}</TableCell>
-                        <TableCell className="text-right text-sm font-semibold">{item.expectedClosingWeight === null ? 'ยังไม่เริ่มนับ' : formatWeight(item.expectedClosingWeight)}</TableCell>
+                        <TableCell className="text-right text-sm font-semibold">{formatWeight(item.dailyNet)}</TableCell>
                         <TableCell className="text-right">
                           <Input
                             type="number"

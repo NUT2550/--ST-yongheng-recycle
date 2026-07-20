@@ -161,3 +161,126 @@ export async function getExpectedClosingStock(selectedDate: string, category?: s
     movements: movements.map(movement => ({ ...movement, movementType: movement.movementType as StockMovementType })),
   })
 }
+
+// ============================================================================
+// ST-53: Daily-only movement breakdown (selected-day movements only, no opening/baseline)
+// ============================================================================
+
+export interface DailyMovementRow {
+  productId: string
+  productName: string
+  purchaseInWeight: number
+  saleOutWeight: number
+  sortingSourceOutWeight: number
+  sortingOutputInWeight: number
+  transferSourceOutWeight: number
+  transferOutputInWeight: number
+  adjustmentNetWeight: number
+  dailyNet: number
+  movementCount: number
+  movementCounts: Partial<Record<StockMovementType, number>>
+}
+
+export interface DailyMovementResult {
+  selectedDate: string
+  items: DailyMovementRow[]
+  totalDailyNet: number
+}
+
+/**
+ * ST-53: Returns ONLY movements on the selected Thailand business date.
+ * Excludes: opening balance, baseline, movements before/after the selected date.
+ *
+ * Formula:
+ *   dailyNet = purchaseIn - salesOut - sortingSourceOut + sortingOutputIn
+ *              - transferSourceOut + transferOutputIn + adjustmentNet
+ *
+ * All movement components are signed (OUT categories are negative).
+ * dailyNet is the direct sum of all signed components.
+ */
+export async function getDailyMovements(selectedDate: string, category?: string): Promise<DailyMovementResult> {
+  const selectedStart = parseThailandBusinessDate(selectedDate)
+  const selectedEnd = new Date(selectedStart.getTime() + 86_400_000)
+
+  const categoryRow = category ? await db.productCategory.findFirst({ where: { name: category }, select: { id: true } }) : null
+  if (category && !categoryRow) throw new Error(`Category not found: ${category}`)
+  const products = await db.product.findMany({
+    where: categoryRow ? { categoryId: categoryRow.id } : undefined,
+    select: { id: true, name: true }, orderBy: { sortOrder: 'asc' },
+  })
+  const productIds = products.map(p => p.id)
+  const names = new Map(products.map(p => [p.id, p.name]))
+
+  // Query ONLY movements on the selected business date (Thailand timezone)
+  const movements = await db.stockMovement.findMany({
+    where: {
+      productId: { in: productIds },
+      movementType: { not: 'BASELINE' },
+      businessDate: { gte: selectedStart, lt: selectedEnd },
+    },
+    select: { productId: true, businessDate: true, signedWeight: true, movementType: true },
+  })
+
+  // Build per-product daily buckets
+  const rows = new Map<string, { buckets: Record<StockMovementType, number>; counts: Partial<Record<StockMovementType, number>> }>()
+  for (const p of products) {
+    rows.set(p.id, { buckets: emptyBuckets(), counts: {} })
+  }
+  for (const m of movements) {
+    const row = rows.get(m.productId)
+    if (!row) continue
+    const signedUnits = units(m.signedWeight)
+    row.buckets[m.movementType] = (row.buckets[m.movementType] || 0) + signedUnits
+    row.counts[m.movementType] = (row.counts[m.movementType] || 0) + 1
+  }
+
+  const items: DailyMovementRow[] = []
+  let totalDailyNet = 0
+
+  for (const [productId, row] of rows) {
+    const b = row.buckets
+    const purchaseIn = Math.max(0, b.PURCHASE_IN)
+    const saleOut = Math.max(0, -b.SALE_OUT)
+    const sortingSourceOut = Math.max(0, -b.SORTING_SOURCE_OUT)
+    const sortingOutputIn = Math.max(0, b.SORTING_OUTPUT_IN)
+    const transferSourceOut = Math.max(0, -b.TRANSFER_SOURCE_OUT)
+    const transferOutputIn = Math.max(0, b.TRANSFER_OUTPUT_IN)
+    const adjustmentIn = Math.max(0, b.ADJUSTMENT_IN)
+    const adjustmentOut = Math.max(0, -b.ADJUSTMENT_OUT)
+    const adjustmentNet = adjustmentIn - adjustmentOut
+    // dailyNet = direct sum of all signed components
+    const dailyNet = b.PURCHASE_IN + b.SALE_OUT + b.SORTING_SOURCE_OUT + b.SORTING_OUTPUT_IN
+      + b.TRANSFER_SOURCE_OUT + b.TRANSFER_OUTPUT_IN + b.ADJUSTMENT_IN + b.ADJUSTMENT_OUT
+      + b.CANCELLATION_REVERSAL + b.COMPENSATION_REVERSAL
+    const movementCount = Object.values(row.counts).reduce((sum, value) => sum + (value || 0), 0)
+
+    // Only include products with at least 1 movement
+    if (movementCount > 0) {
+      items.push({
+        productId,
+        productName: names.get(productId) || productId,
+        purchaseInWeight: preciseWeight(purchaseIn / STOCK_WEIGHT_SCALE),
+        saleOutWeight: preciseWeight(saleOut / STOCK_WEIGHT_SCALE),
+        sortingSourceOutWeight: preciseWeight(sortingSourceOut / STOCK_WEIGHT_SCALE),
+        sortingOutputInWeight: preciseWeight(sortingOutputIn / STOCK_WEIGHT_SCALE),
+        transferSourceOutWeight: preciseWeight(transferSourceOut / STOCK_WEIGHT_SCALE),
+        transferOutputInWeight: preciseWeight(transferOutputIn / STOCK_WEIGHT_SCALE),
+        adjustmentNetWeight: preciseWeight(adjustmentNet / STOCK_WEIGHT_SCALE),
+        dailyNet: preciseWeight(dailyNet / STOCK_WEIGHT_SCALE),
+        movementCount,
+        movementCounts: row.counts,
+      })
+      totalDailyNet += dailyNet
+    }
+  }
+
+  return {
+    selectedDate,
+    items: items.sort((a, b) => a.productName.localeCompare(b.productName)),
+    totalDailyNet: preciseWeight(totalDailyNet / STOCK_WEIGHT_SCALE),
+  }
+}
+
+function emptyBuckets(): Record<StockMovementType, number> {
+  return Object.fromEntries(bucketTypes.map(type => [type, 0])) as Record<StockMovementType, number>
+}
