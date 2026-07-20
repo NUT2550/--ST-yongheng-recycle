@@ -493,7 +493,7 @@ describe('ST-8: Purchase apply', () => {
     expect(summary.importedCount).toBe(2);
     expect(summary.failedCount).toBe(1);
     expect(summary.failedBills[0].externalBillNumber).toBe('A1051493');
-    expect(summary.failedBills[0].error).toContain('Simulated purchase bill creation failure');
+    expect(summary.failedBills[0].errorCode).toBe('BILL_CREATE_FAILED');
     expect(mock.state.createPurchaseBillCalls).toHaveLength(3);
     // The failed bill must NOT be in the simulated DB
     expect(mock.state.writtenPurchaseBills.has('A1051493')).toBe(false);

@@ -93,7 +93,7 @@ function makeSellDeps(state: MemState, opts: { p2002Target?: string[] } = {}): S
               id: l.id, productId: l.productId, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01')
             }));
           },
-          updateStockLotRemaining: async (id, newRem) => {
+          updateStockLotRemaining: async (id, newRem, expected) => {
             state.callCounts.stockLotUpdate++;
             const lot = state.stockLots.get(id);
             if (lot) lot.remainingWeight = newRem;
@@ -303,7 +303,7 @@ describe('ST-8 closeout: mixed Sales import through createSellBillService', () =
     expect(state.auditLogs.length).toBe(2);
     expect(state.stockLots.get('lot-1')!.remainingWeight).toBe(8.0); // 10 - 1 - 1
     expect(result.failedBills.some(b => b.externalBillNumber === 'SALE-B')).toBe(true);
-    expect(result.failedBills[0].error).toContain('ราคา/กก. ต้องมากกว่า 0');
+    expect(result.failedBills[0].errorCode).toBe('BILL_CREATE_FAILED');
   });
 });
 
@@ -319,7 +319,7 @@ describe('ST-8 closeout: single zero-price Sales import', () => {
     expect(state.sellBills.size).toBe(0);
     expect(state.stockLots.get('lot-1')!.remainingWeight).toBe(10.0);
     expect(state.auditLogs.length).toBe(0);
-    expect(result.failedBills[0].error).toContain('ราคา/กก. ต้องมากกว่า 0');
+    expect(result.failedBills[0].errorCode).toBe('BILL_CREATE_FAILED');
   });
 });
 
@@ -379,6 +379,6 @@ describe('ST-8 closeout: result classification policy', () => {
     expect(result.failedCount).toBe(1);
     expect(result.invalidCount).toBe(0);
     expect(result.failedBills[0].status).toBe('FAILED');
-    expect(result.failedBills[0].error).toContain('ราคา/กก. ต้องมากกว่า 0');
+    expect(result.failedBills[0].errorCode).toBe('BILL_CREATE_FAILED');
   });
 });

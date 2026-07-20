@@ -96,13 +96,14 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
             }>>,
           // ST-57: compare-and-set guard using updateMany with WHERE checks.
           // Throws if the lot was modified between findSourceLots and update.
-          updateStockLotRemaining: async (id, newRemaining, expected?) => {
-            const where: Record<string, unknown> = { id };
-            if (expected) {
-              where.productId = expected.productId;
-              where.remainingWeight = expected.remainingWeight;
-              where.costPerKg = expected.costPerKg;
-            }
+          updateStockLotRemaining: async (id, newRemaining, expected) => {
+            // ST-57: CAS is mandatory — expected must always be provided
+            const where: Record<string, unknown> = {
+              id,
+              productId: expected.productId,
+              remainingWeight: expected.remainingWeight,
+              costPerKg: expected.costPerKg,
+            };
             const result = await prismaTx.stockLot.updateMany({
               where: where as Prisma.StockLotWhereUniqueInput,
               data: { remainingWeight: newRemaining },
