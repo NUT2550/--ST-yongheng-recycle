@@ -100,8 +100,9 @@ describe('ST-43 expected closing stock', () => {
 
   test('daily page remains and legacy physical-count stays absent', async () => {
     const page = await Bun.file('src/components/daily-weighing-page.tsx').text()
-    expect(page).toContain('action=closing-stock')
-    expect(page).toContain('expectedClosingWeight')
+    // ST-53: page now uses daily-movements action instead of closing-stock
+    expect(page).toContain('action=daily-movements')
+    expect(page).toContain('dailyNet')
     expect(await Bun.file('src/components/physical-count-page.tsx').exists()).toBe(false)
   })
 })

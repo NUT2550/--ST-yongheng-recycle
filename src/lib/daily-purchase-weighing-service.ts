@@ -137,7 +137,9 @@ export async function saveDailyPurchaseWeighing(
   }
 
   if (aggregation.items.length === 0) {
-    return { success: false, error: `ไม่มียอด${category}ของวันที่ ${weighingDate}`, status: 400 };
+    // ST-53: a valid category with active Products always returns rows (even with zero movements).
+    // An empty items array means the category is invalid or has no active Products.
+    return { success: false, error: `หมวดหมู่ไม่ถูกต้องหรือไม่มีสินค้าในหมวดหมู่ ${category}`, status: 400 };
   }
 
   // 3. Build session items — server controls all computed fields
