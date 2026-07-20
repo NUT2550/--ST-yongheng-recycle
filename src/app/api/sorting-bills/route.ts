@@ -199,45 +199,41 @@ export async function POST(request: NextRequest) {
     const billNumber = await generateBillNumber(db, 'SORT');
 
     // StockLot deduction, bill/output creation, and ledger emission commit together.
+    // ST-54: Explicit transaction timeout to prevent P2028 on slow pooler connections.
+    // Default Prisma timeout is 5s; increased to 15s for sorting bills with many output items.
     const transactionResult = await db.$transaction(async (tx) => {
-    const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, tx);
-    const sourceCostPerKg = fifoResult.costPerKg;
+      const fifoResult = await deductStockFIFO(sourceProductId, sourceWeight, tx);
+      const sourceCostPerKg = fifoResult.costPerKg;
 
-    // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
-    // (detects race conditions / concurrent modifications between preview and deduction)
-    if (!verifyFifoMatch(fifoPreview, { ...fifoResult, deductedLots: fifoResult.deductedLots })) {
-      // Throwing here rolls the deduction back with the transaction.
-      console.error(
-        `[ST-20] FIFO mismatch detected | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`
-      );
-      const mismatch = new Error('FIFO preview/execution mismatch') as Error & { code?: string };
-      mismatch.code = 'FIFO_MISMATCH';
-      throw mismatch;
-    }
+      // ST-20 Phase 2: Verify actual FIFO result matches pre-flight preview
+      if (!verifyFifoMatch(fifoPreview, { ...fifoResult, deductedLots: fifoResult.deductedLots })) {
+        console.error(
+          `[ST-20] FIFO mismatch detected | sourceProductId=${sourceProductId} | sourceWeight=${sourceWeight} | preview cost=${fifoPreview.weightedAverageCost} | actual cost=${fifoResult.costPerKg}`
+        );
+        const mismatch = new Error('FIFO preview/execution mismatch') as Error & { code?: string };
+        mismatch.code = 'FIFO_MISMATCH';
+        throw mismatch;
+      }
 
-    // Calculate loss = sourceWeight - sum(item weights)
-    const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
-    const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
-    const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
+      const itemsTotalWeight = items.reduce((sum, i) => sum + i.weight, 0);
+      const lossWeight = Math.round((sourceWeight - itemsTotalWeight) * 100) / 100;
+      const lossCost = Math.round(lossWeight * sourceCostPerKg * 100) / 100;
 
-    // Build sorting items with new bonus fields + weightExpression
-    const sortingItems = items.map((item) => ({
-      productId: item.productId,
-      weight: item.weight,
-      weightExpression: isRealFormula(item.weightExpression)
-        ? item.weightExpression!.trim()
-        : null,
-      isWaste: item.isWaste,
-      costPerKg: item.isWaste ? 0 : sourceCostPerKg,
-      totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
-      sortedPricePerKg: item.isWaste ? 0 : item.sortedPricePerKg,
-      bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
-    }));
+      const sortingItems = items.map((item) => ({
+        productId: item.productId,
+        weight: item.weight,
+        weightExpression: isRealFormula(item.weightExpression)
+          ? item.weightExpression!.trim()
+          : null,
+        isWaste: item.isWaste,
+        costPerKg: item.isWaste ? 0 : sourceCostPerKg,
+        totalCost: item.isWaste ? 0 : Math.round(item.weight * sourceCostPerKg * 100) / 100,
+        sortedPricePerKg: item.isWaste ? 0 : item.sortedPricePerKg,
+        bonusAmount: item.isWaste ? 0 : Math.round(item.bonusAmount * 100) / 100,
+      }));
 
-    // Step 2: Create the sorting bill
-    let sortingBill: any;
-    try {
-      sortingBill = await tx.sortingBill.create({
+      // Step 2: Create the sorting bill
+      const sortingBill = await tx.sortingBill.create({
         data: {
           billNumber,
           date: new Date(date),
@@ -264,34 +260,24 @@ export async function POST(request: NextRequest) {
           items: { include: { product: { select: { id: true, name: true } } } },
         },
       });
-    } catch (createErr) {
-      // Prisma rolls the source deduction back when this error escapes.
-      throw createErr;
-    }
 
-    // Step 3: Create StockLots for non-waste sorted items
-    try {
-      for (const item of items) {
-        if (!item.isWaste && item.weight > 0) {
-          await tx.stockLot.create({
-            data: {
-              productId: item.productId,
-              remainingWeight: item.weight,
-              costPerKg: sourceCostPerKg,
-              dateAdded: new Date(date),
-              source: 'SORTING',
-              sourceId: sortingBill.id,
-            },
-          });
-        }
+      // Step 3: Create StockLots for non-waste sorted items (batch createMany)
+      // ST-54: Use createMany instead of sequential create to reduce transaction duration.
+      const outputLotData = items
+        .filter((item) => !item.isWaste && item.weight > 0)
+        .map((item) => ({
+          productId: item.productId,
+          remainingWeight: item.weight,
+          costPerKg: sourceCostPerKg,
+          dateAdded: new Date(date),
+          source: 'SORTING' as const,
+          sourceId: sortingBill.id,
+        }));
+      if (outputLotData.length > 0) {
+        await tx.stockLot.createMany({ data: outputLotData });
       }
-    } catch (lotErr) {
-      // Prisma rolls the source, bill, and partial output writes back.
-      throw lotErr;
-    }
 
-    // Step 4: ledger emission is part of the same atomic transaction.
-    try {
+      // Step 4: ledger emission is part of the same atomic transaction.
       await tx.stockMovement.createMany({
         data: buildSortingMovements({
           id: sortingBill.id,
@@ -307,10 +293,11 @@ export async function POST(request: NextRequest) {
           })),
         }) as Prisma.StockMovementCreateManyInput[],
       });
-    } catch (ledgerErr) {
-      throw ledgerErr;
-    }
-    return { sortingBill, sourceCostPerKg, lossWeight, lossCost };
+
+      return { sortingBill, sourceCostPerKg, lossWeight, lossCost };
+    }, {
+      maxWait: 5000,  // max time to acquire a connection
+      timeout: 15000, // ST-54: 15s transaction timeout (up from default 5s)
     });
     const { sortingBill: created, sourceCostPerKg, lossWeight, lossCost } = transactionResult;
 
@@ -372,6 +359,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'หมายเลขบิลซ้ำ — กรุณาลองบันทึกอีกครั้ง', details: message },
         { status: 409 }
+      );
+    }
+
+    // ST-54: Handle Prisma P2028 (transaction timeout) explicitly
+    if ((error as { code?: string })?.code === 'P2028') {
+      return NextResponse.json(
+        {
+          error: 'การบันทึกใช้เวลานานเกินไป ระบบได้ยกเลิกรายการทั้งหมดแล้ว กรุณารอสักครู่และลองใหม่ หากยังเกิดซ้ำให้แจ้งผู้ดูแล',
+          code: 'TRANSACTION_TIMEOUT',
+        },
+        { status: 503 }
       );
     }
 
