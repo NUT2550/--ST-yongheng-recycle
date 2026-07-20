@@ -54,10 +54,17 @@ export function createPrismaSortingDeps(): SortingDeps {
             newRemainingWeight: number,
           ): Promise<void> {
             // ST-54: Compare-and-set using updateMany with WHERE guards.
-            // Uses Prisma's Float comparison — the service rounds all values to
-            // 2 decimal places before calling this, so float equality is safe
-            // within the same rounding precision. PostgreSQL DOUBLE PRECISION
-            // stores exact values for 2-decimal numbers up to 15 significant digits.
+            //
+            // CAS policy: EXACT READ-VALUE CAS
+            // - expected values originate from the same Prisma transaction read
+            //   (findSourceLots inside the same $transaction)
+            // - updateMany performs compare-and-set against those exact read values
+            // - PostgreSQL compares DOUBLE PRECISION using exact binary equality
+            // - any mismatch (concurrent modification, float drift, deleted row)
+            //   returns count=0 → SOURCE_LOT_CONFLICT
+            // - no arbitrary rounding or normalization is applied to expected values
+            // - historical values with more than 2 decimals are fully supported
+            //   because both the read and the WHERE use the same binary value
             const result = await prismaTx.stockLot.updateMany({
               where: {
                 id: lotId,

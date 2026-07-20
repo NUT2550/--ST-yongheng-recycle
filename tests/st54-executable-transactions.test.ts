@@ -633,3 +633,148 @@ describe('ST-54 compare-and-set source lot guards', () => {
   })
 })
 
+
+// ============================================================================
+// Phase 4: Numeric CAS regression tests
+// ============================================================================
+
+describe('ST-54 numeric CAS edge cases', () => {
+  test('33. remainingWeight = 0.1 succeeds when unchanged', async () => {
+    const productId = 'source-float01'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-float01', productId, remainingWeight: 0.1, originalRemainingWeight: 0.1,
+      costPerKg: 10, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots)
+    const input = makeInput(productId, 0.1, [{ productId: 'out-1', weight: 0.1, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    const result = await createSortingBillTransaction(adapter, input)
+    expect(result.sortingBill.sourceWeight).toBe(0.1)
+    // Lot should be fully deducted (remainingWeight = 0)
+    const state = adapter.getState()
+    const lot = state.stockLots.get('lot-float01')
+    expect(lot?.remainingWeight).toBe(0)
+  })
+
+  test('34. CAS conflict when remainingWeight changes between read and update', async () => {
+    // Model: the transaction reads lots, then a concurrent modification changes
+    // the lot's remainingWeight. The CAS update should detect the mismatch.
+    // We use the failure injection to simulate a SourceLotConflictError at updateSourceLot,
+    // which is what would happen if the committed state changed between the tx-local
+    // read and the updateMany WHERE check.
+    const productId = 'source-cas-conflict'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-cas-conflict', productId, remainingWeight: 0.1, originalRemainingWeight: 0.1,
+      costPerKg: 10, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots, {
+      failures: { failAt: 'updateSourceLot', error: new SourceLotConflictError() },
+    })
+    const input = makeInput(productId, 0.05, [{ productId: 'out-1', weight: 0.04, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    await expect(createSortingBillTransaction(adapter, input)).rejects.toThrow()
+    // Verify full rollback
+    expect(adapter.getState().sortingBills.size).toBe(0)
+    expect(adapter.getState().stockMovements.size).toBe(0)
+    // Source lot unchanged
+    const lot = adapter.getState().stockLots.get('lot-cas-conflict')
+    expect(lot?.remainingWeight).toBe(0.1)
+  })
+
+  test('35. remainingWeight with 6 decimals succeeds when unchanged', async () => {
+    const productId = 'source-6dec'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-6dec', productId, remainingWeight: 10.123456, originalRemainingWeight: 10.123456,
+      costPerKg: 10, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots)
+    const input = makeInput(productId, 5, [{ productId: 'out-1', weight: 4.5, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    const result = await createSortingBillTransaction(adapter, input)
+    expect(result.sortingBill.sourceWeight).toBe(5)
+    const state = adapter.getState()
+    const lot = state.stockLots.get('lot-6dec')
+    expect(lot?.remainingWeight).toBe(10.123456 - 5)
+  })
+
+  test('36. costPerKg with 6 decimals succeeds when unchanged', async () => {
+    const productId = 'source-cost6dec'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-cost6', productId, remainingWeight: 50, originalRemainingWeight: 50,
+      costPerKg: 12.345678, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots)
+    const input = makeInput(productId, 20, [{ productId: 'out-1', weight: 18, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    const result = await createSortingBillTransaction(adapter, input)
+    // costPerKg should be preserved (12.345678)
+    expect(result.sourceCostPerKg).toBe(Math.round(12.345678 * 100) / 100) // service rounds costPerKg to 2 decimals
+    const state = adapter.getState()
+    const lot = state.stockLots.get('lot-cost6')
+    expect(lot?.remainingWeight).toBe(30)
+  })
+
+  test('37. no rounding of expected values before CAS', async () => {
+    const productId = 'source-noround'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-noround', productId, remainingWeight: 33.333333, originalRemainingWeight: 33.333333,
+      costPerKg: 7.777777, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots)
+    const input = makeInput(productId, 10, [{ productId: 'out-1', weight: 9, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    // Should succeed — the exact read value is used as expected, no rounding
+    const result = await createSortingBillTransaction(adapter, input)
+    expect(result.sortingBill.sourceWeight).toBe(10)
+    const state = adapter.getState()
+    const lot = state.stockLots.get('lot-noround')
+    expect(lot?.remainingWeight).toBe(33.333333 - 10)
+  })
+
+  test('38. newRemainingWeight does not become negative', async () => {
+    const productId = 'source-negcheck'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-neg', productId, remainingWeight: 20, originalRemainingWeight: 20,
+      costPerKg: 10, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots)
+    // Deduct exactly 20 — should leave 0, not negative
+    const input = makeInput(productId, 20, [{ productId: 'out-1', weight: 19, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    await createSortingBillTransaction(adapter, input)
+    const state = adapter.getState()
+    const lot = state.stockLots.get('lot-neg')
+    expect(lot?.remainingWeight).toBe(0)
+    expect(lot?.remainingWeight).toBeGreaterThanOrEqual(0)
+  })
+
+  test('39. full rollback after numeric CAS conflict (mid-transaction drift)', async () => {
+    const productId = 'source-rollback-cas'
+    const sourceLots = createSourceLots(productId, 3, 90, 10)
+    const adapter = createTestAdapter(sourceLots, {
+      failures: { failAt: 'updateSourceLot', error: new SourceLotConflictError() },
+    })
+    // No stale preview — the failure is injected at updateSourceLot
+    const input = makeInput(productId, 30, makeItems(2, 10))
+    await expect(createSortingBillTransaction(adapter, input)).rejects.toThrow()
+
+    // Full rollback
+    expect(adapter.getState().sortingBills.size).toBe(0)
+    expect(adapter.getState().stockMovements.size).toBe(0)
+    const outputLots = [...adapter.getState().stockLots.values()].filter((l) => l.source === 'SORTING')
+    expect(outputLots.length).toBe(0)
+    // Source lots unchanged
+    for (const lot of sourceLots) {
+      expect(adapter.getState().stockLots.get(lot.id)?.remainingWeight).toBe(lot.originalRemainingWeight)
+    }
+  })
+
+  test('40. test adapter and Prisma adapter document the same CAS semantics', async () => {
+    const prismaSource = await Bun.file('src/lib/sorting-prisma-adapter.ts').text()
+    const testSource = await Bun.file('src/lib/sorting-test-adapter.ts').text()
+    // Both must document EXACT READ-VALUE CAS
+    expect(prismaSource).toContain('EXACT READ-VALUE CAS')
+    expect(testSource).toContain('EXACT READ-VALUE CAS')
+    // Neither should claim 2-decimal rounding
+    expect(prismaSource).not.toContain('2 decimal places before calling')
+    expect(prismaSource).not.toContain('DOUBLE PRECISION stores exact values for 2-decimal')
+    // Test adapter CAS section must use strict equality (===), not rounded comparison
+    const casSection = testSource.slice(testSource.indexOf('EXACT READ-VALUE CAS'), testSource.indexOf('lot.remainingWeight = newRemainingWeight'))
+    expect(casSection).not.toContain('Math.round')
+    expect(casSection).toContain('!==')
+  })
+})

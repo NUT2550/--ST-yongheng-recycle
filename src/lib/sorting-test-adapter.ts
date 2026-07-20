@@ -158,19 +158,17 @@ export function createTestAdapter(
           }
           const lot = txState.stockLots.get(lotId)
           if (!lot) throw new Error(`Lot not found: ${lotId}`)
-          // ST-54: Compare-and-set guard — detect concurrent modification
+          // ST-54: Compare-and-set guard — EXACT READ-VALUE CAS
+          // Matches Prisma updateMany WHERE clause semantics:
+          // strict numeric equality (===), no rounding, no epsilon tolerance.
+          // A concurrent change to any guarded field → SourceLotConflictError.
           if (lot.productId !== expected.productId) {
             throw new SourceLotConflictError()
           }
-          // Use rounded comparison for floating-point safety
-          const currentRounded = Math.round(lot.remainingWeight * 1e6) / 1e6
-          const expectedRounded = Math.round(expected.remainingWeight * 1e6) / 1e6
-          if (currentRounded !== expectedRounded) {
+          if (lot.remainingWeight !== expected.remainingWeight) {
             throw new SourceLotConflictError()
           }
-          const currentCostRounded = Math.round(lot.costPerKg * 1e6) / 1e6
-          const expectedCostRounded = Math.round(expected.costPerKg * 1e6) / 1e6
-          if (currentCostRounded !== expectedCostRounded) {
+          if (lot.costPerKg !== expected.costPerKg) {
             throw new SourceLotConflictError()
           }
           lot.remainingWeight = newRemainingWeight
