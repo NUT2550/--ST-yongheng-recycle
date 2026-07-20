@@ -837,7 +837,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
             };
           },
           findSourceLots: async () => sourceLots,
-          updateStockLotRemaining: async () => undefined,
+          bulkUpdateStockLotRemaining: async () => undefined,
           createAuditLog: async () => undefined,
         };
         return fn(tx);
@@ -922,7 +922,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     const sellServiceBody = billServicesSrc.slice(sellServiceStart, sellServiceEnd);
     expect(sellServiceBody).toMatch(/deps\.transaction\s*\(/);
     expect(sellServiceBody).toMatch(/tx\.createSellBill\s*\(/);
-    expect(sellServiceBody).toMatch(/tx\.updateStockLotRemaining\s*\(/);
+    expect(sellServiceBody).toMatch(/tx\.bulkUpdateStockLotRemaining\s*\(/);
     expect(sellServiceBody).toMatch(/tx\.createAuditLog\s*\(/);
 
     // Live test: if createAuditLog throws, the whole tx throws → caller sees the error.

@@ -93,10 +93,12 @@ function makeSellDeps(state: MemState, opts: { p2002Target?: string[] } = {}): S
               id: l.id, productId: l.productId, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01')
             }));
           },
-          updateStockLotRemaining: async (id, newRem, expected) => {
-            state.callCounts.stockLotUpdate++;
-            const lot = state.stockLots.get(id);
-            if (lot) lot.remainingWeight = newRem;
+          bulkUpdateStockLotRemaining: async (updates) => {
+            state.callCounts.stockLotUpdate += updates.length;
+            for (const update of updates) {
+              const lot = state.stockLots.get(update.id);
+              if (lot) lot.remainingWeight = update.newRemainingWeight;
+            }
           },
           createCreditEntry: async () => { state.callCounts.creditEntry++; },
           createAuditLog: async (data) => { state.callCounts.auditLog++; state.auditLogs.push(data); },

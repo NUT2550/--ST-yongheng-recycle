@@ -56,6 +56,7 @@ import {
   isP2002OnField,
 } from './bill-errors'
 import type { AuthPayload } from './permissions'
+import type { StockLotCasUpdate } from './stock-lot-bulk-cas'
 
 // DuplicateExistingError + isPrismaP2002 imported from ./bill-errors (no circular dependency)
 
@@ -452,12 +453,8 @@ export interface SellBillTx<TBill extends SellBillCreatedBill = SellBillCreatedB
   createSellBill(args: SellBillCreateArgs): Promise<TBill>
   /** Find source lots for FIFO deduction, ordered by FIFO_ORDER_BY. */
   findSourceLots(productId: string): Promise<SellSourceLot[]>
-  /** Deduct from a single lot. ST-57: CAS expected values are MANDATORY. */
-  updateStockLotRemaining(
-    id: string,
-    newRemaining: number,
-    expected: { productId: string; remainingWeight: number; costPerKg: number }
-  ): Promise<unknown>
+  /** Apply all guarded lot deductions for one FIFO item in one atomic write. */
+  bulkUpdateStockLotRemaining(updates: StockLotCasUpdate[]): Promise<unknown>
   createCreditEntry?(data: {
     type: string
     amount: number
@@ -619,18 +616,22 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
         // Actual FIFO deduction - same lot order as the preview (deterministic).
         let remainingToDeduct = item.weight
         let itemCost = 0
+        const lotUpdates: StockLotCasUpdate[] = []
         for (const lot of sourceLotsRaw) {
           if (remainingToDeduct <= 0) break
           if (lot.remainingWeight <= 0) continue
           const deductFromLot = Math.min(lot.remainingWeight, remainingToDeduct)
           itemCost += deductFromLot * lot.costPerKg
           remainingToDeduct -= deductFromLot
-          await tx.updateStockLotRemaining(
-            lot.id,
-            lot.remainingWeight - deductFromLot,
-            { productId: lot.productId, remainingWeight: lot.remainingWeight, costPerKg: lot.costPerKg }
-          )
+          lotUpdates.push({
+            id: lot.id,
+            productId: lot.productId,
+            expectedRemainingWeight: lot.remainingWeight,
+            expectedCostPerKg: lot.costPerKg,
+            newRemainingWeight: lot.remainingWeight - deductFromLot,
+          })
         }
+        await tx.bulkUpdateStockLotRemaining(lotUpdates)
 
         const costPerKg = item.weight > 0 ? itemCost / item.weight : 0
         const itemCostRounded = round2(itemCost)

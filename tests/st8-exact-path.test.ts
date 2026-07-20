@@ -89,10 +89,12 @@ function makeInMemorySellDeps(state: MemState, opts: { p2002OnCreate?: boolean; 
           fifoQueryCount++;
           return Array.from(state.stockLots.values()).filter(l => l.productId === productId && l.remainingWeight > 0);
         },
-        updateStockLotRemaining: async (id, newRemaining) => {
-          stockUpdateCount++;
-          const lot = state.stockLots.get(id);
-          if (lot) lot.remainingWeight = newRemaining;
+        bulkUpdateStockLotRemaining: async (updates) => {
+          stockUpdateCount += updates.length;
+          for (const update of updates) {
+            const lot = state.stockLots.get(update.id);
+            if (lot) lot.remainingWeight = update.newRemainingWeight;
+          }
           return {};
         },
         createCreditEntry: async (data) => { state.creditEntries.push(data); return {}; },

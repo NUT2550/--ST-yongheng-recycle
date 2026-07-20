@@ -20,7 +20,7 @@ import type {
   SellBillTx,
   SellBillCreatedBill,
 } from './bill-services';
-import { SourceLotConflictError } from './bill-errors';
+import { executeStockLotBulkCas } from './stock-lot-bulk-cas';
 
 /**
  * Production Prisma adapter for createBuyBillService.
@@ -95,24 +95,12 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
               id: string; productId: string; remainingWeight: number; costPerKg: number;
               dateAdded: Date; createdAt: Date;
             }>>,
-          // ST-57: compare-and-set guard using updateMany with WHERE checks.
-          // Throws if the lot was modified between findSourceLots and update.
-          updateStockLotRemaining: async (id, newRemaining, expected) => {
-            // ST-57: CAS is mandatory — expected must always be provided
-            const where: Record<string, unknown> = {
-              id,
-              productId: expected.productId,
-              remainingWeight: expected.remainingWeight,
-              costPerKg: expected.costPerKg,
-            };
-            const result = await prismaTx.stockLot.updateMany({
-              where: where as Prisma.StockLotWhereUniqueInput,
-              data: { remainingWeight: newRemaining },
-            });
-            if (result.count !== 1) {
-              throw new SourceLotConflictError();
-            }
-          },
+          // ST-57: one guarded statement replaces one round trip per FIFO lot.
+          bulkUpdateStockLotRemaining: (updates) =>
+            executeStockLotBulkCas(
+              (query) => prismaTx.$queryRaw<Array<{ id: string }>>(query),
+              updates,
+            ),
           createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
           createAuditLog: (data) => prismaTx.auditLog.create({ data }),
           createStockMovements: (data) => prismaTx.stockMovement.createMany({

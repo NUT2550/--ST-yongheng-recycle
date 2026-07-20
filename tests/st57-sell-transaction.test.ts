@@ -38,6 +38,7 @@ function clone<T>(value: T): T { return structuredClone(value) }
 function harness(initialLots: SellSourceLot[], failure?: Failure) {
   const state: State = { lots: clone(initialLots), bills: [], items: [], movements: [], audits: [], credits: [] }
   let billSequence = 0
+  let bulkCasCalls = 0
 
   const deps: SellBillServiceDeps<Bill> = {
     checkStockAvailability: async items => {
@@ -51,7 +52,6 @@ function harness(initialLots: SellSourceLot[], failure?: Failure) {
     transaction: async work => {
       if (failure === 'p2028') throw Object.assign(new Error('simulated transaction timeout'), { code: 'P2028' })
       const working = clone(state)
-      let casCount = 0
       let conflictInjected = false
       const positiveLots = working.lots.filter(row => row.remainingWeight > 0)
       const finalCas = positiveLots.length
@@ -64,17 +64,22 @@ function harness(initialLots: SellSourceLot[], failure?: Failure) {
           }
           return snapshot
         },
-        updateStockLotRemaining: async (id, newRemaining, expected) => {
-          casCount += 1
+        bulkUpdateStockLotRemaining: async updates => {
+          bulkCasCalls += 1
           if (failure === 'conflict' || failure === 'source-conflict') throw new SourceLotConflictError()
           if (failure === 'fifo-mismatch') throw new FifoMismatchError()
-          if (failure === 'cas-first' && casCount === 1) throw new Error('injected first CAS failure')
-          if (failure === 'cas-middle' && casCount === Math.ceil(finalCas / 2)) throw new Error('injected middle CAS failure')
-          if (failure === 'cas-final' && casCount === finalCas) throw new Error('injected final CAS failure')
-          const target = working.lots.find(row => row.id === id)
-          if (!target || target.productId !== expected.productId || target.remainingWeight !== expected.remainingWeight || target.costPerKg !== expected.costPerKg) throw new SourceLotConflictError()
-          if (newRemaining < 0) throw new Error('negative stock')
-          target.remainingWeight = newRemaining
+          if (failure === 'cas-first' || failure === 'cas-middle' || failure === 'cas-final') {
+            throw new Error(`injected ${failure} bulk CAS failure`)
+          }
+          expect(updates.length).toBeLessThanOrEqual(finalCas)
+          for (const update of updates) {
+            const target = working.lots.find(row => row.id === update.id)
+            if (!target || target.productId !== update.productId || target.remainingWeight !== update.expectedRemainingWeight || target.costPerKg !== update.expectedCostPerKg) throw new SourceLotConflictError()
+            if (update.newRemainingWeight < 0) throw new Error('negative stock')
+          }
+          for (const update of updates) {
+            working.lots.find(row => row.id === update.id)!.remainingWeight = update.newRemainingWeight
+          }
         },
         createSellBill: async args => {
           if (failure === 'bill') throw new Error('injected SellBill failure')
@@ -104,7 +109,7 @@ function harness(initialLots: SellSourceLot[], failure?: Failure) {
       return result
     },
   }
-  return { state, deps }
+  return { state, deps, get bulkCasCalls() { return bulkCasCalls } }
 }
 
 function assertNoWrites(state: State, before: SellSourceLot[]) {
@@ -143,15 +148,21 @@ describe('ST-57 real createSellBillService with atomic adapter', () => {
   })
 
   test('41-lot fixture deducts 27,935 kg exactly without negative stock', async () => {
-    const lots = Array.from({ length: 41 }, (_, index) => lot(`lot-${String(index + 1).padStart(2, '0')}`, 700, 10 + index, '2026-01-01', index))
+    const lots = Array.from({ length: 41 }, (_, index) => lot(
+      `lot-${String(index + 1).padStart(2, '0')}`,
+      index === 40 ? 1_000 : 680,
+      10 + index,
+      '2026-01-01',
+      index,
+    ))
     const h = harness(lots)
     const result = await createSellBillService(h.deps, input(27_935), auth)
-    const expectedCost = lots.slice(0, 39).reduce((sum, row) => sum + 700 * row.costPerKg, 0) + 635 * lots[39].costPerKg
+    const expectedCost = lots.slice(0, 40).reduce((sum, row) => sum + 680 * row.costPerKg, 0) + 735 * lots[40].costPerKg
     expect(result.totalCost).toBe(expectedCost)
-    expect(h.state.lots.slice(0, 39).every(row => row.remainingWeight === 0)).toBe(true)
-    expect(h.state.lots[39].remainingWeight).toBe(65)
-    expect(h.state.lots[40].remainingWeight).toBe(700)
+    expect(h.state.lots.slice(0, 40).every(row => row.remainingWeight === 0)).toBe(true)
+    expect(h.state.lots[40].remainingWeight).toBe(265)
     expect(h.state.lots.every(row => row.remainingWeight >= 0)).toBe(true)
+    expect(h.bulkCasCalls).toBe(1)
     expect(h.state.movements).toHaveLength(1); expect(h.state.audits).toHaveLength(1)
   })
 
