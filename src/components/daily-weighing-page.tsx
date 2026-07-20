@@ -20,6 +20,7 @@ import { getAuthToken } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatWeight } from '@/lib/helpers';
 import { getThailandTodayDateString } from '@/lib/thailand-date';
+import { isTransferOnlyCategory } from '@/lib/daily-weighing-policy';
 
 const TOLERANCE = 0.10;
 
@@ -217,6 +218,8 @@ export default function DailyWeighingPage() {
   const totalDismantling = weighingItems.reduce((s, i) => s - i.transferSourceOutWeight + i.transferOutputInWeight, 0);
   const totalExpected = weighingItems.reduce((s, i) => s + i.dailyNet, 0);
   const hasNotStarted = false; // ST-53: daily movements don't have NOT_STARTED state
+  // ST-55: hide sorting columns for copper/brass (transfer-only categories)
+  const hideSorting = isTransferOnlyCategory(undefined, category);
   const totalActual = weighingItems.reduce((s, i) => s + (parseFloat(i.actualWeighedWeight) || 0), 0);
   const totalDiff = Math.round((totalActual - totalExpected) * 100) / 100;
 
@@ -327,10 +330,10 @@ export default function DailyWeighingPage() {
                     <TableHead className="min-w-40">สินค้า</TableHead>
                     <TableHead className="text-right min-w-24">ซื้อเข้า</TableHead>
                     <TableHead className="text-right min-w-24">ขายออก</TableHead>
-                    <TableHead className="text-right min-w-24">ต้นทางคัดแยก</TableHead>
-                    <TableHead className="text-right min-w-24">ผลผลิตคัดแยก</TableHead>
-                    <TableHead className="text-right min-w-24">ต้นทางแกะ/ย้าย</TableHead>
-                    <TableHead className="text-right min-w-24">ผลผลิตแกะ/ย้าย</TableHead>
+                    {!hideSorting && <TableHead className="text-right min-w-24">ต้นทางคัดแยก</TableHead>}
+                    {!hideSorting && <TableHead className="text-right min-w-24">ผลผลิตคัดแยก</TableHead>}
+                    <TableHead className="text-right min-w-24">ย้ายออก</TableHead>
+                    <TableHead className="text-right min-w-24">ย้ายเข้า/แกะของเข้า</TableHead>
                     <TableHead className="text-right min-w-24">ปรับยอดสุทธิ</TableHead>
                     <TableHead className="text-right min-w-28">ยอดสุทธิของวันในระบบ</TableHead>
                     <TableHead className="text-right min-w-28">น้ำหนักชั่งรวมจริง (กก.)</TableHead>
@@ -349,8 +352,8 @@ export default function DailyWeighingPage() {
                         <TableCell className="font-medium text-sm">{item.productName}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.purchaseInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.saleOutWeight)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.sortingSourceOutWeight)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputInWeight)}</TableCell>
+                        {!hideSorting && <TableCell className="text-right text-sm">{formatWeight(item.sortingSourceOutWeight)}</TableCell>}
+                        {!hideSorting && <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputInWeight)}</TableCell>}
                         <TableCell className="text-right text-sm">{formatWeight(item.transferSourceOutWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.transferOutputInWeight)}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.adjustmentNetWeight)}</TableCell>
@@ -391,7 +394,9 @@ export default function DailyWeighingPage() {
                   <TableRow className="border-t-2 bg-gray-50">
                     <TableCell className="font-bold text-sm">รวม</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(totalPurchase)}</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(totalSorting)}</TableCell>
+                    <TableCell className="text-right font-bold text-sm">—</TableCell>
+                    {!hideSorting && <TableCell className="text-right font-bold text-sm">{formatWeight(totalSorting)}</TableCell>}
+                    {!hideSorting && <TableCell className="text-right font-bold text-sm">—</TableCell>}
                     <TableCell className="text-right font-bold text-sm">{formatWeight(totalDismantling)}</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(totalExpected)}</TableCell>
                     <TableCell className="text-center text-sm">—</TableCell>
@@ -456,8 +461,8 @@ export default function DailyWeighingPage() {
                   <TableRow>
                     <TableHead className="min-w-40">สินค้า</TableHead>
                     <TableHead className="text-right min-w-24">ซื้อเข้า</TableHead>
-                    <TableHead className="text-right min-w-24">คัดแยก</TableHead>
-                    <TableHead className="text-right min-w-24">แกะของ</TableHead>
+                    {!hideSorting && <TableHead className="text-right min-w-24">คัดแยก</TableHead>}
+                    <TableHead className="text-right min-w-24">แกะของ/ย้าย</TableHead>
                     <TableHead className="text-right min-w-28">รวมในระบบ</TableHead>
                     <TableHead className="text-center min-w-20">เอกสาร</TableHead>
                     <TableHead className="text-right min-w-24">ชั่งจริง</TableHead>
@@ -472,7 +477,7 @@ export default function DailyWeighingPage() {
                       <TableRow key={item.id}>
                         <TableCell className="text-sm font-medium">{item.product.name}</TableCell>
                         <TableCell className="text-right text-sm">{formatWeight(item.purchaseWeight)}</TableCell>
-                        <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputWeight)}</TableCell>
+                        {!hideSorting && <TableCell className="text-right text-sm">{formatWeight(item.sortingOutputWeight)}</TableCell>}
                         <TableCell className="text-right text-sm">{formatWeight(item.dismantlingOutputWeight)}</TableCell>
                         <TableCell className="text-right text-sm font-semibold">{formatWeight(item.expectedTotalWeight)}</TableCell>
                         <TableCell className="text-center text-sm">{totalDocCount}</TableCell>
@@ -488,7 +493,7 @@ export default function DailyWeighingPage() {
                   <TableRow className="border-t-2 bg-gray-50">
                     <TableCell className="font-bold text-sm">รวม</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.purchaseWeight, 0))}</TableCell>
-                    <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.sortingOutputWeight, 0))}</TableCell>
+                    {!hideSorting && <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.sortingOutputWeight, 0))}</TableCell>}
                     <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.dismantlingOutputWeight, 0))}</TableCell>
                     <TableCell className="text-right font-bold text-sm">{formatWeight(detailSession.items.reduce((s, i) => s + i.expectedTotalWeight, 0))}</TableCell>
                     <TableCell className="text-center text-sm">—</TableCell>
