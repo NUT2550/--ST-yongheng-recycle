@@ -817,7 +817,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     // Client-supplied totalAmount is NEVER written.
     let recordedSellArgs: { data: { totalAmount: number; totalCost: number } } | null = null;
     const sourceLots: SellSourceLot[] = [
-      { id: 'lot-1', remainingWeight: 100, costPerKg: 50, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
+      { id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 50, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
     ];
     const mockDeps: SellBillServiceDeps = {
       checkStockAvailability: async () => ({ ok: true as const }),

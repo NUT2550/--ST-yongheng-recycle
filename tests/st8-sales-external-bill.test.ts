@@ -63,7 +63,7 @@ function makeMockDeps(opts: {
           };
         },
         findSourceLots: async () => [
-          { id: 'lot-1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
+          { id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
         ],
         updateStockLotRemaining: async () => { state.fifoDeductions++; return {}; },
         createAuditLog: async () => { state.auditLogCreated = true; },
@@ -128,7 +128,7 @@ describe('ST-8 Sales externalBillNumber: persistence', () => {
             externalBillNumber: args.data.externalBillNumber,
             items: args.data.items.create.map((it) => ({ productId: it.productId, weight: it.weight, pricePerKg: it.pricePerKg })),
           }),
-          findSourceLots: async () => [{ id: 'lot-1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') }],
+          findSourceLots: async () => [{ id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') }],
           updateStockLotRemaining: async () => ({}),
           createAuditLog: async (data) => { auditDetails = data.details || null; },
         };

@@ -432,6 +432,7 @@ export interface SellBillCreateArgs {
  */
 export interface SellSourceLot {
   id: string
+  productId: string
   remainingWeight: number
   costPerKg: number
   dateAdded: Date
@@ -445,10 +446,11 @@ export interface SellBillTx<TBill extends SellBillCreatedBill = SellBillCreatedB
   createSellBill(args: SellBillCreateArgs): Promise<TBill>
   /** Find source lots for FIFO deduction, ordered by FIFO_ORDER_BY. */
   findSourceLots(productId: string): Promise<SellSourceLot[]>
-  /** Deduct from a single lot. */
+  /** Deduct from a single lot. ST-57: optional expected values for CAS guard. */
   updateStockLotRemaining(
     id: string,
-    newRemaining: number
+    newRemaining: number,
+    expected?: { productId: string; remainingWeight: number; costPerKg: number }
   ): Promise<unknown>
   createCreditEntry?(data: {
     type: string
@@ -606,7 +608,11 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
           const deductFromLot = Math.min(lot.remainingWeight, remainingToDeduct)
           itemCost += deductFromLot * lot.costPerKg
           remainingToDeduct -= deductFromLot
-          await tx.updateStockLotRemaining(lot.id, lot.remainingWeight - deductFromLot)
+          await tx.updateStockLotRemaining(
+            lot.id,
+            lot.remainingWeight - deductFromLot,
+            { productId: lot.productId, remainingWeight: lot.remainingWeight, costPerKg: lot.costPerKg }
+          )
         }
 
         const costPerKg = item.weight > 0 ? itemCost / item.weight : 0

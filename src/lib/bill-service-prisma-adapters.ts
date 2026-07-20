@@ -91,11 +91,28 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
               where: { productId, remainingWeight: { gt: 0 } },
               orderBy: FIFO_ORDER_BY,
             }) as Promise<Array<{
-              id: string; remainingWeight: number; costPerKg: number;
+              id: string; productId: string; remainingWeight: number; costPerKg: number;
               dateAdded: Date; createdAt: Date;
             }>>,
-          updateStockLotRemaining: (id, newRemaining) =>
-            prismaTx.stockLot.update({ where: { id }, data: { remainingWeight: newRemaining } }),
+          // ST-57: compare-and-set guard using updateMany with WHERE checks.
+          // Throws if the lot was modified between findSourceLots and update.
+          updateStockLotRemaining: async (id, newRemaining, expected?) => {
+            const where: Record<string, unknown> = { id };
+            if (expected) {
+              where.productId = expected.productId;
+              where.remainingWeight = expected.remainingWeight;
+              where.costPerKg = expected.costPerKg;
+            }
+            const result = await prismaTx.stockLot.updateMany({
+              where: where as Prisma.StockLotWhereUniqueInput,
+              data: { remainingWeight: newRemaining },
+            });
+            if (result.count !== 1) {
+              const err = new Error('สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างบันทึก ระบบยกเลิกรายการทั้งหมดแล้ว กรุณาโหลดข้อมูลใหม่และบันทึกอีกครั้ง') as Error & { code?: string };
+              err.code = 'SOURCE_LOT_CONFLICT';
+              throw err;
+            }
+          },
           createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
           createAuditLog: (data) => prismaTx.auditLog.create({ data }),
           createStockMovements: (data) => prismaTx.stockMovement.createMany({
@@ -103,6 +120,9 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
           }),
         };
         return fn(adaptedTx);
+      }, {
+        maxWait: 5000,
+        timeout: 15000, // ST-57: 15s timeout (up from default 5s)
       }),
   };
 }

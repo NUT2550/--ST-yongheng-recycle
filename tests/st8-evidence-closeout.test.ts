@@ -90,7 +90,7 @@ function makeSellDeps(state: MemState, opts: { p2002Target?: string[] } = {}): S
           findSourceLots: async (productId) => {
             state.callCounts.fifoQuery++;
             return Array.from(state.stockLots.values()).filter(l => l.productId === productId).map(l => ({
-              id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01')
+              id: l.id, productId: l.productId, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01')
             }));
           },
           updateStockLotRemaining: async (id, newRem) => {
