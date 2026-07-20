@@ -254,24 +254,23 @@ export async function getDailyMovements(selectedDate: string, category?: string)
       + b.CANCELLATION_REVERSAL + b.COMPENSATION_REVERSAL
     const movementCount = Object.values(row.counts).reduce((sum, value) => sum + (value || 0), 0)
 
-    // Only include products with at least 1 movement
-    if (movementCount > 0) {
-      items.push({
-        productId,
-        productName: names.get(productId) || productId,
-        purchaseInWeight: preciseWeight(purchaseIn / STOCK_WEIGHT_SCALE),
-        saleOutWeight: preciseWeight(saleOut / STOCK_WEIGHT_SCALE),
-        sortingSourceOutWeight: preciseWeight(sortingSourceOut / STOCK_WEIGHT_SCALE),
-        sortingOutputInWeight: preciseWeight(sortingOutputIn / STOCK_WEIGHT_SCALE),
-        transferSourceOutWeight: preciseWeight(transferSourceOut / STOCK_WEIGHT_SCALE),
-        transferOutputInWeight: preciseWeight(transferOutputIn / STOCK_WEIGHT_SCALE),
-        adjustmentNetWeight: preciseWeight(adjustmentNet / STOCK_WEIGHT_SCALE),
-        dailyNet: preciseWeight(dailyNet / STOCK_WEIGHT_SCALE),
-        movementCount,
-        movementCounts: row.counts,
-      })
-      totalDailyNet += dailyNet
-    }
+    // ST-53: include ALL active category Products, even with zero movements.
+    // A zero-movement Product has dailyNet=0, allowing actual-only reconciliation.
+    items.push({
+      productId,
+      productName: names.get(productId) || productId,
+      purchaseInWeight: preciseWeight(purchaseIn / STOCK_WEIGHT_SCALE),
+      saleOutWeight: preciseWeight(saleOut / STOCK_WEIGHT_SCALE),
+      sortingSourceOutWeight: preciseWeight(sortingSourceOut / STOCK_WEIGHT_SCALE),
+      sortingOutputInWeight: preciseWeight(sortingOutputIn / STOCK_WEIGHT_SCALE),
+      transferSourceOutWeight: preciseWeight(transferSourceOut / STOCK_WEIGHT_SCALE),
+      transferOutputInWeight: preciseWeight(transferOutputIn / STOCK_WEIGHT_SCALE),
+      adjustmentNetWeight: preciseWeight(adjustmentNet / STOCK_WEIGHT_SCALE),
+      dailyNet: preciseWeight(dailyNet / STOCK_WEIGHT_SCALE),
+      movementCount,
+      movementCounts: row.counts,
+    })
+    totalDailyNet += dailyNet
   }
 
   return {
