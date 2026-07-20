@@ -443,3 +443,193 @@ describe('ST-54 executable transaction tests', () => {
     })
   })
 })
+
+// ============================================================================
+// Phase 2-3: Compare-and-set source lot guard tests
+// ============================================================================
+
+import { SourceLotConflictError } from '../src/lib/sorting-transaction-service'
+
+describe('ST-54 compare-and-set source lot guards', () => {
+  const productId = 'source-cas'
+  const sourceLots = createSourceLots(productId, 3, 90, 10)
+
+  test('24. SOURCE_LOT_CONFLICT maps to HTTP 409', () => {
+    const error = new SourceLotConflictError()
+    const mapped = mapPrismaError(error)
+    expect(mapped.httpStatus).toBe(409)
+    expect(mapped.code).toBe('SOURCE_LOT_CONFLICT')
+    expect(mapped.message).toContain('สต็อกต้นทางมีการเปลี่ยนแปลง')
+    expect(mapped.message).toContain('กรุณาโหลดข้อมูลใหม่')
+  })
+
+  test('25. no raw database details in SOURCE_LOT_CONFLICT', () => {
+    const error = new SourceLotConflictError()
+    const mapped = mapPrismaError(error)
+    expect(mapped.message).not.toContain('productId')
+    expect(mapped.message).not.toContain('remainingWeight')
+    expect(mapped.message).not.toContain('costPerKg')
+    expect(mapped.message).not.toContain('updateMany')
+  })
+
+  test('26. concurrent remainingWeight drift → conflict + full rollback', async () => {
+    const adapter = createTestAdapter(sourceLots)
+    // Build a stale preview from the initial state
+    const initialLots = await adapter.loadSourceLots(productId)
+    const { previewFifoDeduction } = await import('../src/lib/fifo-validation')
+    const preview = previewFifoDeduction(productId, 30, initialLots.map((l) => ({
+      id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg,
+      dateAdded: l.dateAdded, createdAt: l.createdAt,
+    })))
+    expect(preview.success).toBe(true)
+    if (!preview.success) return
+
+    // Transaction B modifies lot-1 in committed state BEFORE transaction A runs
+    const state = adapter.getState()
+    const lot1 = [...state.stockLots.values()].find((l) => l.productId === productId && l.id.includes('-1'))
+    if (lot1) {
+      lot1.remainingWeight = 5 // was ~30
+    }
+
+    // Transaction A runs with stale preview — should detect conflict on lot-1
+    const input = makeInput(productId, 30, makeItems(2, 10))
+    await expect(createSortingBillTransaction(adapter, input, preview)).rejects.toThrow()
+
+    // Verify full rollback
+    const fs = adapter.getState()
+    expect(fs.sortingBills.size).toBe(0)
+    expect(fs.stockMovements.size).toBe(0)
+    const outputLots = [...fs.stockLots.values()].filter((l) => l.source === 'SORTING')
+    expect(outputLots.length).toBe(0)
+    // Transaction B's change is preserved
+    const finalLot1 = [...fs.stockLots.values()].find((l) => l.id === lot1?.id)
+    expect(finalLot1?.remainingWeight).toBe(5)
+  })
+
+  test('27. productId mismatch on source lot → conflict', async () => {
+    const adapter = createTestAdapter(sourceLots)
+    const initialLots = await adapter.loadSourceLots(productId)
+    const { previewFifoDeduction } = await import('../src/lib/fifo-validation')
+    const preview = previewFifoDeduction(productId, 30, initialLots.map((l) => ({
+      id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg,
+      dateAdded: l.dateAdded, createdAt: l.createdAt,
+    })))
+    expect(preview.success).toBe(true)
+    if (!preview.success) return
+
+    const state = adapter.getState()
+    const lot1 = [...state.stockLots.values()].find((l) => l.productId === productId && l.id.includes('-1'))
+    if (lot1) {
+      lot1.productId = 'wrong-product'
+    }
+
+    const input = makeInput(productId, 30, makeItems(2, 10))
+    await expect(createSortingBillTransaction(adapter, input, preview)).rejects.toThrow()
+    expect(adapter.getState().sortingBills.size).toBe(0)
+  })
+
+  test('28. costPerKg drift on source lot → conflict', async () => {
+    const adapter = createTestAdapter(sourceLots)
+    const initialLots = await adapter.loadSourceLots(productId)
+    const { previewFifoDeduction } = await import('../src/lib/fifo-validation')
+    const preview = previewFifoDeduction(productId, 30, initialLots.map((l) => ({
+      id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg,
+      dateAdded: l.dateAdded, createdAt: l.createdAt,
+    })))
+    expect(preview.success).toBe(true)
+    if (!preview.success) return
+
+    const state = adapter.getState()
+    const lot1 = [...state.stockLots.values()].find((l) => l.productId === productId && l.id.includes('-1'))
+    if (lot1) {
+      lot1.costPerKg = 99
+    }
+
+    const input = makeInput(productId, 30, makeItems(2, 10))
+    await expect(createSortingBillTransaction(adapter, input, preview)).rejects.toThrow()
+    expect(adapter.getState().sortingBills.size).toBe(0)
+  })
+
+  test('29. lot removed after preview → conflict or insufficient stock', async () => {
+    const adapter = createTestAdapter(sourceLots)
+    const initialLots = await adapter.loadSourceLots(productId)
+    const { previewFifoDeduction } = await import('../src/lib/fifo-validation')
+    const preview = previewFifoDeduction(productId, 30, initialLots.map((l) => ({
+      id: l.id, remainingWeight: l.remainingWeight, costPerKg: l.costPerKg,
+      dateAdded: l.dateAdded, createdAt: l.createdAt,
+    })))
+    expect(preview.success).toBe(true)
+    if (!preview.success) return
+
+    const state = adapter.getState()
+    const lot1 = [...state.stockLots.values()].find((l) => l.productId === productId && l.id.includes('-1'))
+    if (lot1) {
+      state.stockLots.delete(lot1.id)
+    }
+
+    const input = makeInput(productId, 30, makeItems(2, 10))
+    await expect(createSortingBillTransaction(adapter, input, preview)).rejects.toThrow()
+    expect(adapter.getState().sortingBills.size).toBe(0)
+  })
+
+  test('30. two overlapping concurrent requests — at most one succeeds', async () => {
+    const productId = 'source-overlap'
+    // Only enough stock for ONE request (30 kg available, each needs 25 kg)
+    const lots: TestSourceLot[] = [
+      { id: 'lot-overlap-1', productId, remainingWeight: 30, originalRemainingWeight: 30, costPerKg: 10, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z') },
+    ]
+    const adapter = createTestAdapter(lots)
+
+    const input1 = makeInput(productId, 25, [{ productId: 'out-1', weight: 20, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }], 'SORT-A')
+    const input2 = makeInput(productId, 25, [{ productId: 'out-2', weight: 20, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }], 'SORT-B')
+
+    // Execute both — they share the same adapter state, so the second will see modified lots
+    const result1 = await createSortingBillTransaction(adapter, input1)
+    expect(result1.sortingBill.billNumber).toBe('SORT-A')
+
+    // Second request should fail (insufficient stock or conflict)
+    await expect(createSortingBillTransaction(adapter, input2)).rejects.toThrow()
+
+    // Only 1 bill committed
+    expect(adapter.getState().sortingBills.size).toBe(1)
+    // No negative weight
+    const lot = [...adapter.getState().stockLots.values()].find((l) => l.id === 'lot-overlap-1')
+    expect(lot?.remainingWeight).toBeGreaterThanOrEqual(0)
+  })
+
+  test('31. FIFO ordering preserved with compare-and-set (dateAdded ASC, createdAt ASC, id ASC)', async () => {
+    const productId = 'source-cas-order'
+    const lots: TestSourceLot[] = [
+      { id: 'lot-c', productId, remainingWeight: 20, originalRemainingWeight: 20, costPerKg: 10, dateAdded: new Date('2026-01-10T00:00:00+07:00'), createdAt: new Date('2026-01-10T00:00:00Z') },
+      { id: 'lot-a', productId, remainingWeight: 20, originalRemainingWeight: 20, costPerKg: 10, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z') },
+      { id: 'lot-b', productId, remainingWeight: 20, originalRemainingWeight: 20, costPerKg: 10, dateAdded: new Date('2026-01-07T00:00:00+07:00'), createdAt: new Date('2026-01-07T00:00:00Z') },
+    ]
+    const adapter = createTestAdapter(lots)
+    const loaded = await adapter.loadSourceLots(productId)
+    expect(loaded[0].id).toBe('lot-a')
+    expect(loaded[1].id).toBe('lot-b')
+    expect(loaded[2].id).toBe('lot-c')
+
+    // Deduct 25 kg — should consume lot-a (20) + lot-b (5)
+    const input = makeInput(productId, 25, [{ productId: 'out-1', weight: 20, isWaste: false, sortedPricePerKg: 15, bonusAmount: 0 }])
+    await createSortingBillTransaction(adapter, input)
+
+    const state = adapter.getState()
+    expect(state.stockLots.get('lot-a')?.remainingWeight).toBe(0) // fully deducted
+    expect(state.stockLots.get('lot-b')?.remainingWeight).toBe(15) // 20 - 5 = 15
+    expect(state.stockLots.get('lot-c')?.remainingWeight).toBe(20) // untouched
+  })
+
+  test('32. ST-20 zero-cost prevention preserved with compare-and-set', async () => {
+    const productId = 'source-cas-zero'
+    const lots: TestSourceLot[] = [{
+      id: 'lot-zero-cas', productId, remainingWeight: 50, originalRemainingWeight: 50,
+      costPerKg: 0, dateAdded: new Date('2026-01-05T00:00:00+07:00'), createdAt: new Date('2026-01-05T00:00:00Z'),
+    }]
+    const adapter = createTestAdapter(lots)
+    const input = makeInput(productId, 30, makeItems(2, 10))
+    await expect(createSortingBillTransaction(adapter, input)).rejects.toThrow()
+    expect(adapter.getState().sortingBills.size).toBe(0)
+  })
+})
+

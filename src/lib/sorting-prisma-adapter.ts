@@ -7,7 +7,7 @@
  */
 import { db } from './db'
 import type { Prisma } from '@prisma/client'
-import type { SortingDeps, SortingTxContext, SourceLotData, SortingBillResult } from './sorting-transaction-service'
+import { SortingDeps, SortingTxContext, SourceLotData, SortingBillResult, SourceLotConflictError } from './sorting-transaction-service'
 import type { StockMovementDraft } from './stock-movement-ledger'
 import { FIFO_ORDER_BY } from './fifo-validation'
 
@@ -48,11 +48,28 @@ export function createPrismaSortingDeps(): SortingDeps {
             }))
           },
 
-          async updateSourceLot(lotId: string, newRemainingWeight: number): Promise<void> {
-            await prismaTx.stockLot.update({
-              where: { id: lotId },
+          async updateSourceLot(
+            lotId: string,
+            expected: { productId: string; remainingWeight: number; costPerKg: number },
+            newRemainingWeight: number,
+          ): Promise<void> {
+            // ST-54: Compare-and-set using updateMany with WHERE guards.
+            // Uses Prisma's Float comparison — the service rounds all values to
+            // 2 decimal places before calling this, so float equality is safe
+            // within the same rounding precision. PostgreSQL DOUBLE PRECISION
+            // stores exact values for 2-decimal numbers up to 15 significant digits.
+            const result = await prismaTx.stockLot.updateMany({
+              where: {
+                id: lotId,
+                productId: expected.productId,
+                remainingWeight: expected.remainingWeight,
+                costPerKg: expected.costPerKg,
+              },
               data: { remainingWeight: newRemainingWeight },
             })
+            if (result.count !== 1) {
+              throw new SourceLotConflictError()
+            }
           },
 
           async createSortingBill(data): Promise<SortingBillResult> {

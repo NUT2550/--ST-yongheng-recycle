@@ -19,6 +19,7 @@ import type {
   SourceLotData,
   SortingBillResult,
 } from './sorting-transaction-service'
+import { SourceLotConflictError } from './sorting-transaction-service'
 import type { FifoPreviewSuccess } from './fifo-validation'
 import type { StockMovementDraft } from './stock-movement-ledger'
 import { FIFO_ORDER_BY } from './fifo-validation'
@@ -146,13 +147,32 @@ export function createTestAdapter(
           return lots.map((l) => ({ ...l }))
         },
 
-        async updateSourceLot(lotId: string, newRemainingWeight: number): Promise<void> {
+        async updateSourceLot(
+          lotId: string,
+          expected: { productId: string; remainingWeight: number; costPerKg: number },
+          newRemainingWeight: number,
+        ): Promise<void> {
           queryCount++
           if (failures.failAt === 'updateSourceLot') {
             throw failures.error || new Error('Injected: updateSourceLot failed')
           }
           const lot = txState.stockLots.get(lotId)
           if (!lot) throw new Error(`Lot not found: ${lotId}`)
+          // ST-54: Compare-and-set guard — detect concurrent modification
+          if (lot.productId !== expected.productId) {
+            throw new SourceLotConflictError()
+          }
+          // Use rounded comparison for floating-point safety
+          const currentRounded = Math.round(lot.remainingWeight * 1e6) / 1e6
+          const expectedRounded = Math.round(expected.remainingWeight * 1e6) / 1e6
+          if (currentRounded !== expectedRounded) {
+            throw new SourceLotConflictError()
+          }
+          const currentCostRounded = Math.round(lot.costPerKg * 1e6) / 1e6
+          const expectedCostRounded = Math.round(expected.costPerKg * 1e6) / 1e6
+          if (currentCostRounded !== expectedCostRounded) {
+            throw new SourceLotConflictError()
+          }
           lot.remainingWeight = newRemainingWeight
         },
 

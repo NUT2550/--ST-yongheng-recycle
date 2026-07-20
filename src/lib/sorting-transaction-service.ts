@@ -84,7 +84,15 @@ export type FifoPreviewResult = FifoPreviewSuccess
  */
 export interface SortingTxContext {
   findSourceLots(productId: string): Promise<SourceLotData[]>
-  updateSourceLot(lotId: string, newRemainingWeight: number): Promise<void>
+  /**
+   * Compare-and-set source lot update.
+   * Throws SourceLotConflictError if the lot's current values don't match expected.
+   */
+  updateSourceLot(
+    lotId: string,
+    expected: { productId: string; remainingWeight: number; costPerKg: number },
+    newRemainingWeight: number,
+  ): Promise<void>
   createSortingBill(data: {
     billNumber: string
     date: Date
@@ -168,6 +176,16 @@ export class TransactionTimeoutError extends SortingError {
   }
 }
 
+export class SourceLotConflictError extends SortingError {
+  constructor() {
+    super(
+      'สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างบันทึก ระบบยกเลิกรายการทั้งหมดแล้ว กรุณาโหลดข้อมูลใหม่และบันทึกอีกครั้ง',
+      'SOURCE_LOT_CONFLICT',
+      409,
+    )
+  }
+}
+
 // ============================================================================
 // Core service: createSortingBillTransaction
 // ============================================================================
@@ -227,7 +245,11 @@ export async function createSortingBillTransaction(
       const deductFromLot = Math.min(lot.remainingWeight, remaining)
       totalCost += deductFromLot * lot.costPerKg
       remaining -= deductFromLot
-      await tx.updateSourceLot(lot.id, lot.remainingWeight - deductFromLot)
+      await tx.updateSourceLot(
+        lot.id,
+        { productId: lot.productId, remainingWeight: lot.remainingWeight, costPerKg: lot.costPerKg },
+        lot.remainingWeight - deductFromLot,
+      )
       deductedLots.push({ id: lot.id, deducted: deductFromLot })
     }
 
