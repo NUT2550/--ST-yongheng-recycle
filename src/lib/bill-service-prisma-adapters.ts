@@ -20,6 +20,7 @@ import type {
   SellBillTx,
   SellBillCreatedBill,
 } from './bill-services';
+import { executeStockLotBulkCas } from './stock-lot-bulk-cas';
 
 /**
  * Production Prisma adapter for createBuyBillService.
@@ -91,11 +92,15 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
               where: { productId, remainingWeight: { gt: 0 } },
               orderBy: FIFO_ORDER_BY,
             }) as Promise<Array<{
-              id: string; remainingWeight: number; costPerKg: number;
+              id: string; productId: string; remainingWeight: number; costPerKg: number;
               dateAdded: Date; createdAt: Date;
             }>>,
-          updateStockLotRemaining: (id, newRemaining) =>
-            prismaTx.stockLot.update({ where: { id }, data: { remainingWeight: newRemaining } }),
+          // ST-57: one guarded statement replaces one round trip per FIFO lot.
+          bulkUpdateStockLotRemaining: (updates) =>
+            executeStockLotBulkCas(
+              (query) => prismaTx.$queryRaw<Array<{ id: string }>>(query),
+              updates,
+            ),
           createCreditEntry: (data) => prismaTx.creditEntry.create({ data }),
           createAuditLog: (data) => prismaTx.auditLog.create({ data }),
           createStockMovements: (data) => prismaTx.stockMovement.createMany({
@@ -103,6 +108,9 @@ export function makeSellBillServiceDeps(): SellBillServiceDeps<SellBillCreatedBi
           }),
         };
         return fn(adaptedTx);
+      }, {
+        maxWait: 5000,
+        timeout: 15000, // ST-57: 15s timeout (up from default 5s)
       }),
   };
 }

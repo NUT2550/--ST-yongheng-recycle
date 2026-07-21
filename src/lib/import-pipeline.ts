@@ -42,6 +42,7 @@
  */
 
 import { DuplicateExistingError } from './bill-errors'
+import { CodedBillError, InsufficientStockError } from './bill-errors'
 import { normalizeBillNumber } from './bill-identity';
 export { normalizeBillNumber } from './bill-identity'
 
@@ -90,7 +91,8 @@ export interface BillImportResult {
   status: BillClassification;
   billNumber?: string; // generated BUY-/SELL- number (set on success)
   billId?: string; // db id (set on success)
-  error?: string; // error message (set on FAILED/INSUFFICIENT_STOCK)
+  error?: string; // safe user-facing message (set on FAILED/INSUFFICIENT_STOCK)
+  errorCode?: string; // structured error code for programmatic handling
 }
 
 /** Aggregated summary returned by the apply controller. */
@@ -105,6 +107,75 @@ export interface ImportSummary {
   importedBills: BillImportResult[];
   skippedDuplicateBills: BillImportResult[];
   failedBills: BillImportResult[];
+}
+
+// ============================================================================
+// ST-57: Per-bill safe error classification
+// ============================================================================
+
+/**
+ * Classify a per-bill creation error into a safe structured result.
+ * Used inside applyImport() to ensure no raw Prisma/SQL internals
+ * reach the client via failedBills[].error.
+ */
+export function classifyImportBillError(error: unknown): {
+  status: BillClassification
+  errorCode: string
+  safeMessage: string
+} {
+  const code = (error as { code?: string })?.code
+
+  // P2028: Prisma transaction timeout
+  if (code === 'P2028') {
+    return {
+      status: 'FAILED',
+      errorCode: 'TRANSACTION_TIMEOUT',
+      safeMessage: 'การนำเข้าบิลใช้เวลานานเกินกำหนด ระบบได้ยกเลิกรายการทั้งหมดแล้ว กรุณารอสักครู่และลองใหม่ หากยังเกิดซ้ำให้แจ้งผู้ดูแล',
+    }
+  }
+
+  if (error instanceof InsufficientStockError) {
+    const product = error.productName || error.productId
+    return {
+      status: 'INSUFFICIENT_STOCK',
+      errorCode: 'INSUFFICIENT_STOCK',
+      safeMessage: `สต็อกไม่เพียงพอสำหรับ "${product}". มี: ${error.available} kg, ต้องการ: ${error.requested} kg`,
+    }
+  }
+
+  // SOURCE_LOT_CONFLICT: concurrent stock modification
+  if (code === 'SOURCE_LOT_CONFLICT') {
+    return {
+      status: 'FAILED',
+      errorCode: 'SOURCE_LOT_CONFLICT',
+      safeMessage: 'สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างนำเข้า ระบบยกเลิกรายการนี้แล้ว กรุณาโหลดข้อมูลใหม่และนำเข้าอีกครั้ง',
+    }
+  }
+
+  // FIFO validation errors (ST-20)
+  if (error instanceof CodedBillError && code === 'FIFO_VALIDATION_ERROR') {
+    return {
+      status: 'FAILED',
+      errorCode: 'FIFO_VALIDATION_ERROR',
+      safeMessage: 'สต็อกต้นทางมีต้นทุน 0 ไม่สามารถนำเข้าบิลได้ กรุณาตรวจสอบสต็อก',
+    }
+  }
+
+  // FIFO mismatch
+  if (code === 'FIFO_MISMATCH') {
+    return {
+      status: 'FAILED',
+      errorCode: 'FIFO_MISMATCH',
+      safeMessage: 'สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างนำเข้า ระบบยกเลิกรายการนี้แล้ว กรุณาโหลดข้อมูลใหม่และนำเข้าอีกครั้ง',
+    }
+  }
+
+  // Unknown error — never expose original message
+  return {
+    status: 'FAILED',
+    errorCode: 'BILL_CREATE_FAILED',
+    safeMessage: 'นำเข้าบิลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งผู้ดูแล',
+  }
 }
 
 // ============================================================================
@@ -715,14 +786,17 @@ export async function applyImport(
           status: 'DUPLICATE_EXISTING',
         });
       } else {
-        const message =
-          err instanceof Error ? err.message : 'Unknown error during bill creation';
+        // ST-57: Classify error safely — never expose raw Prisma/SQL internals
+        const classified = classifyImportBillError(err);
         results.push({
           externalBillNumber: bill.externalBillNumber,
           normalizedBillNumber: norm,
-          status: 'FAILED',
-          error: message,
+          status: classified.status,
+          error: classified.safeMessage,
+          errorCode: classified.errorCode,
         });
+        // Log full error server-side for debugging
+        console.error(`[ST-57] Bill import failed: ${bill.externalBillNumber}`, err);
       }
       // Continue with next bill — one failure must NOT abort the batch.
     }

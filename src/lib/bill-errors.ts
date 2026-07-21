@@ -17,6 +17,54 @@ export class DuplicateExistingError extends Error {
   }
 }
 
+export type BillFailureCode =
+  | 'TRANSACTION_TIMEOUT'
+  | 'SOURCE_LOT_CONFLICT'
+  | 'INSUFFICIENT_STOCK'
+  | 'FIFO_VALIDATION_ERROR'
+  | 'FIFO_MISMATCH'
+  | 'BILL_CREATE_FAILED'
+
+export class CodedBillError extends Error {
+  constructor(public readonly code: BillFailureCode, message: string) {
+    super(message)
+    this.name = 'CodedBillError'
+  }
+}
+
+export class SourceLotConflictError extends CodedBillError {
+  constructor() {
+    super('SOURCE_LOT_CONFLICT', 'Source lot changed during transaction')
+    this.name = 'SourceLotConflictError'
+  }
+}
+
+export class InsufficientStockError extends CodedBillError {
+  constructor(
+    public readonly productId: string,
+    public readonly productName: string | undefined,
+    public readonly available: number,
+    public readonly requested: number,
+  ) {
+    super('INSUFFICIENT_STOCK', 'Insufficient stock')
+    this.name = 'InsufficientStockError'
+  }
+}
+
+export class FifoValidationError extends CodedBillError {
+  constructor() {
+    super('FIFO_VALIDATION_ERROR', 'FIFO source cost validation failed')
+    this.name = 'FifoValidationError'
+  }
+}
+
+export class FifoMismatchError extends CodedBillError {
+  constructor() {
+    super('FIFO_MISMATCH', 'FIFO execution did not match preview')
+    this.name = 'FifoMismatchError'
+  }
+}
+
 /**
  * Check if an error is a Prisma P2002 (unique constraint violation).
  * Works with both Prisma.PrismaClientKnownRequestError and duck-typed errors.

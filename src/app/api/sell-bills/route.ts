@@ -7,6 +7,11 @@ import {
   createSellBillService,
   DuplicateExistingError,
 } from '@/lib/bill-services';
+import {
+  FifoValidationError,
+  InsufficientStockError,
+  SourceLotConflictError,
+} from '@/lib/bill-errors';
 
 // ST-8: thin adapter — auth → parse → createSellBillService → map errors
 // ST-8: makeSellBillServiceDeps imported from @/lib/bill-service-prisma-adapters
@@ -54,6 +59,24 @@ export async function POST(request: NextRequest) {
         { error: 'เลขบิลซ้ำ — กรุณาลองอีกครั้ง' },
         { status: 409 }
       );
+    }
+    if (error instanceof InsufficientStockError) {
+      return NextResponse.json({
+        error: `สต็อกไม่เพียงพอสำหรับ "${error.productName || error.productId}". มี: ${error.available} kg, ต้องการ: ${error.requested} kg`,
+        code: 'INSUFFICIENT_STOCK',
+      }, { status: 400 });
+    }
+    if (error instanceof SourceLotConflictError) {
+      return NextResponse.json({
+        error: 'สต็อกต้นทางมีการเปลี่ยนแปลง กรุณาโหลดข้อมูลใหม่และลองอีกครั้ง',
+        code: 'SOURCE_LOT_CONFLICT',
+      }, { status: 409 });
+    }
+    if (error instanceof FifoValidationError) {
+      return NextResponse.json({
+        error: 'สต็อกต้นทางไม่ผ่านการตรวจสอบต้นทุน กรุณาตรวจสอบสต็อก',
+        code: 'FIFO_VALIDATION_ERROR',
+      }, { status: 400 });
     }
     const message = error instanceof Error ? error.message : 'Failed to create sell bill';
     console.error('Error creating sell bill:', error);

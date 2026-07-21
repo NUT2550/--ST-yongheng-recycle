@@ -48,8 +48,15 @@ import {
 } from './stock-movement-ledger'
 import { isRealFormula } from './safe-math'
 import { normalizeBillNumber } from './bill-identity'
-import { DuplicateExistingError, isPrismaP2002, isP2002OnField } from './bill-errors'
+import {
+  DuplicateExistingError,
+  FifoValidationError,
+  InsufficientStockError,
+  isPrismaP2002,
+  isP2002OnField,
+} from './bill-errors'
 import type { AuthPayload } from './permissions'
+import type { StockLotCasUpdate } from './stock-lot-bulk-cas'
 
 // DuplicateExistingError + isPrismaP2002 imported from ./bill-errors (no circular dependency)
 
@@ -432,6 +439,7 @@ export interface SellBillCreateArgs {
  */
 export interface SellSourceLot {
   id: string
+  productId: string
   remainingWeight: number
   costPerKg: number
   dateAdded: Date
@@ -445,11 +453,8 @@ export interface SellBillTx<TBill extends SellBillCreatedBill = SellBillCreatedB
   createSellBill(args: SellBillCreateArgs): Promise<TBill>
   /** Find source lots for FIFO deduction, ordered by FIFO_ORDER_BY. */
   findSourceLots(productId: string): Promise<SellSourceLot[]>
-  /** Deduct from a single lot. */
-  updateStockLotRemaining(
-    id: string,
-    newRemaining: number
-  ): Promise<unknown>
+  /** Apply all guarded lot deductions for one FIFO item in one atomic write. */
+  bulkUpdateStockLotRemaining(updates: StockLotCasUpdate[]): Promise<unknown>
   createCreditEntry?(data: {
     type: string
     amount: number
@@ -538,8 +543,11 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
 
   const stockCheck = await deps.checkStockAvailability(input.items)
   if (stockCheck.ok === false) {
-    throw new Error(
-      `สต็อกไม่เพียงพอสำหรับ "${stockCheck.productName || stockCheck.productId}". มี: ${stockCheck.available} kg, ต้องการ: ${stockCheck.requested} kg`
+    throw new InsufficientStockError(
+      stockCheck.productId,
+      stockCheck.productName,
+      stockCheck.available,
+      stockCheck.requested,
     )
   }
 
@@ -587,27 +595,43 @@ export async function createSellBillService<TBill extends SellBillCreatedBill = 
           sourceLotsForPreview
         )
         if (preview.success === false) {
-          throw new Error(preview.message)
+          if (preview.code === 'INSUFFICIENT_STOCK') {
+            throw new InsufficientStockError(
+              preview.sourceProductId,
+              undefined,
+              preview.totalAvailable || 0,
+              preview.sourceWeight,
+            )
+          }
+          throw new FifoValidationError()
         }
         const costValidation = validateSourceLotCosts(preview, {
           type: 'TRANSFER',
           hasNonWasteOutput: true,
         })
         if (costValidation.valid === false) {
-          throw new Error(costValidation.message)
+          throw new FifoValidationError()
         }
 
         // Actual FIFO deduction - same lot order as the preview (deterministic).
         let remainingToDeduct = item.weight
         let itemCost = 0
+        const lotUpdates: StockLotCasUpdate[] = []
         for (const lot of sourceLotsRaw) {
           if (remainingToDeduct <= 0) break
           if (lot.remainingWeight <= 0) continue
           const deductFromLot = Math.min(lot.remainingWeight, remainingToDeduct)
           itemCost += deductFromLot * lot.costPerKg
           remainingToDeduct -= deductFromLot
-          await tx.updateStockLotRemaining(lot.id, lot.remainingWeight - deductFromLot)
+          lotUpdates.push({
+            id: lot.id,
+            productId: lot.productId,
+            expectedRemainingWeight: lot.remainingWeight,
+            expectedCostPerKg: lot.costPerKg,
+            newRemainingWeight: lot.remainingWeight - deductFromLot,
+          })
         }
+        await tx.bulkUpdateStockLotRemaining(lotUpdates)
 
         const costPerKg = item.weight > 0 ? itemCost / item.weight : 0
         const itemCostRounded = round2(itemCost)

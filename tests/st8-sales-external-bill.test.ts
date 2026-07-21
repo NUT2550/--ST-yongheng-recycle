@@ -63,9 +63,9 @@ function makeMockDeps(opts: {
           };
         },
         findSourceLots: async () => [
-          { id: 'lot-1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
+          { id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
         ],
-        updateStockLotRemaining: async () => { state.fifoDeductions++; return {}; },
+        bulkUpdateStockLotRemaining: async (updates) => { state.fifoDeductions += updates.length; return {}; },
         createAuditLog: async () => { state.auditLogCreated = true; },
       };
       return fn(tx);
@@ -128,8 +128,8 @@ describe('ST-8 Sales externalBillNumber: persistence', () => {
             externalBillNumber: args.data.externalBillNumber,
             items: args.data.items.create.map((it) => ({ productId: it.productId, weight: it.weight, pricePerKg: it.pricePerKg })),
           }),
-          findSourceLots: async () => [{ id: 'lot-1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') }],
-          updateStockLotRemaining: async () => ({}),
+          findSourceLots: async () => [{ id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 40, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') }],
+          bulkUpdateStockLotRemaining: async () => ({}),
           createAuditLog: async (data) => { auditDetails = data.details || null; },
         };
         return fn(tx);

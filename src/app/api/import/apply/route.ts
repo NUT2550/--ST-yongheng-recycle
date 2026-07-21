@@ -360,6 +360,45 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(summary, { status: 200 });
   } catch (error) {
     console.error('[ST-8] import apply failed:', error);
+
+    // ST-57: Handle Prisma P2028 (transaction timeout) explicitly
+    if ((error as { code?: string })?.code === 'P2028') {
+      return NextResponse.json(
+        {
+          error: 'การนำเข้าบิลใช้เวลานานเกินกำหนด ระบบได้ยกเลิกรายการทั้งหมดแล้ว กรุณารอสักครู่และลองใหม่ หากยังเกิดซ้ำให้แจ้งผู้ดูแล',
+          code: 'TRANSACTION_TIMEOUT',
+        },
+        { status: 503 }
+      );
+    }
+
+    // ST-57: Handle source-lot conflict (concurrent modification)
+    if ((error as { code?: string })?.code === 'SOURCE_LOT_CONFLICT') {
+      return NextResponse.json(
+        {
+          error: 'สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างบันทึก ระบบยกเลิกรายการทั้งหมดแล้ว กรุณาโหลดข้อมูลใหม่และบันทึกอีกครั้ง',
+          code: 'SOURCE_LOT_CONFLICT',
+        },
+        { status: 409 }
+      );
+    }
+
+    // ST-8: Duplicate existing bill — safe response
+    if (error instanceof Error && error.message.includes('DUPLICATE_EXISTING')) {
+      return NextResponse.json(
+        { error: error.message, code: 'DUPLICATE_EXISTING' },
+        { status: 409 }
+      );
+    }
+
+    // Insufficient stock — clear business error
+    if (error instanceof Error && error.message.includes('สต็อกไม่เพียงพอ')) {
+      return NextResponse.json(
+        { error: error.message, code: 'INSUFFICIENT_STOCK' },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Failed to apply import' },
       { status: 500 }

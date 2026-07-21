@@ -817,7 +817,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     // Client-supplied totalAmount is NEVER written.
     let recordedSellArgs: { data: { totalAmount: number; totalCost: number } } | null = null;
     const sourceLots: SellSourceLot[] = [
-      { id: 'lot-1', remainingWeight: 100, costPerKg: 50, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
+      { id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 50, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
     ];
     const mockDeps: SellBillServiceDeps = {
       checkStockAvailability: async () => ({ ok: true as const }),
@@ -837,7 +837,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
             };
           },
           findSourceLots: async () => sourceLots,
-          updateStockLotRemaining: async () => undefined,
+          bulkUpdateStockLotRemaining: async () => undefined,
           createAuditLog: async () => undefined,
         };
         return fn(tx);
@@ -922,7 +922,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     const sellServiceBody = billServicesSrc.slice(sellServiceStart, sellServiceEnd);
     expect(sellServiceBody).toMatch(/deps\.transaction\s*\(/);
     expect(sellServiceBody).toMatch(/tx\.createSellBill\s*\(/);
-    expect(sellServiceBody).toMatch(/tx\.updateStockLotRemaining\s*\(/);
+    expect(sellServiceBody).toMatch(/tx\.bulkUpdateStockLotRemaining\s*\(/);
     expect(sellServiceBody).toMatch(/tx\.createAuditLog\s*\(/);
 
     // Live test: if createAuditLog throws, the whole tx throws → caller sees the error.
