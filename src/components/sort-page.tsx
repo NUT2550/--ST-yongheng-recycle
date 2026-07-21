@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { useAppStore } from '@/lib/store';
 import { fetchProducts, createSortingBill } from '@/lib/api';
 import {
@@ -21,6 +21,123 @@ import { ProductCombobox, ProductComboboxGroup } from '@/components/ui/product-c
 import { RefreshCw, Plus, Trash2, Loader2, AlertTriangle, Gift } from 'lucide-react';
 import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
+
+/**
+ * ST-58: Memoized source-weight input component.
+ *
+ * Isolates the raw input string in local state so that typing does NOT
+ * trigger a re-render of the parent SortPage on every keystroke. The
+ * parsed numeric value is pushed upstream via onWeightChange only when
+ * the parse result changes (not on every character).
+ *
+ * The parent still receives the latest parsed value synchronously — there
+ * is NO debounce or deferral of the saved value. The onWeightChange
+ * callback is called inside the onChange handler, same as before.
+ *
+ * The live preview ("= 860.00 กก.") is computed once per render of THIS
+ * component only, not the parent.
+ */
+interface SourceWeightInputProps {
+  value: string;
+  onInputChange: (v: string) => void;
+  onWeightChange: (weight: number) => void;
+  onKeyDownEnter?: () => void;
+}
+
+const SourceWeightInput = memo(function SourceWeightInput({
+  value,
+  onInputChange,
+  onWeightChange,
+  onKeyDownEnter,
+}: SourceWeightInputProps) {
+  // Compute the preview once per render (reuses the parse result).
+  const preview = useMemo(() => {
+    if (!value.trim()) return null;
+    return previewWeightValue(value);
+  }, [value]);
+
+  return (
+    <>
+      <Input
+        id="sort-source-weight"
+        type="text"
+        inputMode="decimal"
+        placeholder="0.00 หรือ 68.4-0.2"
+        value={value}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (/^[+\-*/().\d\s]*$/.test(v)) {
+            onInputChange(v);
+            const result = parseWeightExpression(v);
+            if (!result.error) {
+              onWeightChange(result.value);
+            }
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            onKeyDownEnter?.();
+          }
+        }}
+      />
+      {preview !== null && (
+        <p className="text-[11px] text-emerald-700 font-medium">
+          = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+        </p>
+      )}
+    </>
+  );
+});
+SourceWeightInput.displayName = 'SourceWeightInput';
+
+/**
+ * ST-58: Memoized weighed-total input component (same pattern as SourceWeightInput).
+ */
+interface WeighedTotalInputProps {
+  value: string;
+  onInputChange: (v: string) => void;
+  onWeightChange: (weight: number) => void;
+}
+
+const WeighedTotalInput = memo(function WeighedTotalInput({
+  value,
+  onInputChange,
+  onWeightChange,
+}: WeighedTotalInputProps) {
+  const preview = useMemo(() => {
+    if (!value.trim()) return null;
+    return previewWeightValue(value);
+  }, [value]);
+
+  return (
+    <>
+      <Input
+        id="sort-weighed-total"
+        type="text"
+        inputMode="decimal"
+        placeholder="0.00"
+        value={value}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (/^[+\-*/().\d\s]*$/.test(v)) {
+            onInputChange(v);
+            const result = parseWeightExpression(v);
+            if (!result.error) {
+              onWeightChange(result.value);
+            }
+          }
+        }}
+      />
+      {preview !== null && (
+        <p className="text-[11px] text-emerald-700 font-medium">
+          = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
+        </p>
+      )}
+    </>
+  );
+});
+WeighedTotalInput.displayName = 'WeighedTotalInput';
 
 export function SortPage() {
   const {
@@ -53,6 +170,30 @@ export function SortPage() {
   const [isWaste, setIsWaste] = useState(false);
   const [dateTime, setDateTime] = useState<string>(getCurrentDateForInput());
   const [note, setNote] = useState<string>('');
+
+  // ST-58: Stable callbacks for memoized input components.
+  // These prevent the memoized SourceWeightInput / WeighedTotalInput from
+  // re-rendering when the parent SortPage re-renders for unrelated reasons
+  // (e.g. cart changes). The callbacks have stable identities across renders.
+  const handleSourceWeightInputChange = useCallback(
+    (v: string) => setSourceWeightInput(v),
+    []
+  );
+  const handleSourceWeightChange = useCallback(
+    (weight: number) => setSortSourceWeight(weight),
+    [setSortSourceWeight]
+  );
+  const handleSourceWeightEnter = useCallback(() => {
+    document.getElementById('sort-source-price')?.focus();
+  }, []);
+  const handleWeighedTotalInputChange = useCallback(
+    (v: string) => setWeighedTotalInput(v),
+    []
+  );
+  const handleWeighedTotalChange = useCallback(
+    (weight: number) => setSortWeighedTotal(weight),
+    [setSortWeighedTotal]
+  );
 
   // Fetch products on mount
   useEffect(() => {
@@ -170,8 +311,15 @@ export function SortPage() {
   );
 
   // Net profit after loss deduction, final bonus with loss deduction
-  const netProfitForBonus = Math.max(totalGrossProfit - lossCost, 0);
-  const totalBonusWithLossDeduction = Math.round(netProfitForBonus * 0.1 * 100) / 100;
+  // ST-58: memoized to avoid recomputing on every keystroke when deps unchanged
+  const netProfitForBonus = useMemo(
+    () => Math.max(totalGrossProfit - lossCost, 0),
+    [totalGrossProfit, lossCost]
+  );
+  const totalBonusWithLossDeduction = useMemo(
+    () => Math.round(netProfitForBonus * 0.1 * 100) / 100,
+    [netProfitForBonus]
+  );
 
   // Preview bonus for current item being added
   const previewBonus = useMemo(() => {
@@ -364,41 +512,15 @@ export function SortPage() {
                   />
                 </div>
 
-                {/* Source Weight */}
+                {/* Source Weight — ST-58: memoized sub-component to isolate re-renders */}
                 <div className="space-y-1.5">
                   <Label htmlFor="sort-source-weight" className="text-xs">น้ำหนักที่คัดมา (กก.)</Label>
-                  <Input
-                    id="sort-source-weight"
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.00 หรือ 68.4-0.2"
+                  <SourceWeightInput
                     value={sourceWeightInput}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (/^[+\-*/().\d\s]*$/.test(v)) {
-                        setSourceWeightInput(v);
-                        const result = parseWeightExpression(v);
-                        if (!result.error) {
-                          setSortSourceWeight(result.value);
-                        }
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        document.getElementById('sort-source-price')?.focus();
-                      }
-                    }}
+                    onInputChange={handleSourceWeightInputChange}
+                    onWeightChange={handleSourceWeightChange}
+                    onKeyDownEnter={handleSourceWeightEnter}
                   />
-                  {sourceWeightInput.trim() && (() => {
-                    const preview = previewWeightValue(sourceWeightInput);
-                    if (preview === null) return null;
-                    return (
-                      <p className="text-[11px] text-emerald-700 font-medium">
-                        = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
-                      </p>
-                    );
-                  })()}
                 </div>
 
                 {/* Source Price */}
@@ -415,35 +537,14 @@ export function SortPage() {
                   />
                 </div>
 
-                {/* Weighed Total */}
+                {/* Weighed Total — ST-58: memoized sub-component */}
                 <div className="space-y-1.5">
                   <Label htmlFor="sort-weighed-total" className="text-xs">น้ำหนักชั่งรวม (กก.)</Label>
-                  <Input
-                    id="sort-weighed-total"
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.00"
+                  <WeighedTotalInput
                     value={weighedTotalInput}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (/^[+\-*/().\d\s]*$/.test(v)) {
-                        setWeighedTotalInput(v);
-                        const result = parseWeightExpression(v);
-                        if (!result.error) {
-                          setSortWeighedTotal(result.value);
-                        }
-                      }
-                    }}
+                    onInputChange={handleWeighedTotalInputChange}
+                    onWeightChange={handleWeighedTotalChange}
                   />
-                  {weighedTotalInput.trim() && (() => {
-                    const preview = previewWeightValue(weighedTotalInput);
-                    if (preview === null) return null;
-                    return (
-                      <p className="text-[11px] text-emerald-700 font-medium">
-                        = {preview.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} กก.
-                      </p>
-                    );
-                  })()}
                 </div>
               </div>
 
