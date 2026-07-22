@@ -3434,3 +3434,49 @@ Stage Summary:
 - No Production data changed, no migration, no merge, no deployment
 - ST-58 PR #38: confirmed untouched
 - Merge/deploy/retry remain prohibited until Owner completes verification
+
+---
+Task ID: ST-61-PHASE-A
+Agent: main
+Task: ST-61 Phase A — maxDuration + structured logging + stage timing
+
+Work Log:
+- Phase 1 (runtime config): Verified no maxDuration, runtime, or vercel.json config exists. Added maxDuration = 30 to route.
+- Phase 2 (structured logging): Created src/lib/stock-transfer-logging.ts with:
+  - StageTracker class (start/end/push/getStages)
+  - classifyErrorSafe function (maps errors to safe categories, never exposes raw Prisma message)
+  - emitStockTransferLog function (JSON log with 15+ fields, fully redacted)
+- Phase 3 (stage timing): Added optional onStage + onMeta callbacks to createStockTransfer. Wrapped 9 DB stages with time() helper:
+  - product_lookup, output_product_lookup, source_lot_lookup
+  - bill_number_generation, source_deduction, transfer_creation
+  - output_lot_creation, stock_movement_creation, audit_log_creation
+- Phase 4 (root-cause re-analysis):
+  - With 1 source lot: 8 queries inside transaction (not 27+)
+  - At 200ms/query: 1.6s (safe). At 500ms: 4s (close). At 1000ms: 8s (exceeds old 5s)
+  - Many-lots hypothesis WEAKENED. P2028 still possible if latency high.
+  - Exact root cause remains Unknown until Vercel logs available.
+- Phase 5 (tests): 26 new Phase A tests (all pass):
+  - maxDuration + timeout alignment (3)
+  - structured log fields (3)
+  - log redaction (4)
+  - stage timing (3)
+  - source lot count = 1 (2)
+  - error paths P2028/pgbouncer/unknown (3)
+  - rollback behavior (2)
+  - no business regression (3)
+  - StageTracker unit (3)
+- Phase 6 (review):
+  - No migration ✅
+  - No business logic change ✅ (FIFO, cost, loss/gain, ledger, save payload all identical)
+  - ST-58 PR #38 untouched ✅
+  - Full regression: 832/832 pass
+  - TypeScript, ESLint, Prisma, build: ALL PASS
+  - CI: all 4 checks PASS at head b3d35a9
+
+Stage Summary:
+- Head SHA: b3d35a957b1076282594be5c62eb00a9940ab72e
+- Files changed: route.ts, stock-transfer-logging.ts (new), stock-transfer-service.ts, st61-phase-a-logging.test.ts (new)
+- maxDuration = 30, Prisma timeout = 15s → 15s safety margin
+- Structured logging will reveal exact bottleneck on next incident
+- No Production data changed, no migration, no merge, no deployment
+- ST-58, ST-57, ST-55, ST-62, ST-63 all untouched
