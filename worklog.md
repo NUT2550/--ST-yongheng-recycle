@@ -3171,6 +3171,25 @@ Stage Summary:
 - Remaining design decisions are documented in Draft PR #17; no Production migration, baseline insert, backfill write, stock correction, merge, or Production deployment was performed.
 
 ---
+Task ID: ST-64
+Agent: Codex
+Date: 2026-07-23
+Task: Explain Product-name conflicts safely and prevent duplicate Product submits
+
+Work Log:
+- Verified read-only that Production already contains exact Product `อะไหล่` (`cmr09vcvg000ol105y2307mb6`) in category `เหล็ก`; the Product schema has no active/archive or persistent alias fields.
+- Extracted the Product creation controller and added exact, trimmed, NFKC-normalized, alias-ready, inactive-ready, unique-create, and safe Prisma error behavior.
+- Changed 409 responses to identify the conflicting Product, category, status, and match type without exposing database details.
+- Added a UI single-flight lock plus disabled/loading state so one click sends one POST and a second click while pending is ignored.
+- Added 10 executable ST-64 tests.
+
+Stage Summary:
+- ST-64 targeted tests: 10/10 passed; full regression: 851/851 passed.
+- TypeScript, changed-file ESLint, Prisma validation, and Next.js production compilation passed.
+- Full lint still reports the 12 pre-existing `react-hooks/set-state-in-effect` errors; no new scoped lint error was introduced.
+- No Prisma schema/migration or Production data change; branch and Draft PR remain review-only.
+
+---
 Task ID: ST-47-ZAI-CONTINUATION
 Agent: Z.ai cloud workspace (main)
 Task: Continue ST-47/ST-43 from pushed GitHub state. Product-mapping gate, dry-run reconciliation, verify implementation completeness, push.
