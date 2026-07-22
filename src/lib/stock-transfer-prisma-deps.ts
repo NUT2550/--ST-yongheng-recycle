@@ -28,10 +28,13 @@ import type {
 /**
  * ST-61: Explicit Prisma interactive transaction timeout options.
  *
- * Previously, db.$transaction was called without options, using Prisma's
- * default 5s timeout. For products with many FIFO lots (e.g. สแตนเลสติดเหล็ก
- * 135.6 kg across many small lots), the sequential stockLot.update loop
- * exceeded 5s, triggering Prisma P2028.
+ * Previously, db.$transaction was called without explicit options and used
+ * Prisma's default interactive-transaction timeout. ST-61 sets maxWait to 5s
+ * and timeout to 15s as a mitigation for transactions that experience high
+ * latency. Production verification found one source lot for the reported
+ * incident; the historical Prisma code and exact Production root cause remain
+ * unknown. This configuration does not claim that many FIFO lots or P2028
+ * caused that incident.
  *
  * Exported as a named constant so tests can verify the exact config without
  * needing a live Prisma connection.
@@ -39,9 +42,9 @@ import type {
  * maxWait: 5000ms — max time to wait for a connection from the pool
  * timeout: 15000ms — max total time for the transaction to complete
  *
- * NOTE: 15s is a mitigation, not a full fix. The route has an explicit 30s
- * maxDuration. Future work may batch source-lot updates with updateMany + CAS
- * and add request-level idempotency; those changes are outside ST-61 Phase A.
+ * NOTE: 15s is a mitigation, not a root-cause finding. The route has an
+ * explicit 30s maxDuration. Query optimization is tracked separately in ST-63,
+ * and request-level idempotency is tracked separately in ST-62.
  */
 export const STOCK_TRANSFER_TRANSACTION_OPTIONS = Object.freeze({
   maxWait: 5000,

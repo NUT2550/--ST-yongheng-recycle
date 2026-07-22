@@ -3227,7 +3227,7 @@ Stage Summary:
 ---
 Task ID: ST-61-P1-P3
 Agent: main
-Task: ST-61 Phase 1-3 — Read-only investigation + code trace + root cause
+Task: ST-61 Phase 1-3 — Read-only investigation + code trace
 
 Work Log:
 - Phase 1: Verified current main SHA = fa08f355f125e8a45cf18b67d8784ec1f2da759a (production)
@@ -3238,20 +3238,19 @@ Work Log:
   * Same source product (สแตนเลสติดเหล็ก), same source weight (135.6 kg), same room (24), same business date (18/07/2569)
   * Issue #36 comment confirmed: "Prisma log ended with ROLLBACK" for request req-1784637355385-pwn9k2
 
-- Phase 2: Rollback verification (read-only, from Issue #36 evidence):
+- Phase 2: Rollback evidence review (read-only, from Issue #36 evidence):
   * The service wraps the entire mutation phase in deps.transaction() (line 578)
   * All writes (source lot deduction, StockTransfer, StockTransferItem, output StockLots, StockMovements) are inside the Prisma $transaction
-  * When P2028 fires, Prisma rolls back ALL writes atomically
   * Issue #36 comment confirms: "Transaction sequence reached source StockLot update, StockTransfer insert, and 3 StockTransferItem inserts. Prisma log ended with ROLLBACK, so those transaction writes did not commit"
   * The compensate() calls inside the transaction-scoped callback are no-ops (isTransactionScoped=true skips compensation, line 303) — this is correct because Prisma rollback handles it
-  * Conclusion: ROLLBACK VERIFIED — no partial records persisted for the failed requests
+  * Conclusion: ROLLBACK was verified for that specific request. Later scoped Production read-only checks found no persisted partial records for the reviewed incident window; the historical Prisma error code remains Unknown.
 
-- Phase 3: Code trace — exact root cause:
+- Phase 3: Code trace — timeout-risk finding:
   * File: src/lib/stock-transfer-prisma-deps.ts line 216
   * db.$transaction(async prismaTx => fn(...)) has NO explicit maxWait/timeout options
   * Prisma default transaction timeout = 5 seconds
   * ST-54 (sorting) and ST-57 (sales import) both fixed this exact pattern by adding maxWait: 5000, timeout: 15000
-  * StockTransfer was never updated — same bug pattern persists
+  * StockTransfer had not received the same explicit timeout mitigation
 
   Sequential queries inside the transaction for a 2-output-item transfer:
   1. findSourceProduct (1 query)
@@ -3264,8 +3263,9 @@ Work Log:
   8. createStockMovements (1 createMany)
   9. createAuditLog (1 query)
 
-  For สแตนเลสติดเหล็ก with 135.6 kg source weight, if the product has many small FIFO lots,
-  the sequential stockLot.update loop alone can exceed 5 seconds on Supabase Postgres.
+  Production verification later found exactly 1 source lot for the reported
+  สแตนเลสติดเหล็ก incident. High transaction latency remained a code-level risk,
+  but many FIFO lots were not the incident evidence.
 
   Error classification (classifyServiceError, line 331-391):
   * P2002 → 409 BILL_NUMBER_COLLISION
@@ -3274,14 +3274,11 @@ Work Log:
   * P2028 → NOT CLASSIFIED → falls to default 500
   * pgbouncer patterns ("Transaction not found", "drained") → 503 PGBOUNCER_TIMEOUT
   
-  The 500 (ST-60, 2026-07-21) is likely P2028 transaction timeout → unclassified → 500
-  The 503 (ST-61, 2026-07-22) is likely pgbouncer timeout pattern → 503, OR Vercel function timeout
-
   FACT: P2028 is not classified in the error mapper
   FACT: $transaction has no explicit timeout (default 5s)
   FACT: ST-54 and ST-57 fixed this exact pattern for sorting and sales import
-  INFERENCE: 500 = P2028 unclassified; 503 = pgbouncer pattern or Vercel function timeout
-  UNKNOWN: exact Vercel runtime logs (not accessible without Vercel dashboard)
+  SUPERSEDED INFERENCE: early analysis considered P2028/pgbouncer/platform timeout possibilities; none was confirmed for the historical Production incident
+  UNKNOWN: exact historical Prisma code and exact Production root cause
   NOT REPRODUCED: cannot reproduce locally without production database
 
 - ST-60 vs ST-61 duplication check:
@@ -3293,15 +3290,14 @@ Work Log:
   * Same business date: 18/07/2569
   * Different status codes: 500 (ST-60) vs 503 (ST-61)
   * Different times: ST-60 on 2026-07-21, ST-61 on 2026-07-22
-  * Conclusion: LIKELY DUPLICATE — same root cause (transaction timeout), different error mapping
+  * Conclusion: the reports may overlap, but a shared root cause was not verified
   * Recommendation: consolidate into one fix, but do NOT close either issue without Owner approval
 
 Stage Summary:
-- Root cause: db.$transaction in stock-transfer-prisma-deps.ts has no explicit timeout (default 5s)
-- P2028 transaction timeout is not classified in error mapper → returns 500
-- Pgbouncer timeout patterns → 503
-- Rollback: VERIFIED (Prisma atomic rollback, no partial records)
-- Fix: add maxWait: 5000, timeout: 15000 + classify P2028 → 503 with safe Thai message
+- Code finding: db.$transaction had no explicit timeout and P2028 was not classified
+- Mitigation: add maxWait: 5000, timeout: 15000 and safely classify P2028 if observed
+- Production evidence: one source lot; exact historical Prisma code and root cause remain Unknown
+- Rollback evidence is scoped per request; later read-only checks found no reviewed partial records
 - Branch: st-61-stock-transfer-503-timeout (from fa08f35)
 
 ---
@@ -3339,15 +3335,15 @@ Work Log:
   - Vercel Preview: deployed successfully
 
 - Write-back:
-  - GitHub Issue #37: commented with root cause + PR link
+  - GitHub Issue #37: commented with the initial timeout hypothesis + PR link; later evidence reclassified the historical root cause as Unknown
   - Comment URL: https://github.com/NUT2550/--ST-yongheng-recycle/issues/37#issuecomment-5040959259
   - ST-58 Draft PR #38: NOT touched (confirmed untouched)
 
 Stage Summary:
-- Root cause: db.$transaction had no explicit timeout (Prisma default 5s) → P2028
-- P2028 was unclassified → fell to 500
-- Fix: maxWait: 5000, timeout: 15000 + classify P2028 → 503
-- Rollback: VERIFIED (Prisma atomic rollback, no partial records)
+- Code finding: db.$transaction used Prisma's default timeout and P2028 was unclassified
+- Mitigation: maxWait: 5000, timeout: 15000 plus safe P2028 classification
+- Production evidence: one source lot; exact historical Prisma code/root cause remain Unknown
+- Rollback evidence must remain request-scoped; no blanket inference from an error code
 - Draft PR #39: https://github.com/NUT2550/--ST-yongheng-recycle/pull/39
 - CI: all green
 - No Production data changed, no migration, no merge, no deployment
