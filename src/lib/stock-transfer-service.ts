@@ -358,14 +358,13 @@ export function classifyServiceError(err: unknown): ClassifiedError {
     };
   }
   // ST-61: Prisma P2028 — transaction timeout (interactive transaction exceeded its timeout)
-  // This is the exact error that caused the Production 500/503 on POST /api/stock-transfers.
-  // Map to 503 with a safe Thai message so the client knows to retry.
+  // Map to 503 with a safe Thai message. Do NOT expose raw Prisma message to client.
+  // Message aligned with ST-54's TransactionTimeoutError for consistency.
   if (code === 'P2028') {
     return {
       status: 503,
       code: 'TRANSACTION_TIMEOUT',
-      error: 'การบันทึกใช้เวลานานเกินไป กรุณาลองอีกครั้ง',
-      extras: { details: message },
+      error: 'การบันทึกใช้เวลานานเกินไป ระบบได้ยกเลิกรายการทั้งหมดแล้ว กรุณารอสักครู่และลองใหม่ หากยังเกิดซ้ำให้แจ้งผู้ดูแล',
     };
   }
 

@@ -23,6 +23,34 @@ import type {
   AuditLogInput,
 } from './stock-transfer-service';
 
+// ============ ST-61: Transaction timeout configuration ============
+
+/**
+ * ST-61: Explicit Prisma interactive transaction timeout options.
+ *
+ * Previously, db.$transaction was called without options, using Prisma's
+ * default 5s timeout. For products with many FIFO lots (e.g. สแตนเลสติดเหล็ก
+ * 135.6 kg across many small lots), the sequential stockLot.update loop
+ * exceeded 5s, triggering Prisma P2028.
+ *
+ * Exported as a named constant so tests can verify the exact config without
+ * needing a live Prisma connection.
+ *
+ * maxWait: 5000ms — max time to wait for a connection from the pool
+ * timeout: 15000ms — max total time for the transaction to complete
+ *
+ * NOTE: 15s is a mitigation, not a full fix. If the Vercel function
+ * maxDuration is < 15s (Hobby plan default is 10s), Vercel will kill the
+ * function before Prisma's timeout fires. A future ST should:
+ *   1. Set explicit `export const maxDuration` on the route
+ *   2. Batch source-lot updates with updateMany + CAS (like ST-54)
+ *   3. Add request-level idempotency for duplicate-submit protection
+ */
+export const STOCK_TRANSFER_TRANSACTION_OPTIONS = Object.freeze({
+  maxWait: 5000,
+  timeout: 15000,
+});
+
 // ============ Private FIFO + compensation helpers (extracted from route) ============
 
 /**
@@ -213,10 +241,10 @@ export function createPrismaStockTransferDeps(
   return {
     isTransactionScoped,
     transaction: <T>(fn: (tx: StockTransferDeps) => Promise<T>): Promise<T> =>
-      db.$transaction(async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true)), {
-        maxWait: 5000,
-        timeout: 15000, // ST-61: 15s timeout (up from Prisma default 5s)
-      }),
+      db.$transaction(
+        async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true)),
+        STOCK_TRANSFER_TRANSACTION_OPTIONS,
+      ),
     async findSourceProduct(productId: string): Promise<SourceProductRow | null> {
       return client.product.findUnique({
         where: { id: productId },
