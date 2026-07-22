@@ -3223,3 +3223,256 @@ Stage Summary:
 - All 57 other product mappings unchanged. No Production write, no migration, no baseline insert, no StockMovement insert, no StockLot change, no merge, no Production deployment.
 - Issues #11 and #16 remain OPEN. Not marked Done.
 - STATUS: READY FOR PRODUCTION RELEASE APPROVAL (baseline evidence finalized; awaiting separate Owner Production release approval).
+
+---
+Task ID: ST-61-P1-P3
+Agent: main
+Task: ST-61 Phase 1-3 — Read-only investigation + code trace
+
+Work Log:
+- Phase 1: Verified current main SHA = fa08f355f125e8a45cf18b67d8784ec1f2da759a (production)
+- No existing ST-61 branch/PR found on GitHub
+- Found ST-60 (Issue #36) and ST-61 (Issue #37) are both about POST /api/stock-transfers failures:
+  * ST-60: 500 error on 2026-07-21 ~18:45-19:37 BKK (3 request IDs logged)
+  * ST-61: 500 error on 2026-07-21 ~20:03 BKK, then 503 on 2026-07-22 ~08:40 BKK
+  * Same source product (สแตนเลสติดเหล็ก), same source weight (135.6 kg), same room (24), same business date (18/07/2569)
+  * Issue #36 comment confirmed: "Prisma log ended with ROLLBACK" for request req-1784637355385-pwn9k2
+
+- Phase 2: Rollback evidence review (read-only, from Issue #36 evidence):
+  * The service wraps the entire mutation phase in deps.transaction() (line 578)
+  * All writes (source lot deduction, StockTransfer, StockTransferItem, output StockLots, StockMovements) are inside the Prisma $transaction
+  * Issue #36 comment confirms: "Transaction sequence reached source StockLot update, StockTransfer insert, and 3 StockTransferItem inserts. Prisma log ended with ROLLBACK, so those transaction writes did not commit"
+  * The compensate() calls inside the transaction-scoped callback are no-ops (isTransactionScoped=true skips compensation, line 303) — this is correct because Prisma rollback handles it
+  * Conclusion: ROLLBACK was verified for that specific request. Later scoped Production read-only checks found no persisted partial records for the reviewed incident window; the historical Prisma error code remains Unknown.
+
+- Phase 3: Code trace — timeout-risk finding:
+  * File: src/lib/stock-transfer-prisma-deps.ts line 216
+  * db.$transaction(async prismaTx => fn(...)) has NO explicit maxWait/timeout options
+  * Prisma default transaction timeout = 5 seconds
+  * ST-54 (sorting) and ST-57 (sales import) both fixed this exact pattern by adding maxWait: 5000, timeout: 15000
+  * StockTransfer had not received the same explicit timeout mitigation
+
+  Sequential queries inside the transaction for a 2-output-item transfer:
+  1. findSourceProduct (1 query)
+  2. findOutputProduct × N items (N queries, sequential loop at line 491-498)
+  3. findSourceLots (1 query)
+  4. generateBillNumber (2 queries: count + update)
+  5. deductSourceLots — sequential stockLot.update per FIFO lot (line 258, 1 query per lot)
+  6. createStockTransfer (1 query)
+  7. createOutputStockLot × N items (N queries, sequential at line 674-679)
+  8. createStockMovements (1 createMany)
+  9. createAuditLog (1 query)
+
+  Production verification later found exactly 1 source lot for the reported
+  สแตนเลสติดเหล็ก incident. High transaction latency remained a code-level risk,
+  but many FIFO lots were not the incident evidence.
+
+  Error classification (classifyServiceError, line 331-391):
+  * P2002 → 409 BILL_NUMBER_COLLISION
+  * P2003 → 400 FK_CONSTRAINT
+  * P2025 → 404 NOT_FOUND
+  * P2028 → NOT CLASSIFIED → falls to default 500
+  * pgbouncer patterns ("Transaction not found", "drained") → 503 PGBOUNCER_TIMEOUT
+  
+  FACT: P2028 is not classified in the error mapper
+  FACT: $transaction has no explicit timeout (default 5s)
+  FACT: ST-54 and ST-57 fixed this exact pattern for sorting and sales import
+  SUPERSEDED INFERENCE: early analysis considered P2028/pgbouncer/platform timeout possibilities; none was confirmed for the historical Production incident
+  UNKNOWN: exact historical Prisma code and exact Production root cause
+  NOT REPRODUCED: cannot reproduce locally without production database
+
+- ST-60 vs ST-61 duplication check:
+  * Same endpoint: POST /api/stock-transfers
+  * Same page: แกะของ / ย้ายสต็อก
+  * Same source product: สแตนเลสติดเหล็ก
+  * Same source weight: 135.6 kg
+  * Same room: 24
+  * Same business date: 18/07/2569
+  * Different status codes: 500 (ST-60) vs 503 (ST-61)
+  * Different times: ST-60 on 2026-07-21, ST-61 on 2026-07-22
+  * Conclusion: the reports may overlap, but a shared root cause was not verified
+  * Recommendation: consolidate into one fix, but do NOT close either issue without Owner approval
+
+Stage Summary:
+- Code finding: db.$transaction had no explicit timeout and P2028 was not classified
+- Mitigation: add maxWait: 5000, timeout: 15000 and safely classify P2028 if observed
+- Production evidence: one source lot; exact historical Prisma code and root cause remain Unknown
+- Rollback evidence is scoped per request; later read-only checks found no reviewed partial records
+- Branch: st-61-stock-transfer-503-timeout (from fa08f35)
+
+---
+Task ID: ST-61-P5-P8
+Agent: main
+Task: ST-61 Phase 5-8 — Tests + validation + Draft PR + write-back
+
+Work Log:
+- Phase 5: Created 20 executable behavior tests at tests/st61-stock-transfer-timeout.test.ts
+  All 20 pass. Tests verify:
+  - P2028 → 503 TRANSACTION_TIMEOUT (5 tests: classify + 4 failure points)
+  - Other Prisma errors unchanged (5 tests: P2002/P2003/P2025/pgbouncer/unknown)
+  - Valid 2-output-item transfer saves (3 tests)
+  - Rollback on each failure point — zero committed records (5 tests)
+  - Insufficient stock + state snapshot (2 tests)
+
+- Phase 6: Full validation
+  - ST-61 targeted tests: 20/20 PASS
+  - Full regression: 801/801 PASS (2500 expect() calls across 32 files)
+  - TypeScript: 0 errors
+  - ESLint: 0 errors
+  - Prisma format/validate/generate: PASS
+  - Next.js Production build: PASS
+
+- Phase 7: Branch + commit + push
+  - Branch: st-61-stock-transfer-503-timeout (from fa08f35)
+  - Commit: 579ff0d2a1bf4cf167a48dcb52de3747a4c0b3d5
+  - Pushed to origin
+
+- Phase 8: Draft PR #39 created
+  - URL: https://github.com/NUT2550/--ST-yongheng-recycle/pull/39
+  - Title: "ST-61: Fix POST /api/stock-transfers 500/503 — P2028 transaction timeout (Draft)"
+  - Draft: true
+  - CI: all 4 checks PASS (Unit Tests, Lint, Production Build, Vercel Preview)
+  - Vercel Preview: deployed successfully
+
+- Write-back:
+  - GitHub Issue #37: commented with the initial timeout hypothesis + PR link; later evidence reclassified the historical root cause as Unknown
+  - Comment URL: https://github.com/NUT2550/--ST-yongheng-recycle/issues/37#issuecomment-5040959259
+  - ST-58 Draft PR #38: NOT touched (confirmed untouched)
+
+Stage Summary:
+- Code finding: db.$transaction used Prisma's default timeout and P2028 was unclassified
+- Mitigation: maxWait: 5000, timeout: 15000 plus safe P2028 classification
+- Production evidence: one source lot; exact historical Prisma code/root cause remain Unknown
+- Rollback evidence must remain request-scoped; no blanket inference from an error code
+- Draft PR #39: https://github.com/NUT2550/--ST-yongheng-recycle/pull/39
+- CI: all green
+- No Production data changed, no migration, no merge, no deployment
+- ST-58 untouched
+
+---
+Task ID: ST-61-REVIEW
+Agent: main
+Task: ST-61 Review — Close evidence gaps + fix PR quality issues
+
+Work Log:
+- Phase 1 (Vercel logs): NO ACCESS — no Vercel CLI, no dashboard. Reported as Unknown.
+- Phase 2 (Production DB): NO ACCESS — .env points to local SQLite, schema requires Postgres. Reported as Unknown.
+- Phase 3 (PR quality review) — found and fixed 4 issues:
+  1. SECURITY: P2028 extras.details exposed raw Prisma message → REMOVED
+  2. UX: message was vague ("กรุณาลองอีกครั้ง") → aligned with ST-54 ("ระบบได้ยกเลิกรายการทั้งหมดแล้ว...หากยังเกิดซ้ำให้แจ้งผู้ดูแล")
+  3. TESTABILITY: $transaction options not testable → extracted STOCK_TRANSFER_TRANSACTION_OPTIONS as frozen constant
+  4. HONESTY: duplicate-submit test claimed idempotency → added test 24 documenting no real idempotency
+
+- Phase 4 (query count): M + N + 5 queries inside transaction. For M=20, N=2: 27 queries ~5.4s. 15s is mitigation only.
+
+- Validation:
+  - ST-61 targeted tests: 25/25 PASS (was 20, added 5)
+  - Full regression: 806/806 PASS
+  - TypeScript, ESLint, Prisma, build: ALL PASS
+  - CI: all 4 checks PASS at head 1122e84
+
+- Write-back:
+  - PR #39 body updated with Verified/Inference/Unknown separation
+  - Issue #37 commented with honest evidence reclassification
+  - ST-58 PR #38: confirmed untouched
+
+Stage Summary:
+- Head SHA: 1122e844d9a1d3582eec2b59402f4bac97125c1f
+- Previous overstated claims corrected
+- Evidence honestly separated into Verified / Inference / Unknown
+- 15s timeout documented as mitigation, not full fix
+- Follow-up STs recommended: batch CAS, maxDuration, idempotency, extras.details audit
+- No Production data changed, no migration, no merge, no deployment
+
+---
+Task ID: ST-61-VERIFY-PKG
+Agent: main
+Task: ST-61 Prepare Owner Verification Package + PR cleanup
+
+Work Log:
+- Verified PR #39 state:
+  * Head: 0697ec61a299f8a47bc453758a39d7d30705b778 (confirmed)
+  * Draft: true, mergeable_state: clean
+  * CI: all 4 checks PASS at current head
+  * Review threads: 0 (no unresolved comments)
+  * Issue #37 latest comment: already honest (no overstated rollback claims)
+
+- PR body cleanup:
+  * Found stale head SHA (1122e84) in PR body
+  * Updated to current head SHA (0697ec6) — metadata only, no implementation change
+
+- Prepared Owner Verification Package (posted as Issue #37 comment):
+  * Comment URL: https://github.com/NUT2550/--ST-yongheng-recycle/issues/37#issuecomment-5041173920
+  * Section A: Vercel dashboard log search instructions for 4 request IDs
+  * Section B: 10 exact fields to copy per request (timestamp, deployment ID, request ID, HTTP status, duration, Prisma code, error message, COMMIT/ROLLBACK, route reached, function timeout)
+  * Section C: 9 read-only Supabase SQL queries (C0-C8):
+    - C0: Find Product ID by name
+    - C1: StockTransfer records (filtered by product + date range)
+    - C2: StockTransferItem records (joined to StockTransfer)
+    - C3: output StockLot (source = TRANSFER)
+    - C4: StockMovement (sourceType = STOCK_TRANSFER)
+    - C5: AuditLog (entityType = STOCK_TRANSFER)
+    - C6: CompensationOperation + CompensationItem summary
+    - C7: source lot remainingWeight (current state)
+    - C8: StockMovement summary by movementType
+  * Section D: Expected safe outcomes table (8 checks)
+  * Section E: 7 warning signs requiring STOP
+  * Section F: Where to paste evidence back
+  * All queries are SELECT-only, narrowly filtered, safe for Supabase SQL Editor
+  * No secrets, no connection strings, no credentials
+
+- Updated PR #39 body with reference to verification package
+
+Stage Summary:
+- Owner Verification Package: READY (posted on Issue #37)
+- PR #39: head SHA corrected, body updated, CI green
+- No code changed in this round (only metadata + documentation)
+- No Production data changed, no migration, no merge, no deployment
+- ST-58 PR #38: confirmed untouched
+- Merge/deploy/retry remain prohibited until Owner completes verification
+
+---
+Task ID: ST-61-PHASE-A
+Agent: main
+Task: ST-61 Phase A — maxDuration + structured logging + stage timing
+
+Work Log:
+- Phase 1 (runtime config): Verified no maxDuration, runtime, or vercel.json config exists. Added maxDuration = 30 to route.
+- Phase 2 (structured logging): Created src/lib/stock-transfer-logging.ts with:
+  - StageTracker class (start/end/push/getStages)
+  - classifyErrorSafe function (maps errors to safe categories, never exposes raw Prisma message)
+  - emitStockTransferLog function (JSON log with 15+ fields, fully redacted)
+- Phase 3 (stage timing): Added optional onStage + onMeta callbacks to createStockTransfer. Wrapped 9 DB stages with time() helper:
+  - product_lookup, output_product_lookup, source_lot_lookup
+  - bill_number_generation, source_deduction, transfer_creation
+  - output_lot_creation, stock_movement_creation, audit_log_creation
+- Phase 4 (root-cause re-analysis):
+  - With 1 source lot: 8 queries inside transaction (not 27+)
+  - At 200ms/query: 1.6s (safe). At 500ms: 4s (close). At 1000ms: 8s (exceeds old 5s)
+  - Many-lots hypothesis WEAKENED. P2028 still possible if latency high.
+  - Exact root cause remains Unknown until Vercel logs available.
+- Phase 5 (tests): 26 new Phase A tests (all pass):
+  - maxDuration + timeout alignment (3)
+  - structured log fields (3)
+  - log redaction (4)
+  - stage timing (3)
+  - source lot count = 1 (2)
+  - error paths P2028/pgbouncer/unknown (3)
+  - rollback behavior (2)
+  - no business regression (3)
+  - StageTracker unit (3)
+- Phase 6 (review):
+  - No migration ✅
+  - No business logic change ✅ (FIFO, cost, loss/gain, ledger, save payload all identical)
+  - ST-58 PR #38 untouched ✅
+  - Full regression: 832/832 pass
+  - TypeScript, ESLint, Prisma, build: ALL PASS
+  - CI: all 4 checks PASS at head b3d35a9
+
+Stage Summary:
+- Head SHA: b3d35a957b1076282594be5c62eb00a9940ab72e
+- Files changed: route.ts, stock-transfer-logging.ts (new), stock-transfer-service.ts, st61-phase-a-logging.test.ts (new)
+- maxDuration = 30, Prisma timeout = 15s → 15s safety margin
+- Structured logging will reveal exact bottleneck on next incident
+- No Production data changed, no migration, no merge, no deployment
+- ST-58, ST-57, ST-55, ST-62, ST-63 all untouched

@@ -23,6 +23,34 @@ import type {
   AuditLogInput,
 } from './stock-transfer-service';
 
+// ============ ST-61: Transaction timeout configuration ============
+
+/**
+ * ST-61: Explicit Prisma interactive transaction timeout options.
+ *
+ * Previously, db.$transaction was called without explicit options and used
+ * Prisma's default interactive-transaction timeout. ST-61 sets maxWait to 5s
+ * and timeout to 15s as a mitigation for transactions that experience high
+ * latency. Production verification found one source lot for the reported
+ * incident; the historical Prisma code and exact Production root cause remain
+ * unknown. This configuration does not claim that many FIFO lots or P2028
+ * caused that incident.
+ *
+ * Exported as a named constant so tests can verify the exact config without
+ * needing a live Prisma connection.
+ *
+ * maxWait: 5000ms — max time to wait for a connection from the pool
+ * timeout: 15000ms — max total time for the transaction to complete
+ *
+ * NOTE: 15s is a mitigation, not a root-cause finding. The route has an
+ * explicit 30s maxDuration. Query optimization is tracked separately in ST-63,
+ * and request-level idempotency is tracked separately in ST-62.
+ */
+export const STOCK_TRANSFER_TRANSACTION_OPTIONS = Object.freeze({
+  maxWait: 5000,
+  timeout: 15000,
+});
+
 // ============ Private FIFO + compensation helpers (extracted from route) ============
 
 /**
@@ -213,7 +241,10 @@ export function createPrismaStockTransferDeps(
   return {
     isTransactionScoped,
     transaction: <T>(fn: (tx: StockTransferDeps) => Promise<T>): Promise<T> =>
-      db.$transaction(async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true))),
+      db.$transaction(
+        async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true)),
+        STOCK_TRANSFER_TRANSACTION_OPTIONS,
+      ),
     async findSourceProduct(productId: string): Promise<SourceProductRow | null> {
       return client.product.findUnique({
         where: { id: productId },
