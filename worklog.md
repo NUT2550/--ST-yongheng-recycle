@@ -3223,3 +3223,83 @@ Stage Summary:
 - All 57 other product mappings unchanged. No Production write, no migration, no baseline insert, no StockMovement insert, no StockLot change, no merge, no Production deployment.
 - Issues #11 and #16 remain OPEN. Not marked Done.
 - STATUS: READY FOR PRODUCTION RELEASE APPROVAL (baseline evidence finalized; awaiting separate Owner Production release approval).
+
+---
+Task ID: ST-61-P1-P3
+Agent: main
+Task: ST-61 Phase 1-3 — Read-only investigation + code trace + root cause
+
+Work Log:
+- Phase 1: Verified current main SHA = fa08f355f125e8a45cf18b67d8784ec1f2da759a (production)
+- No existing ST-61 branch/PR found on GitHub
+- Found ST-60 (Issue #36) and ST-61 (Issue #37) are both about POST /api/stock-transfers failures:
+  * ST-60: 500 error on 2026-07-21 ~18:45-19:37 BKK (3 request IDs logged)
+  * ST-61: 500 error on 2026-07-21 ~20:03 BKK, then 503 on 2026-07-22 ~08:40 BKK
+  * Same source product (สแตนเลสติดเหล็ก), same source weight (135.6 kg), same room (24), same business date (18/07/2569)
+  * Issue #36 comment confirmed: "Prisma log ended with ROLLBACK" for request req-1784637355385-pwn9k2
+
+- Phase 2: Rollback verification (read-only, from Issue #36 evidence):
+  * The service wraps the entire mutation phase in deps.transaction() (line 578)
+  * All writes (source lot deduction, StockTransfer, StockTransferItem, output StockLots, StockMovements) are inside the Prisma $transaction
+  * When P2028 fires, Prisma rolls back ALL writes atomically
+  * Issue #36 comment confirms: "Transaction sequence reached source StockLot update, StockTransfer insert, and 3 StockTransferItem inserts. Prisma log ended with ROLLBACK, so those transaction writes did not commit"
+  * The compensate() calls inside the transaction-scoped callback are no-ops (isTransactionScoped=true skips compensation, line 303) — this is correct because Prisma rollback handles it
+  * Conclusion: ROLLBACK VERIFIED — no partial records persisted for the failed requests
+
+- Phase 3: Code trace — exact root cause:
+  * File: src/lib/stock-transfer-prisma-deps.ts line 216
+  * db.$transaction(async prismaTx => fn(...)) has NO explicit maxWait/timeout options
+  * Prisma default transaction timeout = 5 seconds
+  * ST-54 (sorting) and ST-57 (sales import) both fixed this exact pattern by adding maxWait: 5000, timeout: 15000
+  * StockTransfer was never updated — same bug pattern persists
+
+  Sequential queries inside the transaction for a 2-output-item transfer:
+  1. findSourceProduct (1 query)
+  2. findOutputProduct × N items (N queries, sequential loop at line 491-498)
+  3. findSourceLots (1 query)
+  4. generateBillNumber (2 queries: count + update)
+  5. deductSourceLots — sequential stockLot.update per FIFO lot (line 258, 1 query per lot)
+  6. createStockTransfer (1 query)
+  7. createOutputStockLot × N items (N queries, sequential at line 674-679)
+  8. createStockMovements (1 createMany)
+  9. createAuditLog (1 query)
+
+  For สแตนเลสติดเหล็ก with 135.6 kg source weight, if the product has many small FIFO lots,
+  the sequential stockLot.update loop alone can exceed 5 seconds on Supabase Postgres.
+
+  Error classification (classifyServiceError, line 331-391):
+  * P2002 → 409 BILL_NUMBER_COLLISION
+  * P2003 → 400 FK_CONSTRAINT
+  * P2025 → 404 NOT_FOUND
+  * P2028 → NOT CLASSIFIED → falls to default 500
+  * pgbouncer patterns ("Transaction not found", "drained") → 503 PGBOUNCER_TIMEOUT
+  
+  The 500 (ST-60, 2026-07-21) is likely P2028 transaction timeout → unclassified → 500
+  The 503 (ST-61, 2026-07-22) is likely pgbouncer timeout pattern → 503, OR Vercel function timeout
+
+  FACT: P2028 is not classified in the error mapper
+  FACT: $transaction has no explicit timeout (default 5s)
+  FACT: ST-54 and ST-57 fixed this exact pattern for sorting and sales import
+  INFERENCE: 500 = P2028 unclassified; 503 = pgbouncer pattern or Vercel function timeout
+  UNKNOWN: exact Vercel runtime logs (not accessible without Vercel dashboard)
+  NOT REPRODUCED: cannot reproduce locally without production database
+
+- ST-60 vs ST-61 duplication check:
+  * Same endpoint: POST /api/stock-transfers
+  * Same page: แกะของ / ย้ายสต็อก
+  * Same source product: สแตนเลสติดเหล็ก
+  * Same source weight: 135.6 kg
+  * Same room: 24
+  * Same business date: 18/07/2569
+  * Different status codes: 500 (ST-60) vs 503 (ST-61)
+  * Different times: ST-60 on 2026-07-21, ST-61 on 2026-07-22
+  * Conclusion: LIKELY DUPLICATE — same root cause (transaction timeout), different error mapping
+  * Recommendation: consolidate into one fix, but do NOT close either issue without Owner approval
+
+Stage Summary:
+- Root cause: db.$transaction in stock-transfer-prisma-deps.ts has no explicit timeout (default 5s)
+- P2028 transaction timeout is not classified in error mapper → returns 500
+- Pgbouncer timeout patterns → 503
+- Rollback: VERIFIED (Prisma atomic rollback, no partial records)
+- Fix: add maxWait: 5000, timeout: 15000 + classify P2028 → 503 with safe Thai message
+- Branch: st-61-stock-transfer-503-timeout (from fa08f35)

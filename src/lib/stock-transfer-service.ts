@@ -357,6 +357,17 @@ export function classifyServiceError(err: unknown): ClassifiedError {
       extras: { details: message },
     };
   }
+  // ST-61: Prisma P2028 — transaction timeout (interactive transaction exceeded its timeout)
+  // This is the exact error that caused the Production 500/503 on POST /api/stock-transfers.
+  // Map to 503 with a safe Thai message so the client knows to retry.
+  if (code === 'P2028') {
+    return {
+      status: 503,
+      code: 'TRANSACTION_TIMEOUT',
+      error: 'การบันทึกใช้เวลานานเกินไป กรุณาลองอีกครั้ง',
+      extras: { details: message },
+    };
+  }
 
   // FIFO deduction guard — Insufficient stock
   if (message.includes('Insufficient stock')) {

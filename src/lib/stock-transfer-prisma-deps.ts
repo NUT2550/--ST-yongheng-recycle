@@ -213,7 +213,10 @@ export function createPrismaStockTransferDeps(
   return {
     isTransactionScoped,
     transaction: <T>(fn: (tx: StockTransferDeps) => Promise<T>): Promise<T> =>
-      db.$transaction(async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true))),
+      db.$transaction(async prismaTx => fn(createPrismaStockTransferDeps(prismaTx, true)), {
+        maxWait: 5000,
+        timeout: 15000, // ST-61: 15s timeout (up from Prisma default 5s)
+      }),
     async findSourceProduct(productId: string): Promise<SourceProductRow | null> {
       return client.product.findUnique({
         where: { id: productId },
