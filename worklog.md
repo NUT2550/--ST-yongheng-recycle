@@ -3387,3 +3387,50 @@ Stage Summary:
 - 15s timeout documented as mitigation, not full fix
 - Follow-up STs recommended: batch CAS, maxDuration, idempotency, extras.details audit
 - No Production data changed, no migration, no merge, no deployment
+
+---
+Task ID: ST-61-VERIFY-PKG
+Agent: main
+Task: ST-61 Prepare Owner Verification Package + PR cleanup
+
+Work Log:
+- Verified PR #39 state:
+  * Head: 0697ec61a299f8a47bc453758a39d7d30705b778 (confirmed)
+  * Draft: true, mergeable_state: clean
+  * CI: all 4 checks PASS at current head
+  * Review threads: 0 (no unresolved comments)
+  * Issue #37 latest comment: already honest (no overstated rollback claims)
+
+- PR body cleanup:
+  * Found stale head SHA (1122e84) in PR body
+  * Updated to current head SHA (0697ec6) — metadata only, no implementation change
+
+- Prepared Owner Verification Package (posted as Issue #37 comment):
+  * Comment URL: https://github.com/NUT2550/--ST-yongheng-recycle/issues/37#issuecomment-5041173920
+  * Section A: Vercel dashboard log search instructions for 4 request IDs
+  * Section B: 10 exact fields to copy per request (timestamp, deployment ID, request ID, HTTP status, duration, Prisma code, error message, COMMIT/ROLLBACK, route reached, function timeout)
+  * Section C: 9 read-only Supabase SQL queries (C0-C8):
+    - C0: Find Product ID by name
+    - C1: StockTransfer records (filtered by product + date range)
+    - C2: StockTransferItem records (joined to StockTransfer)
+    - C3: output StockLot (source = TRANSFER)
+    - C4: StockMovement (sourceType = STOCK_TRANSFER)
+    - C5: AuditLog (entityType = STOCK_TRANSFER)
+    - C6: CompensationOperation + CompensationItem summary
+    - C7: source lot remainingWeight (current state)
+    - C8: StockMovement summary by movementType
+  * Section D: Expected safe outcomes table (8 checks)
+  * Section E: 7 warning signs requiring STOP
+  * Section F: Where to paste evidence back
+  * All queries are SELECT-only, narrowly filtered, safe for Supabase SQL Editor
+  * No secrets, no connection strings, no credentials
+
+- Updated PR #39 body with reference to verification package
+
+Stage Summary:
+- Owner Verification Package: READY (posted on Issue #37)
+- PR #39: head SHA corrected, body updated, CI green
+- No code changed in this round (only metadata + documentation)
+- No Production data changed, no migration, no merge, no deployment
+- ST-58 PR #38: confirmed untouched
+- Merge/deploy/retry remain prohibited until Owner completes verification
