@@ -48,6 +48,7 @@ import {
 } from './thailand-date';
 import { buildTransferMovements, type StockMovementDraft } from './stock-movement-ledger';
 import { isRealFormula } from './safe-math';
+import { performance } from 'perf_hooks';
 
 // ============ Types ============
 
@@ -424,8 +425,20 @@ export async function createStockTransfer(
   deps: StockTransferDeps,
   input: StockTransferInput,
   auth: AuthInfo,
-  requestId: string
+  requestId: string,
+  onStage?: (stage: string, durationMs: number) => void,
+  onMeta?: (key: string, value: number | string) => void
 ): Promise<ServiceResult> {
+  // ST-61: Timing helper — wraps an async operation and reports duration via onStage
+  const time = async <T>(stage: string, fn: () => Promise<T>): Promise<T> => {
+    if (!onStage) return fn();
+    const start = performance.now();
+    try {
+      return await fn();
+    } finally {
+      onStage(stage, Math.round((performance.now() - start) * 1000) / 1000);
+    }
+  };
   // 1. Date validation
   const dateValidation = validateStockTransferBusinessDate(input.date);
   if (!dateValidation.ok) {
@@ -492,23 +505,31 @@ export async function createStockTransfer(
   }
 
   // 4. Load source product
-  const sourceProduct = await deps.findSourceProduct(input.sourceProductId);
+  const sourceProduct = await time('product_lookup', () => deps.findSourceProduct(input.sourceProductId));
   if (!sourceProduct) {
     return { ok: false, status: 400, error: `ไม่พบสินค้าต้นทาง (ID: ${input.sourceProductId})`, requestId };
   }
 
   // 5. Verify all output products exist
-  for (let i = 0; i < input.items.length; i++) {
-    const item = input.items[i];
-    const rowNum = i + 1;
-    const outputProduct = await deps.findOutputProduct(item.productId);
-    if (!outputProduct) {
-      return { ok: false, status: 400, error: `ไม่พบสินค้า output ลำดับที่ ${rowNum} (ID: ${item.productId})`, requestId };
+  let outputProductError: string | null = null;
+  await time('output_product_lookup', async () => {
+    for (let i = 0; i < input.items.length; i++) {
+      const item = input.items[i];
+      const rowNum = i + 1;
+      const outputProduct = await deps.findOutputProduct(item.productId);
+      if (!outputProduct) {
+        outputProductError = `ไม่พบสินค้า output ลำดับที่ ${rowNum} (ID: ${item.productId})`;
+        return;
+      }
     }
+  });
+  if (outputProductError) {
+    return { ok: false, status: 400, error: outputProductError, requestId };
   }
 
   // 6. Load source lots + availability check
-  const sourceLots = await deps.findSourceLots(input.sourceProductId);
+  const sourceLots = await time('source_lot_lookup', () => deps.findSourceLots(input.sourceProductId));
+  if (onMeta) onMeta('sourceLotCount', sourceLots.length);
   const totalAvailable = sourceLots.reduce((sum, l) => sum + l.remainingWeight, 0);
   if (totalAvailable < input.sourceWeight) {
     return {
@@ -586,7 +607,7 @@ export async function createStockTransfer(
     const rollback = Symbol('stock-transfer-rollback');
     try {
       return await deps.transaction(async tx => {
-        const result = await createStockTransfer(tx, input, auth, requestId);
+        const result = await createStockTransfer(tx, input, auth, requestId, onStage, onMeta);
         if (!result.ok) {
           failed = result;
           throw rollback;
@@ -601,10 +622,10 @@ export async function createStockTransfer(
   }
 
   // 10. Execute using the transaction-scoped dependency set.
-  const billNumber = await deps.generateBillNumber();
+  const billNumber = await time('bill_number_generation', () => deps.generateBillNumber());
   let fifoResult: DeductResult;
   try {
-    fifoResult = await deps.deductSourceLots(input.sourceProductId, input.sourceWeight);
+    fifoResult = await time('source_deduction', () => deps.deductSourceLots(input.sourceProductId, input.sourceWeight));
   } catch (err) {
     const partialDeductedLots = (err as { deductedLots?: Array<{ id: string; deducted: number }> })?.deductedLots || [];
     if (partialDeductedLots.length > 0) {
@@ -670,7 +691,7 @@ export async function createStockTransfer(
       allocatedItems,
       storedBusinessDate: dateValidation.storedBusinessDate,
     });
-    created = await deps.createStockTransfer(createData);
+    created = await time('transfer_creation', () => deps.createStockTransfer(createData));
   } catch (err) {
     // Compensate: restore deducted lots + ROLLED_BACK audit
     await deps.compensate(fifoResult.deductedLots, requestId, err instanceof Error ? err.message : 'create error');
@@ -681,12 +702,14 @@ export async function createStockTransfer(
 
   // 13. Create output StockLots
   try {
-    for (let idx = 0; idx < input.items.length; idx++) {
-      const lotData = buildOutputStockLotData(input.items[idx], allocatedItems[idx].costPerKg, dateValidation.storedBusinessDate, created.id);
-      if (lotData) {
-        await deps.createOutputStockLot(lotData);
+    await time('output_lot_creation', async () => {
+      for (let idx = 0; idx < input.items.length; idx++) {
+        const lotData = buildOutputStockLotData(input.items[idx], allocatedItems[idx].costPerKg, dateValidation.storedBusinessDate, created.id);
+        if (lotData) {
+          await deps.createOutputStockLot(lotData);
+        }
       }
-    }
+    });
   } catch (err) {
     // Compensate: delete output lots + transfer + restore source + ROLLED_BACK audit
     await deps.deletePartialOutputLots(created.id);
@@ -700,7 +723,7 @@ export async function createStockTransfer(
   // 14. Emit the source/output ledger rows as one idempotent createMany call.
   // Failure uses the existing ST-11 compensation and partial cleanup path.
   try {
-    await deps.createStockMovements(buildTransferMovements({
+    await time('stock_movement_creation', () => deps.createStockMovements(buildTransferMovements({
       id: created.id,
       billNumber,
       date: dateValidation.storedBusinessDate,
@@ -715,7 +738,7 @@ export async function createStockTransfer(
         weight: item.weight,
         isWaste: item.isWaste,
       })),
-    }));
+    })));
   } catch (err) {
     await deps.deletePartialOutputLots(created.id);
     await deps.deletePartialTransfer(created.id);
@@ -756,14 +779,14 @@ export async function createStockTransfer(
   });
 
   try {
-    await deps.createAuditLog({
+    await time('audit_log_creation', () => deps.createAuditLog({
       action: 'CREATE',
       entityType: 'STOCK_TRANSFER',
       entityId: created.id,
       userId: auth.userId,
       userName: auth.name,
       details: JSON.stringify(auditDetails),
-    });
+    }));
   } catch {
     // AuditLog failure is non-fatal — the transfer was already created
   }
