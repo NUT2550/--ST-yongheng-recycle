@@ -3352,3 +3352,38 @@ Stage Summary:
 - CI: all green
 - No Production data changed, no migration, no merge, no deployment
 - ST-58 untouched
+
+---
+Task ID: ST-61-REVIEW
+Agent: main
+Task: ST-61 Review — Close evidence gaps + fix PR quality issues
+
+Work Log:
+- Phase 1 (Vercel logs): NO ACCESS — no Vercel CLI, no dashboard. Reported as Unknown.
+- Phase 2 (Production DB): NO ACCESS — .env points to local SQLite, schema requires Postgres. Reported as Unknown.
+- Phase 3 (PR quality review) — found and fixed 4 issues:
+  1. SECURITY: P2028 extras.details exposed raw Prisma message → REMOVED
+  2. UX: message was vague ("กรุณาลองอีกครั้ง") → aligned with ST-54 ("ระบบได้ยกเลิกรายการทั้งหมดแล้ว...หากยังเกิดซ้ำให้แจ้งผู้ดูแล")
+  3. TESTABILITY: $transaction options not testable → extracted STOCK_TRANSFER_TRANSACTION_OPTIONS as frozen constant
+  4. HONESTY: duplicate-submit test claimed idempotency → added test 24 documenting no real idempotency
+
+- Phase 4 (query count): M + N + 5 queries inside transaction. For M=20, N=2: 27 queries ~5.4s. 15s is mitigation only.
+
+- Validation:
+  - ST-61 targeted tests: 25/25 PASS (was 20, added 5)
+  - Full regression: 806/806 PASS
+  - TypeScript, ESLint, Prisma, build: ALL PASS
+  - CI: all 4 checks PASS at head 1122e84
+
+- Write-back:
+  - PR #39 body updated with Verified/Inference/Unknown separation
+  - Issue #37 commented with honest evidence reclassification
+  - ST-58 PR #38: confirmed untouched
+
+Stage Summary:
+- Head SHA: 1122e844d9a1d3582eec2b59402f4bac97125c1f
+- Previous overstated claims corrected
+- Evidence honestly separated into Verified / Inference / Unknown
+- 15s timeout documented as mitigation, not full fix
+- Follow-up STs recommended: batch CAS, maxDuration, idempotency, extras.details audit
+- No Production data changed, no migration, no merge, no deployment
