@@ -3303,3 +3303,52 @@ Stage Summary:
 - Rollback: VERIFIED (Prisma atomic rollback, no partial records)
 - Fix: add maxWait: 5000, timeout: 15000 + classify P2028 → 503 with safe Thai message
 - Branch: st-61-stock-transfer-503-timeout (from fa08f35)
+
+---
+Task ID: ST-61-P5-P8
+Agent: main
+Task: ST-61 Phase 5-8 — Tests + validation + Draft PR + write-back
+
+Work Log:
+- Phase 5: Created 20 executable behavior tests at tests/st61-stock-transfer-timeout.test.ts
+  All 20 pass. Tests verify:
+  - P2028 → 503 TRANSACTION_TIMEOUT (5 tests: classify + 4 failure points)
+  - Other Prisma errors unchanged (5 tests: P2002/P2003/P2025/pgbouncer/unknown)
+  - Valid 2-output-item transfer saves (3 tests)
+  - Rollback on each failure point — zero committed records (5 tests)
+  - Insufficient stock + state snapshot (2 tests)
+
+- Phase 6: Full validation
+  - ST-61 targeted tests: 20/20 PASS
+  - Full regression: 801/801 PASS (2500 expect() calls across 32 files)
+  - TypeScript: 0 errors
+  - ESLint: 0 errors
+  - Prisma format/validate/generate: PASS
+  - Next.js Production build: PASS
+
+- Phase 7: Branch + commit + push
+  - Branch: st-61-stock-transfer-503-timeout (from fa08f35)
+  - Commit: 579ff0d2a1bf4cf167a48dcb52de3747a4c0b3d5
+  - Pushed to origin
+
+- Phase 8: Draft PR #39 created
+  - URL: https://github.com/NUT2550/--ST-yongheng-recycle/pull/39
+  - Title: "ST-61: Fix POST /api/stock-transfers 500/503 — P2028 transaction timeout (Draft)"
+  - Draft: true
+  - CI: all 4 checks PASS (Unit Tests, Lint, Production Build, Vercel Preview)
+  - Vercel Preview: deployed successfully
+
+- Write-back:
+  - GitHub Issue #37: commented with root cause + PR link
+  - Comment URL: https://github.com/NUT2550/--ST-yongheng-recycle/issues/37#issuecomment-5040959259
+  - ST-58 Draft PR #38: NOT touched (confirmed untouched)
+
+Stage Summary:
+- Root cause: db.$transaction had no explicit timeout (Prisma default 5s) → P2028
+- P2028 was unclassified → fell to 500
+- Fix: maxWait: 5000, timeout: 15000 + classify P2028 → 503
+- Rollback: VERIFIED (Prisma atomic rollback, no partial records)
+- Draft PR #39: https://github.com/NUT2550/--ST-yongheng-recycle/pull/39
+- CI: all green
+- No Production data changed, no migration, no merge, no deployment
+- ST-58 untouched
