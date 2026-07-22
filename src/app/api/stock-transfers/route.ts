@@ -31,16 +31,13 @@ import { performance } from 'perf_hooks';
 // ST-61 Phase A: Explicit Vercel function maxDuration.
 //
 // The Prisma interactive transaction timeout is 15s (STOCK_TRANSFER_TRANSACTION_OPTIONS.timeout).
-// Vercel Hobby plan default maxDuration is 10s — which would kill the function
-// BEFORE Prisma's 15s timeout fires, producing a Vercel 503
-// (FUNCTION_INVOCATION_TIMEOUT) instead of our safe 503 TRANSACTION_TIMEOUT.
+// Keep the route ceiling above Prisma's 15s transaction timeout so the
+// application normally has time to return its safe timeout response.
 //
 // Setting maxDuration = 30 gives a 15s safety margin above the Prisma timeout:
 //   - Prisma fires at 15s → our safe 503 reaches the client
 //   - If Prisma somehow hangs, Vercel fires at 30s → platform 503
 //
-// This is the minimum safe value. If the Vercel plan does not support 30s,
-// Vercel will cap it at the plan limit and log a warning.
 export const maxDuration = 30;
 
 // POST /api/stock-transfers - Create a stock transfer (แกะของ/ย้ายสต็อก)
@@ -146,22 +143,11 @@ export async function POST(request: NextRequest) {
       (stage, durationMs) => { tracker.push(stage, durationMs); },
       (key, value) => { if (key === 'sourceLotCount') sourceLotCount = value as number; },
     );
-    // If the service returned ok:true, the transaction committed (Fact).
-    // If the service returned ok:false with a validation error (before transaction),
-    // the transaction outcome is UNKNOWN (no transaction was started).
-    // If the service returned ok:false with a transaction error, the transaction
-    // rolled back (Fact — Prisma $transaction throws on error, triggering rollback).
-    if (result.ok) {
-      transactionOutcome = 'COMMIT';
-    } else if (result.status >= 500) {
-      // 500/503 from the service = transaction was entered and failed → ROLLBACK
-      transactionOutcome = 'ROLLBACK';
-    }
-    // 400/404/409 from validation = no transaction entered → UNKNOWN
+    transactionOutcome = result.transactionOutcome;
   } catch (err) {
     // Defensive: the service catches all known errors internally and returns
     // a ServiceResult. Any throw that escapes is unexpected — log + 500.
-    transactionOutcome = 'ROLLBACK'; // escaped error = transaction failed
+    transactionOutcome = 'UNKNOWN';
     errorCategory = classifyErrorSafe(err);
     prismaCode = errorCategory.prismaCode;
     const totalDurationMs = Math.round((performance.now() - requestStart) * 1000) / 1000;

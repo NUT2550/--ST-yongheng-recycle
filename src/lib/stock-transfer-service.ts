@@ -49,6 +49,7 @@ import {
 import { buildTransferMovements, type StockMovementDraft } from './stock-movement-ledger';
 import { isRealFormula } from './safe-math';
 import { performance } from 'perf_hooks';
+import type { TransactionOutcome } from './stock-transfer-logging';
 
 // ============ Types ============
 
@@ -293,7 +294,7 @@ export function buildOutputStockLotData(
 
 // ============ Result types ============
 
-export type ServiceResult =
+type ServiceResultPayload =
   | { ok: true; status: 201; transfer: CreatedTransfer; auditDetails: Record<string, unknown> }
   | {
       ok: false;
@@ -304,6 +305,9 @@ export type ServiceResult =
       /** Extra fields to include in the JSON response body (e.g. details, sourceProductId). */
       extras?: Record<string, unknown>;
     };
+
+export type ServiceResult = ServiceResultPayload & { transactionOutcome: TransactionOutcome };
+type InternalServiceResult = ServiceResultPayload & { transactionOutcome?: TransactionOutcome };
 
 // ============ Error classification ============
 
@@ -339,7 +343,6 @@ export function classifyServiceError(err: unknown): ClassifiedError {
       status: 409,
       code: 'BILL_NUMBER_COLLISION',
       error: 'เลขบิลซ้ำ กรุณาลองอีกครั้ง',
-      extras: { details: message },
     };
   }
   if (code === 'P2003') {
@@ -347,7 +350,6 @@ export function classifyServiceError(err: unknown): ClassifiedError {
       status: 400,
       code: 'FK_CONSTRAINT',
       error: 'สินค้าที่อ้างถึงไม่มีอยู่ในระบบ (FK constraint)',
-      extras: { details: message },
     };
   }
   if (code === 'P2025') {
@@ -355,7 +357,6 @@ export function classifyServiceError(err: unknown): ClassifiedError {
       status: 404,
       code: 'NOT_FOUND',
       error: 'ไม่พบข้อมูลที่ต้องการอัปเดต',
-      extras: { details: message },
     };
   }
   // ST-61: Prisma P2028 — transaction timeout (interactive transaction exceeded its timeout)
@@ -389,15 +390,13 @@ export function classifyServiceError(err: unknown): ClassifiedError {
       status: 503,
       code: 'PGBOUNCER_TIMEOUT',
       error: 'การเชื่อมต่อฐานข้อมูลหมดเวลา กรุณาลองอีกครั้ง (pgbouncer timeout)',
-      extras: { details: message },
     };
   }
 
-  // Default — preserve the route's 500 body shape: { error, details, requestId }
+  // Default — do not expose raw database or internal error details.
   return {
     status: 500,
     error: 'บันทึกใบย้ายสต็อกไม่สำเร็จ',
-    extras: { details: message },
   };
 }
 
@@ -429,6 +428,18 @@ export async function createStockTransfer(
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<ServiceResult> {
+  const result = await createStockTransferInternal(deps, input, auth, requestId, onStage, onMeta);
+  return { ...result, transactionOutcome: result.transactionOutcome ?? 'UNKNOWN' };
+}
+
+async function createStockTransferInternal(
+  deps: StockTransferDeps,
+  input: StockTransferInput,
+  auth: AuthInfo,
+  requestId: string,
+  onStage?: (stage: string, durationMs: number) => void,
+  onMeta?: (key: string, value: number | string) => void
+): Promise<InternalServiceResult> {
   // ST-61: Timing helper — wraps an async operation and reports duration via onStage
   const time = async <T>(stage: string, fn: () => Promise<T>): Promise<T> => {
     if (!onStage) return fn();
@@ -603,21 +614,30 @@ export async function createStockTransfer(
   // A failure result is converted to a throw inside the callback so Prisma
   // rolls back source deductions, document/output rows, and ledger rows.
   if (!deps.isTransactionScoped) {
-    let failed: Exclude<ServiceResult, { ok: true }> | null = null;
+    let failed: Exclude<InternalServiceResult, { ok: true }> | null = null;
+    let transactionCallbackStarted = false;
     const rollback = Symbol('stock-transfer-rollback');
     try {
-      return await deps.transaction(async tx => {
-        const result = await createStockTransfer(tx, input, auth, requestId, onStage, onMeta);
+      const committed = await deps.transaction(async tx => {
+        transactionCallbackStarted = true;
+        const result = await createStockTransferInternal(tx, input, auth, requestId, onStage, onMeta);
         if (!result.ok) {
           failed = result;
           throw rollback;
         }
         return result;
       });
+      return { ...committed, transactionOutcome: 'COMMIT' };
     } catch (error) {
-      if (error === rollback && failed) return failed;
+      const transactionOutcome: TransactionOutcome = transactionCallbackStarted ? 'ROLLBACK' : 'UNKNOWN';
+      if (error === rollback && failed) {
+        return { ...(failed as Exclude<InternalServiceResult, { ok: true }>), transactionOutcome };
+      }
       const classified = classifyServiceError(error);
-      return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId };
+      if (classified.code === 'TRANSACTION_TIMEOUT' && transactionOutcome === 'UNKNOWN') {
+        classified.error = 'การบันทึกใช้เวลานานเกินไป ไม่สามารถยืนยันผลรายการได้ กรุณาแจ้งผู้ดูแลก่อนลองใหม่';
+      }
+      return { ok: false, status: classified.status, error: classified.error, code: classified.code, extras: classified.extras, requestId, transactionOutcome };
     }
   }
 

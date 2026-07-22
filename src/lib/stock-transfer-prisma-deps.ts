@@ -39,12 +39,9 @@ import type {
  * maxWait: 5000ms — max time to wait for a connection from the pool
  * timeout: 15000ms — max total time for the transaction to complete
  *
- * NOTE: 15s is a mitigation, not a full fix. If the Vercel function
- * maxDuration is < 15s (Hobby plan default is 10s), Vercel will kill the
- * function before Prisma's timeout fires. A future ST should:
- *   1. Set explicit `export const maxDuration` on the route
- *   2. Batch source-lot updates with updateMany + CAS (like ST-54)
- *   3. Add request-level idempotency for duplicate-submit protection
+ * NOTE: 15s is a mitigation, not a full fix. The route has an explicit 30s
+ * maxDuration. Future work may batch source-lot updates with updateMany + CAS
+ * and add request-level idempotency; those changes are outside ST-61 Phase A.
  */
 export const STOCK_TRANSFER_TRANSACTION_OPTIONS = Object.freeze({
   maxWait: 5000,
