@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Loader2, Plus, Trash2, Edit, Package } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table'
 import { getAuthToken } from '@/lib/api'
 import { toast } from 'sonner'
+import { runProductSubmit } from '@/lib/product-creation-service'
 
 interface Product {
   id: string
@@ -34,6 +35,8 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [addOpen, setAddOpen] = useState(false)
   const [editProduct, setEditProduct] = useState<Product | null>(null)
+  const [adding, setAdding] = useState(false)
+  const addLock = useRef(false)
 
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState('')
@@ -60,16 +63,25 @@ export default function ProductsPage() {
   async function handleAdd() {
     if (!name || !name.trim()) { toast.error('กรุณากรอกชื่อสินค้า'); return }
     if (!categoryId) { toast.error('กรุณาเลือกหมวดหมู่'); return }
-    const token = getAuthToken()
-    const res = await fetch('/api/products', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify({ name, categoryId, defaultBuyPrice: parseFloat(price) || 0, sortOrder: 99 }),
+    await runProductSubmit(addLock, {
+      setLoading: setAdding,
+      showError: message => toast.error(message),
+      request: async () => {
+        const token = getAuthToken()
+        return fetch('/api/products', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ name, categoryId, defaultBuyPrice: parseFloat(price) || 0, sortOrder: 99 }),
+        })
+      },
+      onSuccess: async () => {
+        toast.success('เพิ่มสินค้าแล้ว')
+        setAddOpen(false)
+        setName('')
+        setCategoryId('')
+        setPrice('0')
+        await fetchData()
+      },
     })
-    if (res.ok) { toast.success('เพิ่มสินค้าแล้ว'); setAddOpen(false); setName(''); setCategoryId(''); setPrice('0'); fetchData() }
-    else {
-      const d = await res.json().catch(() => ({ error: 'ไม่สำเร็จ' }))
-      toast.error(d.error || 'ไม่สำเร็จ')
-    }
   }
 
   async function handleEdit() {
@@ -154,7 +166,7 @@ export default function ProductsPage() {
             </div>
             <div className="space-y-1.5"><Label>ราคารับซื้อ/กก.</Label><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setAddOpen(false)}>ยกเลิก</Button><Button onClick={handleAdd}>บันทึก</Button></DialogFooter>
+          <DialogFooter><Button variant="outline" onClick={() => setAddOpen(false)} disabled={adding}>ยกเลิก</Button><Button onClick={handleAdd} disabled={adding}>{adding && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}{adding ? 'กำลังบันทึก...' : 'บันทึก'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
