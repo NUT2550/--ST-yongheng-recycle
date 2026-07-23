@@ -2,7 +2,10 @@ import { db } from '@/lib/db';
 import { verifyToken, getTokenFromRequest } from "@/lib/auth";
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
-import { createProductController } from '@/lib/product-creation-service';
+import {
+  handleProductCreationPost,
+  productCreationFailureResponse,
+} from '@/lib/product-creation-route-handler';
 
 // POST /api/products — Create a new product (admin only)
 export async function POST(request: NextRequest) {
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
       sortOrder?: number;
     };
 
-    const result = await createProductController(input, {
+    return handleProductCreationPost(input, {
       listConflictCandidates: () => db.product.findMany({
         select: {
           id: true,
@@ -46,13 +49,9 @@ export async function POST(request: NextRequest) {
       logInternalError: (message, error) => console.error(message, error),
     });
 
-    return NextResponse.json(result.body, { status: result.status });
   } catch (error) {
     console.error('Error creating product:', error);
-    return NextResponse.json(
-      { error: 'เพิ่มสินค้าไม่สำเร็จ กรุณาลองใหม่ภายหลัง', code: 'PRODUCT_CREATE_FAILED' },
-      { status: 500 }
-    );
+    return productCreationFailureResponse();
   }
 }
 

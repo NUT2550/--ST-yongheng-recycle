@@ -3495,3 +3495,30 @@ Stage Summary:
 - Structured logging will reveal exact bottleneck on next incident
 - No Production data changed, no migration, no merge, no deployment
 - ST-58, ST-57, ST-55, ST-62, ST-63 all untouched
+
+---
+Task ID: ST-64-REVIEW-CORRECTIONS
+Agent: Codex
+Task: Address Draft PR #42 independent-review findings only
+
+Work Log:
+- Starting head: d1307a37c3b52ebc000e35b56e01ba33677a93eb.
+- Made Product conflict selection independent of database/array order:
+  - evaluate all candidates before selection;
+  - priority EXACT_NAME > NORMALIZED_NAME > ALIAS;
+  - deterministic normalized-name, original-name, Product-ID and alias tie-breaking;
+  - no mutation of candidate order or persisted business name.
+- Extracted an executable Product submission flow:
+  - fetch/network rejection shows only `เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่`;
+  - HTTP response errors continue to use the server `error` message;
+  - loading/single-flight lock are released on every path;
+  - retry is allowed after rejection and concurrent pending submits remain ignored.
+- Added a small injected Product POST HTTP handler so controller dependencies,
+  status/body pass-through, safe unexpected-error mapping and redaction are
+  executable without a new test framework.
+- Expanded ST-64 targeted coverage from 10 to 26 tests across two files.
+- No Prisma schema or migration change. No Production query/write, Product
+  mutation, merge or deployment.
+- Lint reporting rule: do not call changed-file lint passing while the existing
+  `products-page.tsx` effect finding makes that command exit non-zero. Report
+  base error count and new ST-64 error count separately.

@@ -15,6 +15,10 @@ export interface CreateProductInput {
   sortOrder?: number
 }
 
+function isCreateProductInput(value: unknown): value is CreateProductInput {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 export interface ProductCreationDependencies {
   listConflictCandidates(): Promise<ProductConflictCandidate[]>
   categoryExists(categoryId: string): Promise<boolean>
@@ -66,6 +70,7 @@ export function findProductConflict(
 ): ProductConflict | null {
   const trimmed = requestedName.trim()
   const normalized = normalizeProductName(trimmed)
+  const matches: ProductConflict[] = []
 
   for (const candidate of candidates) {
     const matchType: ProductConflictMatch | null =
@@ -76,21 +81,22 @@ export function findProductConflict(
           : null
 
     if (matchType) {
-      return {
+      matches.push({
         productId: candidate.id,
         productName: candidate.name,
         categoryId: candidate.category.id,
         categoryName: candidate.category.name,
         status: candidate.isActive === false ? 'INACTIVE' : 'ACTIVE',
         matchType,
-      }
+      })
+      continue
     }
 
-    const matchedAlias = candidate.aliases?.find(
-      alias => normalizeProductName(alias) === normalized,
-    )
+    const matchedAlias = candidate.aliases
+      ?.filter(alias => normalizeProductName(alias) === normalized)
+      .sort(compareProductText)[0]
     if (matchedAlias) {
-      return {
+      matches.push({
         productId: candidate.id,
         productName: candidate.name,
         categoryId: candidate.category.id,
@@ -98,11 +104,33 @@ export function findProductConflict(
         status: candidate.isActive === false ? 'INACTIVE' : 'ACTIVE',
         matchType: 'ALIAS',
         matchedAlias,
-      }
+      })
     }
   }
 
-  return null
+  return matches.sort(compareProductConflicts)[0] ?? null
+}
+
+const MATCH_PRIORITY: Record<ProductConflictMatch, number> = {
+  EXACT_NAME: 0,
+  NORMALIZED_NAME: 1,
+  ALIAS: 2,
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+function compareProductText(left: string, right: string): number {
+  return compareText(normalizeProductName(left), normalizeProductName(right))
+    || compareText(left, right)
+}
+
+function compareProductConflicts(left: ProductConflict, right: ProductConflict): number {
+  return MATCH_PRIORITY[left.matchType] - MATCH_PRIORITY[right.matchType]
+    || compareProductText(left.productName, right.productName)
+    || compareText(left.productId, right.productId)
+    || compareProductText(left.matchedAlias ?? '', right.matchedAlias ?? '')
 }
 
 function conflictResult(conflict: ProductConflict): ProductCreationResult {
@@ -132,9 +160,12 @@ function conflictResult(conflict: ProductConflict): ProductCreationResult {
 }
 
 export async function createProductController(
-  input: CreateProductInput,
+  input: unknown,
   deps: ProductCreationDependencies,
 ): Promise<ProductCreationResult> {
+  if (!isCreateProductInput(input)) {
+    return { status: 400, body: { error: 'ข้อมูลสินค้าไม่ถูกต้อง', code: 'INVALID_INPUT' } }
+  }
   const name = input.name?.trim() ?? ''
   if (!name) {
     return { status: 400, body: { error: 'กรุณากรอกชื่อสินค้า', code: 'INVALID_INPUT' } }
@@ -182,6 +213,22 @@ export async function createProductController(
 
 export interface ProductSubmitLock { current: boolean }
 
+export interface ProductSubmitResponse {
+  ok: boolean
+  json(): Promise<unknown>
+}
+
+export interface ProductSubmitCallbacks {
+  request(): Promise<ProductSubmitResponse>
+  setLoading(loading: boolean): void
+  showError(message: string): void
+  onSuccess(): Promise<void> | void
+}
+
+export type ProductSubmitOutcome = 'SUCCESS' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'IGNORED'
+
+export const PRODUCT_NETWORK_ERROR_MESSAGE = 'เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ กรุณาลองใหม่'
+
 /** Single-flight guard shared by the Product UI and executable tests. */
 export async function submitProductOnce<T>(
   lock: ProductSubmitLock,
@@ -194,4 +241,46 @@ export async function submitProductOnce<T>(
   } finally {
     lock.current = false
   }
+}
+
+/**
+ * Executable Product-submit flow used by the UI. Only request rejection is
+ * classified as a network failure; HTTP responses keep their server-provided
+ * safe error message.
+ */
+export async function runProductSubmit(
+  lock: ProductSubmitLock,
+  callbacks: ProductSubmitCallbacks,
+): Promise<ProductSubmitOutcome> {
+  const outcome = await submitProductOnce(lock, async (): Promise<ProductSubmitOutcome> => {
+    callbacks.setLoading(true)
+    try {
+      let response: ProductSubmitResponse
+      try {
+        response = await callbacks.request()
+      } catch {
+        callbacks.showError(PRODUCT_NETWORK_ERROR_MESSAGE)
+        return 'NETWORK_ERROR'
+      }
+
+      if (response.ok) {
+        await callbacks.onSuccess()
+        return 'SUCCESS'
+      }
+
+      const body = await response.json().catch(() => null)
+      const message = typeof body === 'object'
+        && body !== null
+        && 'error' in body
+        && typeof body.error === 'string'
+        ? body.error
+        : 'ไม่สำเร็จ'
+      callbacks.showError(message)
+      return 'SERVER_ERROR'
+    } finally {
+      callbacks.setLoading(false)
+    }
+  })
+
+  return outcome ?? 'IGNORED'
 }

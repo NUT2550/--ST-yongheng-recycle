@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table'
 import { getAuthToken } from '@/lib/api'
 import { toast } from 'sonner'
-import { submitProductOnce } from '@/lib/product-creation-service'
+import { runProductSubmit } from '@/lib/product-creation-service'
 
 interface Product {
   id: string
@@ -63,22 +63,24 @@ export default function ProductsPage() {
   async function handleAdd() {
     if (!name || !name.trim()) { toast.error('กรุณากรอกชื่อสินค้า'); return }
     if (!categoryId) { toast.error('กรุณาเลือกหมวดหมู่'); return }
-    await submitProductOnce(addLock, async () => {
-      setAdding(true)
-      try {
+    await runProductSubmit(addLock, {
+      setLoading: setAdding,
+      showError: message => toast.error(message),
+      request: async () => {
         const token = getAuthToken()
-        const res = await fetch('/api/products', {
+        return fetch('/api/products', {
           method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
           body: JSON.stringify({ name, categoryId, defaultBuyPrice: parseFloat(price) || 0, sortOrder: 99 }),
         })
-        if (res.ok) { toast.success('เพิ่มสินค้าแล้ว'); setAddOpen(false); setName(''); setCategoryId(''); setPrice('0'); fetchData() }
-        else {
-          const d = await res.json().catch(() => ({ error: 'ไม่สำเร็จ' }))
-          toast.error(d.error || 'ไม่สำเร็จ')
-        }
-      } finally {
-        setAdding(false)
-      }
+      },
+      onSuccess: async () => {
+        toast.success('เพิ่มสินค้าแล้ว')
+        setAddOpen(false)
+        setName('')
+        setCategoryId('')
+        setPrice('0')
+        await fetchData()
+      },
     })
   }
 
