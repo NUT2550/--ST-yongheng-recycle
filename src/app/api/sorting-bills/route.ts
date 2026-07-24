@@ -17,6 +17,7 @@ import {
   type SortingBillInput,
 } from '@/lib/sorting-transaction-service';
 import { createPrismaSortingDeps } from '@/lib/sorting-prisma-adapter';
+import { buildCombinedHistoryPage } from '@/lib/combined-sorting-history';
 
 // POST /api/sorting-bills - Create a sorting bill
 export async function POST(request: NextRequest) {
@@ -229,7 +230,50 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
     const skip = (page - 1) * limit;
     const includeCancelled = searchParams.get('includeCancelled') === 'true';
+    const includeTransfers = searchParams.get('includeTransfers') === 'true';
     const where = includeCancelled ? {} : { isCancelled: false };
+
+    if (includeTransfers) {
+      const takePerSource = skip + limit;
+      const transferWhere = {
+        ...(includeCancelled ? {} : { isCancelled: false }),
+        businessType: 'คัดแยก',
+      };
+
+      const [sortingBills, sortingTotal, transferBills, transferTotal] = await Promise.all([
+        db.sortingBill.findMany({
+          where,
+          include: {
+            sourceProduct: { select: { id: true, name: true } },
+            items: { include: { product: { select: { id: true, name: true } } } },
+          },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+          take: takePerSource,
+        }),
+        db.sortingBill.count({ where }),
+        db.stockTransfer.findMany({
+          where: transferWhere,
+          include: {
+            sourceProduct: { select: { id: true, name: true } },
+            items: { include: { product: { select: { id: true, name: true } } } },
+          },
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
+          take: takePerSource,
+        }),
+        db.stockTransfer.count({ where: transferWhere }),
+      ]);
+
+      const combined = buildCombinedHistoryPage<
+        (typeof sortingBills)[number] | (typeof transferBills)[number]
+      >({
+        sources: [sortingBills, transferBills],
+        page,
+        limit,
+        total: sortingTotal + transferTotal,
+      });
+
+      return NextResponse.json({ bills: combined.rows, total: combined.total });
+    }
 
     const [bills, total] = await Promise.all([
       db.sortingBill.findMany({
@@ -238,7 +282,7 @@ export async function GET(request: NextRequest) {
           sourceProduct: { select: { id: true, name: true } },
           items: { include: { product: { select: { id: true, name: true } } } },
         },
-        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+        orderBy: [{ date: 'desc' }, { createdAt: 'desc' }, { id: 'desc' }],
         skip,
         take: limit,
       }),
