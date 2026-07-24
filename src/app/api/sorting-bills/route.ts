@@ -17,16 +17,31 @@ import {
   type SortingBillInput,
 } from '@/lib/sorting-transaction-service';
 import { createPrismaSortingDeps } from '@/lib/sorting-prisma-adapter';
+import { hasPermission } from '@/lib/permissions';
 
 // POST /api/sorting-bills - Create a sorting bill
 export async function POST(request: NextRequest) {
   // --- Auth ---
+  const requestId = request.headers.get('x-request-id') ?? undefined;
   const token = getTokenFromRequest(request);
-  if (!token) return NextResponse.json({ error: 'ไม่ได้เข้าสู่ระบบ' }, { status: 401 });
+  if (!token) return NextResponse.json(
+    { error: 'ไม่ได้เข้าสู่ระบบ', code: 'AUTH_REQUIRED', requestId },
+    { status: 401 }
+  );
   const payload = await verifyToken(token);
-  if (!payload) return NextResponse.json({ error: 'token ไม่ถูกต้อง' }, { status: 401 });
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['sort.create'] === true;
-  if (!hasPermission) return NextResponse.json({ error: 'ไม่มีสิทธิ์' }, { status: 403 });
+  if (!payload) return NextResponse.json(
+    { error: 'token ไม่ถูกต้อง', code: 'SESSION_EXPIRED', requestId },
+    { status: 401 }
+  );
+  if (!hasPermission(payload, 'sort.create')) return NextResponse.json(
+    {
+      error: 'ไม่มีสิทธิ์สร้างใบคัดแยก',
+      code: 'PERMISSION_DENIED',
+      requiredPermission: 'sort.create',
+      requestId,
+    },
+    { status: 403 }
+  );
 
   try {
     const body = await request.json();
