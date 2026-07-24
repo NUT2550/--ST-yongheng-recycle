@@ -17,7 +17,7 @@ import {
   type SortingBillInput,
 } from '@/lib/sorting-transaction-service';
 import { createPrismaSortingDeps } from '@/lib/sorting-prisma-adapter';
-import { buildCombinedHistoryPage } from '@/lib/combined-sorting-history';
+import { buildCombinedHistoryPage, parseHistoryPagination } from '@/lib/combined-sorting-history';
 
 // POST /api/sorting-bills - Create a sorting bill
 export async function POST(request: NextRequest) {
@@ -226,15 +226,20 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)));
-    const skip = (page - 1) * limit;
+    const pagination = parseHistoryPagination(searchParams.get('page'), searchParams.get('limit'));
+    if (!pagination.ok) {
+      return NextResponse.json(
+        { error: pagination.error, code: pagination.code },
+        { status: 400 },
+      );
+    }
+    const { page, limit, skip, window } = pagination;
     const includeCancelled = searchParams.get('includeCancelled') === 'true';
     const includeTransfers = searchParams.get('includeTransfers') === 'true';
     const where = includeCancelled ? {} : { isCancelled: false };
 
     if (includeTransfers) {
-      const takePerSource = skip + limit;
+      const takePerSource = window;
       const transferWhere = {
         ...(includeCancelled ? {} : { isCancelled: false }),
         businessType: 'คัดแยก',

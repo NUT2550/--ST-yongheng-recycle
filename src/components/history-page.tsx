@@ -1054,15 +1054,21 @@ function BillActions({ billId, billType, onRefresh, isCancelled }: { billId: str
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'ยกเลิกไม่สำเร็จ');
+        if (data.code === 'SORTING_BILL_HAS_DOWNSTREAM_USAGE') {
+          toast.error('ยกเลิกไม่ได้ เพราะสต็อกผลลัพธ์ถูกนำไปใช้หรือเปลี่ยนแปลงแล้ว กรุณาย้อนรายการที่เกี่ยวข้องก่อน');
+        } else if (data.code === 'SORTING_BILL_ALREADY_CANCELLED' || data.code === 'SORTING_CANCEL_CONFLICT') {
+          toast.error(data.error || 'สถานะบิลเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลใหม่');
+        } else {
+          toast.error('ยกเลิกไม่สำเร็จ กรุณาลองใหม่ภายหลัง');
+        }
         return;
       }
       toast.success('ยกเลิกบิลสำเร็จ — สต็อกถูกปรับย้อนกลับแล้ว');
       setCancelOpen(false);
       setCancelReason('');
       onRefresh();
-    } catch (err) {
-      toast.error('ยกเลิกไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'));
+    } catch {
+      toast.error('ยกเลิกไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
     } finally {
       setCancelLoading(false);
     }

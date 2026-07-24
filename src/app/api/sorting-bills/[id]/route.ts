@@ -1,7 +1,11 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
+import {
+  cancelSortingBill,
+  mapSortingCancellationError,
+  type SortingCancellationDb,
+} from '@/lib/sorting-cancellation-service';
 
 async function requireEditPermission(request: NextRequest) {
   const token = getTokenFromRequest(request);
@@ -142,66 +146,19 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const existing = await db.sortingBill.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!existing) return NextResponse.json({ error: 'ไม่พบใบคัดแยก' }, { status: 404 });
-    if (existing.isCancelled) return NextResponse.json({ error: 'ใบคัดแยกนี้ถูกยกเลิกไปแล้ว' }, { status: 400 });
-
     let reason = '';
     try { const body = await request.json(); reason = (body?.reason || '').toString().trim(); } catch {}
 
-    await db.$transaction(async (tx) => {
-      const cancelledAt = new Date();
-      // Compute source cost per kg from non-waste items
-      const nonWasteItem = existing.items.find((i) => !i.isWaste && i.costPerKg > 0);
-      const sourceCostPerKg = nonWasteItem?.costPerKg || 0;
-
-      // Restore source stock
-      if (existing.sourceWeight > 0 && sourceCostPerKg > 0) {
-        await tx.stockLot.create({
-          data: {
-            productId: existing.sourceProductId,
-            remainingWeight: existing.sourceWeight,
-            costPerKg: sourceCostPerKg,
-            dateAdded: new Date(),
-            source: 'SORT_CANCEL',
-            sourceId: existing.id,
-          },
-        });
-      }
-
-      // Delete sorting bonuses
-      await tx.sortingBonus.deleteMany({ where: { sortingBillId: id } });
-
-      // Mark bill as cancelled
-      await tx.sortingBill.update({
-        where: { id },
-        data: { isCancelled: true, cancelledAt, cancelledBy: auth.userId, cancelReason: reason || null },
-      });
-
-      await reverseSourceMovements(tx, 'SORTING_BILL', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Sorting cancelled');
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          action: 'CANCEL', entityType: 'SORTING_BILL', entityId: id,
-          userId: auth.userId, userName: auth.name,
-          details: JSON.stringify({
-            billNumber: existing.billNumber, reason: reason || null,
-            restoredSourceWeight: existing.sourceWeight,
-            restoredSourceCostPerKg: sourceCostPerKg,
-            note: 'Output stock lots left untouched (may have downstream sales)',
-          }),
-        },
-      });
+    await cancelSortingBill(db as unknown as SortingCancellationDb, {
+      id,
+      reason,
+      auth: { userId: auth.userId, name: auth.name },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown';
     console.error('Error cancelling sorting bill:', error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const mapped = mapSortingCancellationError(error);
+    return NextResponse.json(mapped.body, { status: mapped.status });
   }
 }
