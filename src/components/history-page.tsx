@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   fetchBuyBills,
   fetchSellBills,
-  fetchSortingBills,
+  fetchCombinedSortingHistory,
   fetchStockTransfers,
 } from '@/lib/api';
 import { BuyBill, SellBill, SortingBill, StockTransfer } from '@/lib/types';
@@ -126,30 +126,9 @@ export function HistoryPage() {
   const loadSortBills = useCallback(async () => {
     setLoading(true);
     try {
-      // คัดแยก tab shows: real SortingBills + StockTransfers classified as businessType=คัดแยก
-      // Fetch both in parallel, then merge by date desc.
-      // Note: pagination is applied per-source; for simplicity we fetch PAGE_SIZE from each
-      // and merge the top PAGE_SIZE. This is acceptable because the number of StockTransfers
-      // classified as คัดแยก is small (currently 2).
-      const [sortRes, transferSortRes] = await Promise.all([
-        fetchSortingBills(page, PAGE_SIZE, showCancelled),
-        fetchStockTransfers(1, PAGE_SIZE, showCancelled, 'คัดแยก'),
-      ]);
-      // Merge: interleave by date desc, take top PAGE_SIZE
-      const merged: Array<SortingBill | StockTransfer> = [
-        ...sortRes.bills,
-        ...transferSortRes.bills,
-      ].sort((a, b) => {
-        const da = new Date(a.date).getTime();
-        const db = new Date(b.date).getTime();
-        if (db !== da) return db - da;
-        // secondary: createdAt desc (both interfaces have createdAt)
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      });
-      const topMerged = merged.slice(0, PAGE_SIZE);
-      setSortBills(topMerged);
-      // Total = SortingBills total + StockTransfers(คัดแยก) total
-      setSortTotal(sortRes.total + transferSortRes.total);
+      const res = await fetchCombinedSortingHistory(page, PAGE_SIZE, showCancelled);
+      setSortBills(res.bills);
+      setSortTotal(res.total);
     } catch {
       // handle
     } finally {
@@ -1075,15 +1054,21 @@ function BillActions({ billId, billType, onRefresh, isCancelled }: { billId: str
       });
       const data = await res.json();
       if (!res.ok) {
-        toast.error(data.error || 'ยกเลิกไม่สำเร็จ');
+        if (data.code === 'SORTING_BILL_HAS_DOWNSTREAM_USAGE') {
+          toast.error('ยกเลิกไม่ได้ เพราะสต็อกผลลัพธ์ถูกนำไปใช้หรือเปลี่ยนแปลงแล้ว กรุณาย้อนรายการที่เกี่ยวข้องก่อน');
+        } else if (data.code === 'SORTING_BILL_ALREADY_CANCELLED' || data.code === 'SORTING_CANCEL_CONFLICT') {
+          toast.error(data.error || 'สถานะบิลเปลี่ยนแปลงแล้ว กรุณาโหลดข้อมูลใหม่');
+        } else {
+          toast.error('ยกเลิกไม่สำเร็จ กรุณาลองใหม่ภายหลัง');
+        }
         return;
       }
       toast.success('ยกเลิกบิลสำเร็จ — สต็อกถูกปรับย้อนกลับแล้ว');
       setCancelOpen(false);
       setCancelReason('');
       onRefresh();
-    } catch (err) {
-      toast.error('ยกเลิกไม่สำเร็จ: ' + (err instanceof Error ? err.message : 'unknown'));
+    } catch {
+      toast.error('ยกเลิกไม่สำเร็จ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
     } finally {
       setCancelLoading(false);
     }
