@@ -41,6 +41,7 @@ import DailyWeighingPage from '@/components/daily-weighing-page';
 import LoginPage from '@/components/login-page';
 import { toast } from 'sonner';
 import { getAuthToken, setAuthToken } from '@/lib/api';
+import { canAccessPage } from '@/lib/permissions';
 
 // Navigation items configuration
 const navItems: Array<{
@@ -163,7 +164,13 @@ export default function Home() {
   const sidebarRef = useRef<HTMLDivElement>(null);
   const triggerZoneRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [user, setUser] = useState<{ id: string; username: string; name: string; role: string } | null>(null);
+  const [user, setUser] = useState<{
+    id: string;
+    username: string;
+    name: string;
+    role: 'admin' | 'staff';
+    permissions: Record<string, boolean>;
+  } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Check auth on mount
@@ -197,11 +204,12 @@ export default function Home() {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      setAuthToken(null);
-      setUser(null);
       toast.success('ออกจากระบบสำเร็จ');
     } catch {
       toast.error('เกิดข้อผิดพลาด');
+    } finally {
+      setAuthToken(null);
+      setUser(null);
     }
   }
 
@@ -295,11 +303,15 @@ export default function Home() {
   }
 
   // Filter nav items based on role (admin only for users + products tabs)
+  const permittedNavItems = navItems.filter((item) => canAccessPage(user, item.tab));
   const visibleNavItems = user.role === 'admin'
     ? [...navItems,
        { tab: 'products' as PageTab, label: 'สินค้า', icon: Package, color: 'text-indigo-600' },
        { tab: 'users' as PageTab, label: 'ผู้ใช้งาน', icon: Users, color: 'text-purple-600' }]
-    : navItems;
+    : permittedNavItems;
+  const safeActiveTab = visibleNavItems.some((item) => item.tab === activeTab)
+    ? activeTab
+    : 'dashboard';
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
@@ -332,7 +344,7 @@ export default function Home() {
                 </div>
                 <ScrollArea className="h-[calc(100vh-3.5rem)]">
                   <SidebarNav
-                    activeTab={activeTab}
+                    activeTab={safeActiveTab}
                     setActiveTab={setActiveTab}
                     orientation="vertical"
                     items={visibleNavItems}
@@ -381,7 +393,7 @@ export default function Home() {
                 variant="secondary"
                 className="bg-amber-100 text-amber-800 text-xs"
               >
-                {visibleNavItems.find((item) => item.tab === activeTab)?.label}
+                {visibleNavItems.find((item) => item.tab === safeActiveTab)?.label}
               </Badge>
             </div>
           </div>
@@ -409,7 +421,7 @@ export default function Home() {
           </div>
           <ScrollArea className="flex-1">
             <SidebarNav
-              activeTab={activeTab}
+              activeTab={safeActiveTab}
               setActiveTab={setActiveTab}
               orientation="vertical"
               onNavigate={() => setSidebarOpen(false)}
@@ -437,7 +449,7 @@ export default function Home() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 lg:p-6 max-w-7xl mx-auto">
-            <PageContent activeTab={activeTab} />
+            <PageContent activeTab={safeActiveTab} />
           </div>
         </main>
       </div>
@@ -445,7 +457,7 @@ export default function Home() {
       {/* Mobile bottom navigation */}
       <nav className="lg:hidden sticky bottom-0 bg-white border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.05)] safe-area-bottom">
         <SidebarNav
-          activeTab={activeTab}
+          activeTab={safeActiveTab}
           setActiveTab={setActiveTab}
           orientation="horizontal"
           items={visibleNavItems}

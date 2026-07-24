@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       username: payload.username,
       name: payload.name,
       role: payload.role,
+      permissions: payload.permissions ?? {},
     },
   })
 }

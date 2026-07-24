@@ -37,6 +37,29 @@ export const CANONICAL_PERMISSIONS = [
 
 export type CanonicalPermission = (typeof CANONICAL_PERMISSIONS)[number]
 
+/**
+ * ST-69: Shared UI capability contract.
+ *
+ * Pages omitted from this map are authenticated read-only/reporting surfaces.
+ * Mutation pages must declare the same canonical permission enforced by their
+ * API route so navigation and server authorization cannot drift silently.
+ */
+export const PAGE_CREATE_PERMISSIONS = {
+  buy: 'buy.create',
+  sell: 'sell.create',
+  sort: 'sort.create',
+  transfer: 'transfer.create',
+  'daily-weighing': 'dailyPurchaseWeighing',
+} as const satisfies Partial<Record<string, CanonicalPermission>>
+
+export function canAccessPage(
+  payload: Pick<AuthPayload, 'role' | 'permissions'> | null,
+  page: string
+): boolean {
+  const permission = PAGE_CREATE_PERMISSIONS[page as keyof typeof PAGE_CREATE_PERMISSIONS]
+  return permission ? hasPermission(payload as AuthPayload | null, permission) : true
+}
+
 export const PERMISSION_LABELS: Record<string, string> = {
   'customer.create': 'สร้างลูกค้า',
   'buy.create': 'สร้างใบรับซื้อ',
