@@ -1,0 +1,126 @@
+# ST-70 Phase 7: Real PostgreSQL concurrency tests.
+#
+# Runs the deterministic two-transaction concurrency tests in
+# tests/st70-postgres-concurrency.test.ts against an ephemeral PostgreSQL
+# service container. The job sets CI_ST70_POSTGRES_REQUIRED=1 so the test
+# suite's environment-gate test fails if DATABASE_URL is not PostgreSQL —
+# this prevents false-success when zero tests executed.
+#
+# Triggers:
+#   - Pull request to main when files under src/lib/sorting-cancellation-service.ts,
+#     src/app/api/sorting-bills/, src/components/history-page.tsx, or tests/st70-
+#     change.
+#   - Push to st-70-sorting-cancellation-history branch.
+#
+# No Production access. No migration. No deploy. Uses non-Production
+# credentials only.
+
+name: ST-70 PostgreSQL Concurrency
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/sorting-cancellation-service.ts'
+      - 'src/lib/stock-movement-reversal.ts'
+      - 'src/lib/stock-movement-ledger.ts'
+      - 'src/app/api/sorting-bills/**'
+      - 'src/components/history-page.tsx'
+      - 'tests/st70-postgres-concurrency.test.ts'
+      - 'tests/st70-sorting-cancellation-history.test.ts'
+      - '.github/workflows/st70-postgres-concurrency.yml'
+      - 'prisma/schema.prisma'
+      - 'package.json'
+      - 'bun.lock'
+  push:
+    branches:
+      - 'st-70-sorting-cancellation-history'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: st70-pg-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-concurrency:
+    name: ST-70 PostgreSQL Concurrency Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Ephemeral PostgreSQL service container with non-Production credentials.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: st70_test
+          POSTGRES_PASSWORD: st70_test_nonprod_only
+          POSTGRES_DB: st70_concurrency_test
+        ports:
+          - 5432:5432
+        # Wait until PostgreSQL accepts connections before proceeding.
+        options: >-
+          --health-cmd "pg_isready -U st70_test -d st70_concurrency_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # Non-Production DATABASE_URL pointing at the service container.
+      DATABASE_URL: postgresql://st70_test:st70_test_nonprod_only@localhost:5432/st70_concurrency_test?schema=public
+      JWT_SECRET: st70-ci-jwt-secret-not-for-production-use-only
+      # Fail the suite if DATABASE_URL is not PostgreSQL.
+      CI_ST70_POSTGRES_REQUIRED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-pg-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies (lockfile-consistent)
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Push schema to test database (non-Production)
+        run: bunx prisma db push --skip-generate
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Run ST-70 PostgreSQL concurrency tests
+        run: bun test tests/st70-postgres-concurrency.test.ts
+
+      - name: Run ST-70 targeted unit tests (regression)
+        run: bun test tests/st70-sorting-cancellation-history.test.ts
+
+      - name: Verify zero-skip guard
+        # Grep the test output for the skip reason. If found, fail the job.
+        run: |
+          set -e
+          echo "Checking that no ST-70 PostgreSQL tests were skipped..."
+          # Re-run with structured output and inspect.
+          OUTPUT=$(bun test tests/st70-postgres-concurrency.test.ts 2>&1 || true)
+          echo "$OUTPUT" | tee /tmp/st70-pg-output.txt
+          if echo "$OUTPUT" | grep -q "SKIPPED]"; then
+            echo "::error::ST-70 PostgreSQL tests were skipped — see output above"
+            exit 1
+          fi
+          echo "All ST-70 PostgreSQL tests executed (none skipped)"

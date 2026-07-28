@@ -144,7 +144,13 @@ export function buildReversalMovement(
   reversalBusinessDate: Date = original.businessDate,
 ): StockMovementDraft {
   return {
-    ...original,
+    productId: original.productId,
+    sourceType: original.sourceType,
+    sourceId: original.sourceId,
+    sourceItemId: original.sourceItemId,
+    sourceDocumentNumber: original.sourceDocumentNumber,
+    createdById: original.createdById,
+    createdByName: original.createdByName,
     movementType: kind,
     businessDate: reversalBusinessDate,
     signedWeight: preciseWeight(-original.signedWeight),

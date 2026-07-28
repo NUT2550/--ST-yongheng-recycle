@@ -89,9 +89,9 @@ Base URL: `https://st-yongheng-recycle.vercel.app/api`
 | GET | `/api/sell-bills` | ✅ List SellBills |
 | POST | `/api/sorting-bills` | ✅ สร้าง SortingBill (FIFO source + add output) |
 | GET | `/api/sorting-bills` | ✅ List SortingBills |
-| DELETE | `/api/buy-bills/{id}` | ❌ **ยังไม่มี** (cancel feature หายไป) |
-| DELETE | `/api/sell-bills/{id}` | ❌ **ยังไม่มี** |
-| DELETE | `/api/sorting-bills/{id}` | ❌ **ยังไม่มี** |
+| DELETE | `/api/buy-bills/{id}` | ✅ Cancel BuyBill (soft delete + stock restore) |
+| DELETE | `/api/sell-bills/{id}` | ✅ Cancel SellBill (soft delete + stock restore + credit delete) |
+| DELETE | `/api/sorting-bills/{id}` | ✅ Cancel SortingBill (ST-70 atomic transaction: validate outputs + claim + compare-and-delete + restore source + reverse movements + audit) |
 
 ### Master data
 | Method | Path | สถานะ |

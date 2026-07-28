@@ -160,6 +160,21 @@ export async function fetchSortingBills(
   );
 }
 
+export async function fetchCombinedSortingHistory(
+  page?: number,
+  limit?: number,
+  includeCancelled?: boolean
+): Promise<{ bills: Array<SortingBill | StockTransfer>; total: number }> {
+  const params = new URLSearchParams();
+  if (page) params.set('page', String(page));
+  if (limit) params.set('limit', String(limit));
+  if (includeCancelled) params.set('includeCancelled', 'true');
+  params.set('includeTransfers', 'true');
+  return fetchJSON<{ bills: Array<SortingBill | StockTransfer>; total: number }>(
+    `/sorting-bills?${params.toString()}`
+  );
+}
+
 export async function fetchStockTransfers(
   page?: number,
   limit?: number,

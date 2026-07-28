@@ -1,37 +1,38 @@
 # Current Open Issues — ยงเฮง มหาชัย รีไซเคิล
 
 > งานที่ยังต้องทำ — แยกตาม priority
-> วันที่: 27/06/2569
+> วันที่เริ่มต้น: 27/06/2569
+> อัปเดตล่าสุด: 2026-07-28 (ST-70 — P0-1 Bill Cancel Feature resolved)
 
 ---
 
 ## P0 — ต้องทำก่อนใช้งานจริง
 
-### P0-1: Bill Cancel Feature หายไปจาก codebase
-**สถานะ**: ❌ Code หายไป (เคยทำแล้วใน Task ก่อนหน้า แต่ถูก reset)
+### P0-1: Bill Cancel Feature — ✅ RESOLVED (ST-70, 2026-07-28)
+**สถานะ**: ✅ Implement แล้วใน branch `st-70-sorting-cancellation-history` (PR #49)
 
-**รายละเอียด**:
-- ไม่มี `src/app/api/buy-bills/[id]/route.ts`
-- ไม่มี `src/app/api/sell-bills/[id]/route.ts`
-- ไม่มี `src/app/api/sorting-bills/[id]/route.ts`
-- schema.prisma ไม่มี `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` fields
-- ไม่มี `billNumber` field
-- ไม่มี `AuditLog` model
-- ไม่มี `src/lib/bill-helpers.ts`
+**สิ่งที่ทำเสร็จ**:
+- ✅ `src/app/api/buy-bills/[id]/route.ts` — DELETE handler
+- ✅ `src/app/api/sell-bills/[id]/route.ts` — DELETE handler
+- ✅ `src/app/api/sorting-bills/[id]/route.ts` — DELETE handler
+- ✅ schema.prisma มี `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` บน Buy/Sell/SortingBill
+- ✅ `billNumber` field (`String? @unique`) บน Buy/Sell/SortingBill
+- ✅ `AuditLog` model ใน schema.prisma
+- ✅ `src/lib/bill-helpers.ts` (generateBillNumber + writeAuditLog)
+- ✅ `src/lib/sorting-cancellation-service.ts` (ST-70 atomic cancellation)
+- ✅ `src/lib/combined-sorting-history.ts` (combined pagination)
+- ✅ history-page.tsx แสดง billNumber + cancel button + error surfacing (ST-70)
 
-**ผลกระทบ**: ถ้าพนักงานสร้างบิลผิด → ไม่สามารถยกเลิกได้ (ต้องแก้ใน DB ตรงๆ ซึ่งเป็นอันตราย)
+**ผลกระทบที่แก้แล้ว**: พนักงานสามารถยกเลิกบิลผิดได้ผ่าน DELETE route (ไม่ต้องแก้ DB ตรงๆ)
 
-**วิธีแก้**:
-1. เพิ่ม fields ใน schema.prisma:
-   - `BuyBill.isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason`, `billNumber`
-   - `SellBill.isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason`, `billNumber`
-   - `SortingBill.isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason`, `billNumber`
-   - สร้าง `AuditLog` model
-2. สร้าง `src/lib/bill-helpers.ts` (generateBillNumber + writeAuditLog)
-3. สร้าง `src/app/api/{buy,sell,sorting}-bills/[id]/route.ts` พร้อม DELETE handler
-4. อัปเดต POST routes ให้ generate billNumber + write AuditLog
-5. Migration SQL สำหรับ Supabase
-6. อัปเดต history-page.tsx ให้แสดง billNumber + cancel button
+**SortingBill cancellation semantics (ST-70)**:
+- Atomic transaction (claim + validate + compare-and-delete outputs + restore source + reverse movements + audit)
+- Output StockLots ต้องถูก atomic compare-and-delete (ไม่ใช่ "left untouched by design" อีกต่อไป)
+- All-waste bills ใช้ authoritative cost evidence จาก StockMovement metadata
+- 401 AUTH_REQUIRED / 403 PERMISSION_DENIED separation
+- ดูรายละเอียด: `process/BUSINESS_RULES.md` Section 2
+
+> 📜 **Historical note (superseded 2026-07-28, ST-70)**: P0-1 เดิมระบุว่า cancel feature หายไปจาก codebase และต้อง recreate — ทั้งหมดถูก implement แล้ว
 
 ---
 
@@ -219,20 +220,25 @@ echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
 
 | Priority | จำนวน | สถานะ |
 |----------|-------|-------|
-| **P0** | 4 | ต้องทำก่อนใช้งานจริง — cancel feature, migration, weight formula code, excel import |
+| **P0** | 2 | ต้องทำก่อนใช้งานจริง — weight formula migration (P0-2), weight formula code (P0-3) |
 | **P1** | 5 | ควรทำ — alias mapping, user 04, role 01, db/custom.db, JWT_SECRET |
 | **P2** | 5 | ทำทีหลัง — sorting source, tsconfig, timezone, etc. |
 
-### สถานะ features ที่หายไปจาก codebase ปัจจุบัน (เคยทำใน Task 20/21/22)
+> ✅ **P0-1 (Bill Cancel Feature) RESOLVED 2026-07-28 (ST-70)** — billNumber, isCancelled, AuditLog, cancel routes ทั้ง 3 ถูก implement แล้ว
+> ✅ **P0-4 (Excel Import) ยังไม่ resolved** — ยังอยู่ใน P1
+
+### สถานะ features (verified 2026-07-28, ST-70)
 
 | Feature | สถานะใน codebase | ต้อง recreate? |
 |---------|------------------|----------------|
-| billNumber | ❌ ไม่มี | ✅ ใน P0-1 |
-| isCancelled (soft delete) | ❌ ไม่มี | ✅ ใน P0-1 |
-| AuditLog | ❌ ไม่มี | ✅ ใน P0-1 |
-| bill-helpers.ts | ❌ ไม่มี | ✅ ใน P0-1 |
-| DELETE /api/{type}-bills/{id} | ❌ ไม่มี | ✅ ใน P0-1 |
-| Excel import | ❌ ไม่มี | ✅ ใน P0-4 |
+| billNumber | ✅ มี (Buy/Sell/SortingBill.billNumber `String? @unique`) | ❌ ไม่ต้อง (ST-70) |
+| isCancelled (soft delete) | ✅ มี (isCancelled/cancelledAt/cancelledBy/cancelReason) | ❌ ไม่ต้อง (ST-70) |
+| AuditLog | ✅ มี (schema.prisma AuditLog model) | ❌ ไม่ต้อง (ST-70) |
+| bill-helpers.ts | ✅ มี (`src/lib/bill-helpers.ts`) | ❌ ไม่ต้อง (ST-70) |
+| DELETE /api/{type}-bills/{id} | ✅ มี (3 routes + sorting-cancellation-service.ts) | ❌ ไม่ต้อง (ST-70) |
+| SortingBill atomic cancellation | ✅ มี (ST-70: atomic compare-and-delete + cost evidence + reversals) | ❌ ไม่ต้อง (ST-70) |
+| Combined sorting history | ✅ มี (`src/lib/combined-sorting-history.ts`) | ❌ ไม่ต้อง (ST-70) |
+| Excel import | ❌ ไม่มี | ✅ ใน P0-4/P1 |
 | weightExpression DB storage | ❌ ไม่มี | ✅ ใน P0-3 (หลัง P0-2 migration) |
 | Product alias mapping | ❌ ไม่มี | ✅ ใน P1-1 |
 | `parseWeightExpression` parser | ✅ มี (`src/lib/safe-math.ts`) | ไม่ต้อง — ใช้ได้เลย |
