@@ -1,6 +1,6 @@
 # Agent Handoff — ยงเฮง มหาชัย รีไซเคิล
 
-> เอกสารสำหรับ owner ส่งให้ AI Agent ตัวอื่นได้ทันที่
+> เอกสารสำหรับ owner ส่งให้ AI Agent ตัวอื่นได้ทันที
 > วันที่เริ่มต้น: 27/06/2569
 > อัปเดตล่าสุด: 2026-07-28 (ST-70 — billNumber, isCancelled, AuditLog, cancel routes ทั้ง 3 ถูก implement แล้ว; SortingBill cancellation เป็น atomic transaction)
 
