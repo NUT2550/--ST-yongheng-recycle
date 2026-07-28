@@ -301,13 +301,24 @@ POST /api/sorting-bills
 5. lossCost = lossWeight × sourceCostPerKg
 ```
 
-### Cancel Bill → restore stock
-> ⚠️ **Cancel feature หายไปจาก codebase ปัจจุบัน**
+### Cancel Bill → restore stock (verified 2026-07-28, ST-70)
+> ✅ **Cancel feature มีใน codebase ปัจจุจบัน** — routes: `DELETE /api/{buy,sell,sorting}-bills/{id}`
 
-ในเวอร์ชันก่อนหน้า (ที่หายไป):
-- Cancel BuyBill → ลบ/ลด StockLot ที่ sourceId = bill.id
-- Cancel SellBill → เพิ่ม StockLot ใหม่ source = "SELL_CANCEL" remainingWeight = item.weight costPerKg = item.costPerKg
-- Cancel SortingBill → เพิ่ม StockLot source = "SORT_CANCEL" ให้ source product (เท่านั้น — output stock left untouched by design)
+ใน codebase ปัจจุบัน:
+- Cancel BuyBill → ตรวจ StockLot ที่ sourceId = bill.id ถ้า consumed > 0 → 409; ถ้า consumed = 0 → ลบ StockLot + restore
+- Cancel SellBill → เพิ่ม StockLot ใหม่ source = "SELL_CANCEL" remainingWeight = item.weight costPerKg = item.costPerKg + ลบ CreditEntry (ถ้า isCredit)
+- Cancel SortingBill (ST-70 atomic transaction):
+  1. Read bill + items
+  2. Validate output lots (`assertIntact` — product + count + six-decimal weight)
+  3. Derive authoritative cost evidence (StockMovement metadata `sourceCostPerKg` หรือ non-waste SortingBillItem.costPerKg)
+  4. Conditional claim (`updateMany({id, isCancelled: false})` → `count=1` required)
+  5. **Atomic compare-and-delete output lots** (`deleteMany({id, productId, remainingWeight})` per lot — CAS guard)
+  6. Restore source StockLot (`source='SORT_CANCEL'`, `sourceId=bill.id`)
+  7. Delete SortingBonus
+  8. Reverse StockMovements (`CANCELLATION_REVERSAL` rows, fresh `idempotencyKey`, `reversalOfId=original.id`)
+  9. Write CANCEL AuditLog
+
+> 📜 **Historical note (superseded 2026-07-28, ST-70)**: กฎเดิมระบุว่า "Cancel SortingBill → output stock left untouched by design" — กฎนี้ถูก supersede โดย ST-70 Owner decision (PR #49 comment #9): output StockLots ต้องถูก atomic compare-and-delete ใน transaction เดียวกับ source restore; ถ้า output ขาด/consume บางส่วน/เปลี่ยน → fail closed 409 + rollback ทุก mutation
 
 ---
 

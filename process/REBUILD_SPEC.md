@@ -368,21 +368,31 @@ SellBill Cancel (DELETE /api/sell-bills/{id}):
 4. If isCredit: ลบ CreditEntry ที่ referenceId = bill.id
 5. Write AuditLog CANCEL with restoredWeight
 
-SortingBill Cancel (DELETE /api/sorting-bills/{id}):
-1. ตรวจ bill ไม่ cancelled แล้ว
-2. Restore SOURCE stock only:
+SortingBill Cancel (DELETE /api/sorting-bills/{id}) — ST-70 atomic transaction (verified 2026-07-28):
+1. Read bill + items (404 SORTING_BILL_NOT_FOUND / 409 SORTING_BILL_ALREADY_CANCELLED)
+2. Validate output lots — `assertIntact` (product + lot count + six-decimal weight must match original non-waste items)
+3. Derive authoritative cost evidence — `deriveSourceCostEvidence`:
+   - sourceWeight <= 0 → cost = 0 (no evidence)
+   - StockMovement metadata sourceCostPerKg (authoritative) OR non-waste SortingBillItem.costPerKg
+   - Conflicting → 409 SORTING_CANCEL_COST_EVIDENCE_CONFLICTING
+   - Zero → 409 SORTING_CANCEL_COST_EVIDENCE_ZERO
+   - Missing → 409 SORTING_CANCEL_COST_EVIDENCE_MISSING
+4. Conditional claim — `updateMany({id, isCancelled: false})`, count=1 required (else 409 SORTING_CANCEL_CONFLICT)
+5. **Atomic compare-and-delete output lots** — per-lot `deleteMany({id, productId, remainingWeight})` CAS guard
+   - count=0 → 409 SORTING_BILL_HAS_DOWNSTREAM_USAGE → rollback
+6. Restore SOURCE stock:
    - Create StockLot:
      - productId = bill.sourceProductId
      - remainingWeight = bill.sourceWeight
-     - costPerKg = sourceCostPerKg (จาก SortingBillItem แรกที่ไม่ใช่ waste)
+     - costPerKg = derived authoritative cost
      - source = "SORT_CANCEL"
      - sourceId = bill.id
-3. 🚨 OUTPUT stock LEFT UNTOUCHED BY DESIGN
-   - ห้ามลบ StockLot ที่ source = "SORTING" AND sourceId = bill.id
-   - เหตุผล: output อาจถูกขายต่อไปแล้ว (downstream sales)
-4. Delete SortingBonus ที่ sortingBillId = bill.id
-5. Update bill: isCancelled = true
-6. Write AuditLog CANCEL with restoredSourceWeight
+7. Delete SortingBonus ที่ sortingBillId = bill.id
+8. Reverse StockMovements (CANCELLATION_REVERSAL rows, reversalOfId = original.id, fresh idempotencyKey)
+9. Update bill: isCancelled = true (via claim)
+10. Write AuditLog CANCEL with restoredSourceWeight + restoredSourceCostEvidence
+
+> 📜 **Historical note (superseded 2026-07-28, ST-70)**: ขั้นตอนเดิมระบุ "OUTPUT stock LEFT UNTOUCHED BY DESIGN" — ถูก supersede โดย ST-70 Owner decision (PR #49 comment #9)
 ```
 
 ---
@@ -422,9 +432,17 @@ SortingBill Cancel (DELETE /api/sorting-bills/{id}):
 - Restore stock ตามประเภท bill (ดู section 6)
 - เขียน AuditLog `CANCEL` entry
 
-### SortingBill Cancel Special Rule
-- Restore **เฉพาะ source stock**
-- Output stock **left untouched by design** (อาจถูกขายต่อไปแล้ว)
+### SortingBill Cancel Special Rule (ST-70, 2026-07-28)
+- ทั้งหมดใน **one Prisma transaction**
+- Validate output lots + derive cost evidence **ก่อน** conditional claim (read-only ก่อน mutate)
+- Conditional claim (`isCancelled: false` guard) ป้องกัน concurrent cancellation
+- **Atomic compare-and-delete** output lots (CAS guard on productId + remainingWeight)
+- Source restore ใช้ authoritative cost evidence (StockMovement metadata หรือ SortingBillItem.costPerKg)
+- Output StockLots ต้องไม่เหลือ active หลัง successful cancellation
+- ถ้า output ขาด/consume บางส่วน/เปลี่ยน/คลุมเครือ/concurrent modified → **fail closed 409 + rollback ทุก mutation**
+- ไม่มี manual SQL สำหรับ normal SortingBill cancellation
+
+> 📜 **Historical note (superseded 2026-07-28, ST-70)**: กฎเดิม "Restore เฉพาะ source stock + Output left untouched by design" ถูก supersede
 
 ### Credit
 - `RECEIVABLE` = ค้างรับ (ลูกค้าค้างจ่ายเรา) — เกิดจาก SellBill isCredit
@@ -640,7 +658,7 @@ SortingBill Cancel (DELETE /api/sorting-bills/{id}):
 #### E. Cancel Bill (ต้อง rebuild)
 - [ ] Cancel BuyBill → restore stock (ถ้ายังไม่ถูกใช้)
 - [ ] Cancel SellBill → restore stock + ลบ CreditEntry
-- [ ] Cancel SortingBill → restore source stock only (output left untouched by design)
+- [x] Cancel SortingBill → atomic transaction: validate outputs + claim + compare-and-delete outputs + restore source + delete bonus + reverse movements + audit (ST-70, 2026-07-28)
 - [ ] ทุก cancel เขียน AuditLog CANCEL
 
 #### F. History

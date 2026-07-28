@@ -55,20 +55,24 @@
 - Employee + Sorting bonus
 - Weight formula parsing (`860-3` → 857) — ใช้ในหน้า buy/sell/sort แต่ **ไม่ได้เก็บ expression ใน DB**
 
-### ❌ หายไปจาก codebase (เคยทำแล้วใน Task 20/21/22 แต่ถูก reset)
-- `billNumber` (BUY-2569-XXXXX format)
-- `isCancelled` (soft delete)
-- `AuditLog` table + writeAuditLog helper
-- `bill-helpers.ts` (generateBillNumber + writeAuditLog)
-- Cancel bill (DELETE /api/{type}-bills/{id})
-- Excel import (parse + dialog)
-- `weightExpression` DB field (เก็บสูตรใน DB)
-- Product alias mapping files
-- Migration proposal docs
+### ✅ ใช้งานได้ใน production ปัจจุบัน — เพิ่มเติมจาก ST-70 (verified 2026-07-28)
+- `billNumber` (BUY-/SELL-/SORT-2569-XXXXX format) — `src/lib/bill-helpers.ts` generateBillNumber
+- `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` บน Buy/Sell/SortingBill
+- `AuditLog` model + `src/lib/bill-helpers.ts` writeAuditLog
+- Cancel bill routes: `DELETE /api/{buy,sell,sorting}-bills/{id}`
+- SortingBill cancellation (ST-70): atomic transaction, conditional claim, atomic compare-and-delete output lots, authoritative cost evidence, StockMovement reversals, AuditLog
+- Combined sorting history (SortingBills + sorting-classified StockTransfers, server-side merge, deterministic ordering)
+- UI error surfacing + data preservation + retry (history-page.tsx HistoryErrorBanner)
+- 401 AUTH_REQUIRED / 403 PERMISSION_DENIED separation
 
-### ⏳ รอ owner อนุมัติ
+### ❌ หายไปจาก codebase (verified 2026-07-28)
+- Excel import (parse + dialog) — P1
+- `weightExpression` DB field (เก็บสูตรใน DB) — P0 (หลัง migrate)
+- Product alias mapping files — P1
+
+### ⏳ รอ owner อนุมัติ / ดำเนินการ
 - Weight Formula Tracking production migration (SQL script พร้อมที่ `prisma/migrations/add_weight_expression.sql`)
-- Product alias mapping proposal (หายไปจาก codebase ต้อง recreate)
+- Product alias mapping proposal (ต้อง recreate)
 
 ---
 
@@ -170,8 +174,8 @@ src/
 
 ## 9. Critical Warnings
 
-1. **อย่า deploy code โดยไม่ได้ดู diff** — codebase ถูก reset หลายครั้ง
+1. **อย่า deploy code โดยไม่ได้ดู diff** — codebase ถูก reset หลายครั้งในอดีต
 2. **schema.prisma provider ต้องเป็น `postgresql`** ก่อน push/deploy
-3. **`db/custom.db` (SQLite binary) ถูก track ใน git** — เป็น pre-existing issue ไม่ควร commit การเปลี่ยนแปลง
-4. **ถ้าจะใช้ feature ที่หายไป** (billNumber, cancel, Excel import, weightExpression DB storage) — ต้อง recreate ใหม่ทั้งหมด
-5. **migration SQL `add_weight_expression.sql` พร้อม run แต่ถ้า run โดยที่ code ยังไม่ได้ deploy ที่ใช้ weightExpression** — columns จะว่างเปล่า (ไม่เป็นไร เพราะ additive only)
+3. **`db/custom.db` (SQLite binary) ถูก track ใน git** — pre-existing issue (P1)
+4. **Feature ที่ยังหายไป** (verified 2026-07-28): Excel import, weightExpression DB storage, Product alias mapping — ต้อง recreate (billNumber/cancel/AuditLog ถูก implement แล้วใน ST-70 + commits ก่อนหน้า)
+5. **migration SQL `add_weight_expression.sql` พร้อม run** แต่ถ้า run โดยที่ code ยังไม่ได้ deploy ที่ใช้ weightExpression — columns จะว่างเปล่า (ไม่เป็นไร เพราะ additive only)

@@ -29,7 +29,7 @@ grep "provider" prisma/schema.prisma
 # มี features ที่จำเป็นไหม
 grep -c "billNumber" prisma/schema.prisma
 # Expected: 3+ (BuyBill, SellBill, SortingBill)
-# ถ้า 0 → cancel feature หายไป ดู Section 11
+# ถ้า 0 → cancel route หาย ดู Section 11 (หมายเหตุ: cancel feature ถูก implement แล้วใน ST-70, branch st-70-sorting-cancellation-history)
 
 # Lint ผ่านไหม
 bun run lint
@@ -182,7 +182,7 @@ ORDER BY "dateAdded" ASC;
 #### Case B: stock ติดลบ
 - 🚨 **อย่าแก้โดยตรง** ใน DB
 - ใช้ cancel bill (ถ้ามี) เพื่อ restore
-- ถ้าไม่มี cancel → ต้อง recreate cancel feature (Section 11)
+- ใช้ cancel route (`DELETE /api/{buy,sell,sorting}-bills/{id}`) เพื่อ restore stock (ST-70: cancel feature มีแล้ว ไม่ต้อง recreate)
 
 #### Case C: costPerKg ผิด
 - ตรวจว่า FIFO ใช้ lot เก่าก่อน (orderBy `dateAdded ASC`)

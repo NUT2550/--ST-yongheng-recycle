@@ -1,7 +1,8 @@
 # Agent Handoff — ยงเฮง มหาชัย รีไซเคิล
 
-> เอกสารสำหรับ owner ส่งให้ AI Agent ตัวอื่นได้ทันที
-> วันที่: 27/06/2569
+> เอกสารสำหรับ owner ส่งให้ AI Agent ตัวอื่นได้ทันที่
+> วันที่เริ่มต้น: 27/06/2569
+> อัปเดตล่าสุด: 2026-07-28 (ST-70 — billNumber, isCancelled, AuditLog, cancel routes ทั้ง 3 ถูก implement แล้ว; SortingBill cancellation เป็น atomic transaction)
 
 ---
 
@@ -11,10 +12,14 @@
 
 **เทคโนโลยี**: Next.js 16 + TypeScript + Prisma + Supabase Postgres + Vercel
 
-**สถานะปัจจุบัน**:
+**สถานะปัจจุบัน (verified 2026-07-28, ST-70)**:
 - ✅ ระบบหลักใช้งานได้ (login, buy, sell, sort, stock, history, dashboard)
-- ❌ Features ขั้นสูงหายไปจาก codebase (billNumber, cancel, AuditLog, Excel import, weightExpression storage)
-- ⏳ รอ owner อนุมัติ migration + recreate features
+- ✅ billNumber (BUY-/SELL-/SORT- format), isCancelled soft delete, AuditLog, cancel routes ทั้ง 3 — implement แล้ว
+- ✅ SortingBill cancellation: atomic transaction, conditional claim, atomic compare-and-delete output lots, authoritative cost evidence, StockMovement reversals, AuditLog (ST-70)
+- ✅ Combined sorting history (server-side merge SortingBills + sorting-classified StockTransfers, bounded pagination)
+- ✅ UI error surfacing + data preservation + retry (history-page.tsx)
+- ❌ Excel import, Product Alias mapping, weightExpression DB storage — ยังขาด (P1/P0-post-migrate)
+- ⏳ รอ owner run weightExpression migration SQL ใน Supabase
 
 **Production URL**: https://st-yongheng-recycle.vercel.app
 **GitHub**: https://github.com/NUT2550/--ST-yongheng-recycle
@@ -83,12 +88,12 @@
 ## 4. Current Known Risks
 
 ### 🔴 Critical
-1. **Features หายไปจาก codebase** — billNumber, cancel, AuditLog, Excel import, weightExpression storage
-   - ต้อง recreate ทั้งหมด (ดู FEATURE_INVENTORY.md)
-2. **DB schema ไม่ match features ที่จะ rebuild**
-   - ต้อง migrate ก่อน push code ใหม่
-3. **`db/custom.db` ถูก track ใน git** — pre-existing issue
-4. **`next.config.ts` มี `typescript.ignoreBuildErrors: true`** — Vercel build ผ่านทั้งที่มี type error
+1. **weightExpression DB storage ยังไม่มี** — schema.prisma ยังไม่มี weightExpression fields; ต้อง run `prisma/migrations/add_weight_expression.sql` ใน Supabase ก่อน (P0, รอ Owner)
+2. **Excel import + Product Alias mapping ยังไม่มี** — P1
+3. **`db/custom.db` ถูก track ใน git** — pre-existing issue (P1)
+4. **`next.config.ts` มี `typescript.ignoreBuildErrors: true`** — Vercel build ผ่านทั้งที่มี type error (P2)
+
+> 📜 **Historical note (superseded 2026-07-28, ST-70)**: กฎเดิมระบุว่า billNumber, cancel, AuditLog หายไปจาก codebase และต้อง recreate — ทั้งหมดถูก implement แล้วใน branch `st-70-sorting-cancellation-history` (ดู PR #49, `src/lib/bill-helpers.ts`, `src/lib/sorting-cancellation-service.ts`, `src/lib/combined-sorting-history.ts`)
 
 ### 🟡 Warning
 1. **`.env` local ไม่มี `JWT_SECRET`** — dev server จะ fail
@@ -128,23 +133,34 @@
 4. ตรวจ user 01 role ใน production DB
 5. ตรวจ db/custom.db ไม่ถูก commit ใน diff ถัดไป
 
-### Phase 3: Rebuild billNumber + cancel + AuditLog
-**เป้าหมาย**: คืน features ที่จำเป็นสำหรับใช้งานจริง
+### Phase 3: billNumber + cancel + AuditLog — COMPLETED (ST-70, 2026-07-28)
 
-1. อ่าน `process/REBUILD_SPEC.md` Section 5, 6, 7, 8, 12
-2. เพิ่ม fields ใน schema.prisma:
-   - `BuyBill.billNumber`, `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason`
-   - `SellBill` (เหมือนกัน)
-   - `SortingBill` (เหมือนกัน)
-   - สร้าง `AuditLog` model
-3. สร้าง migration SQL (additive only)
-4. สร้าง `src/lib/bill-helpers.ts` (generateBillNumber + writeAuditLog)
-5. อัปเดต POST routes ให้ generate billNumber + write AuditLog
-6. สร้าง `src/app/api/{buy,sell,sorting}-bills/[id]/route.ts` พร้อม DELETE handler
-7. อัปเดต history-page.tsx ให้แสดง billNumber + cancel button
-8. **ทดสอบ local ก่อน push**
+> ✅ Phase 3 ทำเสร็จแล้วใน ST-70 + commits ก่อนหน้า ไม่ต้อง redo
 
-### Phase 4: Rebuild Excel Import
+**สิ่งที่ implement แล้ว**:
+- `billNumber` field บน Buy/Sell/SortingBill (`String? @unique`)
+- `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` fields
+- `AuditLog` model พร้อม indexes
+- `src/lib/bill-helpers.ts` — generateBillNumber + writeAuditLog
+- `src/app/api/{buy,sell,sorting}-bills/[id]/route.ts` — DELETE handlers
+- `src/lib/sorting-cancellation-service.ts` — atomic SortingBill cancellation (ST-70)
+- `src/lib/combined-sorting-history.ts` — combined pagination (ST-70)
+- history-page.tsx — billNumber display + cancel button + error surfacing (ST-70)
+
+**ดูรายละเอียด**: `process/BUSINESS_RULES.md` Section 2, `process/FEATURE_INVENTORY.md`, PR #49, `worklog.md` (ST-70)
+
+### Phase 3.5: SortingBill cancellation correctness (ST-70 — COMPLETED 2026-07-28)
+
+> ✅ ทำเสร็จแล้ว ไม่ต้อง redo
+
+- Atomic compare-and-delete output lots (TOCTOU fix)
+- Authoritative cost evidence (all-waste bills supported)
+- 401/403 separation
+- UI error surfacing + retry
+- Real PostgreSQL concurrency tests (14 scenarios)
+- GitHub Actions PostgreSQL workflow
+
+### Phase 4: Rebuild Excel Import (P1 — ยังไม่ได้ทำ)
 **เป้าหมาย**: คืนความสามารถ import บิลจาก Excel
 
 1. อ่าน `process/REBUILD_SPEC.md` Section 10

@@ -1,13 +1,16 @@
 # Business Rules — ยงเฮง มหาชัย รีไซเคิล
 
 > กฎธุรกิจที่ระบบต้องปฏิบัติตาม — สำคัญมาก ห้ามละเว้น
-> วันที่: 27/06/2569
+> วันที่เริ่มต้น: 27/06/2569
+> อัปเดตล่าสุด: 2026-07-28 (ST-70 — SortingBill cancellation correctness)
+
+> **หมายเหตุ ST-70 (2026-07-28)**: Section 1 (billNumber) และ Section 2 (Bill Cancel) ถูก implement แล้วใน codebase ปัจจุบัน (branch `st-70-sorting-cancellation-history`) กฎเดิมที่บอกว่า "หายไปจาก codebase" ถูก supersede ด้วย current truth ด้านล่าง ดูรายละเอียดเพิ่มเติมที่ `process/FEATURE_INVENTORY.md` และ PR #49
 
 ---
 
 ## 1. Bill Number Format
 
-> ⚠️ **Status**: กฎนี้ถูกออกแบบไว้ใน Task ก่อนหน้า แต่ `billNumber` field หายไปจาก codebase ปัจจุบัน — ต้อง recreate ก่อนใช้งาน
+> ✅ **Status (verified 2026-07-28)**: `billNumber` field มีใน schema.prisma สำหรับ BuyBill, SellBill, SortingBill (เป็น `String? @unique`) และถูก generate โดย `src/lib/bill-helpers.ts` `generateBillNumber()`
 
 รูปแบบ: `{TYPE}-{BUDDHIST_YEAR}-{SEQUENCE_5_DIGITS}`
 
@@ -28,7 +31,11 @@
 
 ## 2. Bill Cancel Behavior
 
-> ⚠️ **Status**: Cancel feature หายไปจาก codebase ปัจจุบัน — ต้อง recreate
+> ✅ **Status (verified 2026-07-28)**: Cancel feature มีใน codebase ปัจจุบัน
+> - Routes: `DELETE /api/buy-bills/{id}`, `DELETE /api/sell-bills/{id}`, `DELETE /api/sorting-bills/{id}`
+> - Schema fields: `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` บน BuyBill/SellBill/SortingBill
+> - AuditLog model มีใน schema.prisma
+> - ทุก cancel ทำงานใน Prisma transaction เดียว (atomic)
 
 ### BuyBill Cancel
 - ใช้ `DELETE /api/buy-bills/{id}` + body `{"reason": "..."}`
@@ -53,22 +60,37 @@
 - **CreditEntry**: ถ้า isCredit → ลบ CreditEntry ที่ referenceId = bill.id (หรือ mark isSettled)
 - **AuditLog**: CANCEL entry + `restoredWeight`
 
-### SortingBill Cancel
+### SortingBill Cancel (ST-70 — Owner-approved safe rule, 2026-07-28)
 - ใช้ `DELETE /api/sorting-bills/{id}` + body `{"reason": "..."}`
-- Soft delete
-- **Source stock restore**:
-  - Create new StockLot:
-    - `productId = bill.sourceProductId`
-    - `remainingWeight = bill.sourceWeight`
-    - `costPerKg = sourceCostPerKg` (จาก SortingBillItem แรกที่ไม่ใช่ waste)
-    - `source = "SORT_CANCEL"`
-    - `sourceId = bill.id`
-- **Output stock — LEFT UNTOUCHED BY DESIGN** 🚨
-  - ไม่ restore สต็อก output เพราะอาจถูกขายต่อไปแล้ว (downstream sales)
-  - ห้ามลบ StockLot ที่ source = "SORTING" และ sourceId = bill.id โดยอัตโนมัติ
-  - ถ้า owner ต้องการลบ manual → ใช้ SQL Editor เท่านั้น
-- **SortingBonus**: ลบ SortingBonus ที่ sortingBillId = bill.id
-- **AuditLog**: CANCEL entry + `restoredSourceWeight`
+- Soft cancellation สำหรับ bill แต่ stock effects เป็น transactional (atomic)
+- ทั้งหมดทำงานใน **one Prisma transaction** (`src/lib/sorting-cancellation-service.ts` `cancelSortingBill`):
+
+  1. **Read bill + items** — 404 `SORTING_BILL_NOT_FOUND` ถ้าไม่พบ, 409 `SORTING_BILL_ALREADY_CANCELLED` ถ้าถูก cancel แล้ว
+  2. **Validate output lots** — `assertIntact` ตรวจว่า output StockLots (`source='SORTING'`, `sourceId=bill.id`) ตรง product + lot count + six-decimal weight กับ original non-waste items ทุกประการ
+  3. **Derive authoritative cost evidence** — `deriveSourceCostEvidence`:
+     - ถ้า `sourceWeight <= 0`: cost = 0 (no evidence required)
+     - Original non-reversal `SORTING_SOURCE_OUT` StockMovement metadata `sourceCostPerKg` (authoritative)
+     - หรือ non-waste `SortingBillItem.costPerKg`
+     - ทั้งสอง source มี + ขัดแย้งกัน → 409 `SORTING_CANCEL_COST_EVIDENCE_CONFLICTING`
+     - มี source เดียว + เป็น 0 → 409 `SORTING_CANCEL_COST_EVIDENCE_ZERO`
+     - ไม่มี source ไหน + `sourceWeight > 0` → 409 `SORTING_CANCEL_COST_EVIDENCE_MISSING`
+     - **ห้ามใช้** current StockLot cost (อาจ drift หลัง sort-time)
+     - **ห้าม guess** จาก user-entered analysis price
+  4. **Conditional active-bill claim** — `updateMany({ id, isCancelled: false })`; `claim.count !== 1` → 409 `SORTING_CANCEL_CONFLICT` (concurrent cancellation detected)
+  5. **Atomic compare-and-delete of intact output lots** — แต่ละ lot ถูกลบด้วย `deleteMany({ id, productId, remainingWeight })` ที่ใช้ค่าจาก read ใน transaction เดียวกันเป็น CAS guard
+     - ถ้า lot ถูก consume บางส่วน/เปลี่ยน ระหว่าง read กับ delete → `count=0` → 409 `SORTING_BILL_HAS_DOWNSTREAM_USAGE` → rollback ทุก mutation
+  6. **Source StockLot restoration** — create `StockLot { source='SORT_CANCEL', sourceId=bill.id, remainingWeight=bill.sourceWeight, costPerKg=derived }` (เฉพาะ `sourceWeight > 0`)
+  7. **SortingBonus removal** — `deleteMany({ sortingBillId: bill.id })`
+  8. **StockMovement reversals** — `reverseSourceMovements` สร้าง fresh `CANCELLATION_REVERSAL` rows ที่ reference original movements (`reversalOfId = original.id`) ด้วย `idempotencyKey` ใหม่
+  9. **One CANCEL AuditLog** — `action='CANCEL'`, `entityType='SORTING_BILL'`, `details` มี `restoredSourceWeight`, `restoredSourceCostPerKg`, `restoredSourceCostEvidence`, `removedOutputLotCount`
+
+- **Output StockLots ต้องไม่เหลือ active หลัง successful cancellation** ✅
+- ถ้า output StockLot ขาด, ถูก consume บางส่วน, เปลี่ยน, ซ้ำ, คลุมเครือ หรือถูกแก้ concurrent:
+  - **fail closed** → structured HTTP 409
+  - **rollback ทุก mutation** (claim, delete, restore, bonus delete, reversal, audit)
+- ไม่มี manual SQL สำหรับ normal SortingBill cancellation (ใช้ DELETE route เท่านั้น)
+
+> 📜 **Historical note (superseded 2026-07-28)**: กฎเดิมระบุว่า "Output stock LEFT UNTOUCHED BY DESIGN" และแนะนำให้ใช้ manual SQL Editor สำหรับลบ output StockLot กฎนี้ถูก supersede โดย ST-70 Owner decision (PR #49 comment #9, 2026-07-25) ที่อนุมัติ atomic compare-and-delete + fail-closed semantics
 
 ---
 
@@ -214,6 +236,39 @@ Sell 150 กก.:
 - `isActive = true` → login ได้
 - `isActive = false` → login ไม่ได้ (แม้รู้รหัสผ่าน)
 - ห้าม hard delete user — ใช้ deactivate เท่านั้น
+
+---
+
+## 8.5. Stable Error Codes (ST-70, verified 2026-07-28)
+
+> ✅ Codes เหล่านี้ถูก return จาก API และควรถูกใช้โดย client เพื่อ branching/UX
+
+### SortingBill Cancellation (`DELETE /api/sorting-bills/{id}`)
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| 404 | `SORTING_BILL_NOT_FOUND` | ไม่พบใบคัดแยก |
+| 409 | `SORTING_BILL_ALREADY_CANCELLED` | ใบคัดแยกถูกยกเลิกไปแล้ว |
+| 409 | `SORTING_BILL_HAS_DOWNSTREAM_USAGE` | output StockLots ขาด/consume บางส่วน/เปลี่ยน/CAS fail → rollback ทุก mutation |
+| 409 | `SORTING_CANCEL_CONFLICT` | conditional claim fail (concurrent cancellation หรือ state เปลี่ยน) |
+| 409 | `SORTING_CANCEL_COST_EVIDENCE_MISSING` | ไม่มี authoritative cost evidence ใน transaction (sourceWeight > 0 แต่ไม่มี StockMovement metadata หรือ SortingBillItem.costPerKg) |
+| 409 | `SORTING_CANCEL_COST_EVIDENCE_CONFLICTING` | StockMovement metadata กับ SortingBillItem.costPerKg ขัดแย้งกัน (หรือหลาย StockMovement rows มี cost ต่างกัน) |
+| 409 | `SORTING_CANCEL_COST_EVIDENCE_ZERO` | evidence มีอยู่แต่ costPerKg = 0 |
+| 500 | `SORTING_CANCEL_FAILED` | unexpected error (ไม่ expose Prisma/PostgreSQL details) |
+
+### Auth (all protected routes)
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| 401 | `AUTH_REQUIRED` | missing/invalid/expired token |
+| 403 | `PERMISSION_DENIED` | valid token แต่ไม่มี permission ที่จำเป็น |
+
+### Combined History Pagination (`GET /api/sorting-bills?includeTransfers=true`)
+
+| HTTP | Code | Meaning |
+|------|------|---------|
+| 400 | `INVALID_PAGINATION` | page/limit ไม่ใช่ positive integer หรือ limit > 100 |
+| 400 | `PAGINATION_WINDOW_EXCEEDED` | page × limit > 1,000 (combined leading window cap) |
 
 ---
 
