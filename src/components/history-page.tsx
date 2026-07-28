@@ -83,6 +83,14 @@ export function HistoryPage() {
   const [transferBills, setTransferBills] = useState<StockTransfer[]>([]);
   const [transferTotal, setTransferTotal] = useState(0);
 
+  // ST-70: Per-tab load-error state. When a fetch fails we surface the
+  // structured error to the user, preserve the last successful rows so the
+  // page does not visually empty out, and offer a Retry button.
+  const [buyError, setBuyError] = useState<string | null>(null);
+  const [sellError, setSellError] = useState<string | null>(null);
+  const [sortError, setSortError] = useState<string | null>(null);
+  const [transferError, setTransferError] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
 
   // Expanded bill IDs
@@ -99,12 +107,14 @@ export function HistoryPage() {
 
   const loadBuyBills = useCallback(async () => {
     setLoading(true);
+    setBuyError(null);
     try {
       const res = await fetchBuyBills(page, PAGE_SIZE, showCancelled);
       setBuyBills(res.bills);
       setBuyTotal(res.total);
-    } catch {
-      // handle
+    } catch (err) {
+      // ST-70: Preserve prior rows; surface structured error; do NOT clear.
+      setBuyError(err instanceof Error ? err.message : 'โหลดประวัติรับซื้อไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -112,12 +122,13 @@ export function HistoryPage() {
 
   const loadSellBills = useCallback(async () => {
     setLoading(true);
+    setSellError(null);
     try {
       const res = await fetchSellBills(page, PAGE_SIZE, showCancelled);
       setSellBills(res.bills);
       setSellTotal(res.total);
-    } catch {
-      // handle
+    } catch (err) {
+      setSellError(err instanceof Error ? err.message : 'โหลดประวัติขายไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -125,12 +136,14 @@ export function HistoryPage() {
 
   const loadSortBills = useCallback(async () => {
     setLoading(true);
+    setSortError(null);
     try {
       const res = await fetchCombinedSortingHistory(page, PAGE_SIZE, showCancelled);
       setSortBills(res.bills);
       setSortTotal(res.total);
-    } catch {
-      // handle
+    } catch (err) {
+      // ST-70: Preserve prior sort rows; surface structured error.
+      setSortError(err instanceof Error ? err.message : 'โหลดประวัติคัดแยกไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -138,14 +151,15 @@ export function HistoryPage() {
 
   const loadTransferBills = useCallback(async () => {
     setLoading(true);
+    setTransferError(null);
     try {
       // แกะของ tab shows: StockTransfers where businessType is แกะของ or null/empty
       // (excludes StockTransfers classified as คัดแยก)
       const res = await fetchStockTransfers(page, PAGE_SIZE, showCancelled, 'แกะของ');
       setTransferBills(res.bills);
       setTransferTotal(res.total);
-    } catch {
-      // handle
+    } catch (err) {
+      setTransferError(err instanceof Error ? err.message : 'โหลดประวัติแกะของไม่สำเร็จ');
     } finally {
       setLoading(false);
     }
@@ -229,44 +243,56 @@ export function HistoryPage() {
       ) : (
         <>
           {activeTab === 'buy' && (
-            <BillList
-              bills={buyBills}
-              total={buyTotal}
-              expandedIds={expandedIds}
-              toggleExpand={toggleExpand}
-              type="buy"
-              onRefresh={loadBuyBills}
-            />
+            <>
+              <HistoryErrorBanner error={buyError} onRetry={loadBuyBills} />
+              <BillList
+                bills={buyBills}
+                total={buyTotal}
+                expandedIds={expandedIds}
+                toggleExpand={toggleExpand}
+                type="buy"
+                onRefresh={loadBuyBills}
+              />
+            </>
           )}
           {activeTab === 'sell' && (
-            <BillList
-              bills={sellBills}
-              total={sellTotal}
-              expandedIds={expandedIds}
-              toggleExpand={toggleExpand}
-              type="sell"
-              onRefresh={loadSellBills}
-            />
+            <>
+              <HistoryErrorBanner error={sellError} onRetry={loadSellBills} />
+              <BillList
+                bills={sellBills}
+                total={sellTotal}
+                expandedIds={expandedIds}
+                toggleExpand={toggleExpand}
+                type="sell"
+                onRefresh={loadSellBills}
+              />
+            </>
           )}
           {activeTab === 'sort' && (
-            <BillList
-              bills={sortBills}
-              total={sortTotal}
-              expandedIds={expandedIds}
-              toggleExpand={toggleExpand}
-              type="sort"
-              onRefresh={loadSortBills}
-            />
+            <>
+              <HistoryErrorBanner error={sortError} onRetry={loadSortBills} />
+              <BillList
+                bills={sortBills}
+                total={sortTotal}
+                expandedIds={expandedIds}
+                toggleExpand={toggleExpand}
+                type="sort"
+                onRefresh={loadSortBills}
+              />
+            </>
           )}
           {activeTab === 'transfer' && (
-            <BillList
-              bills={transferBills}
-              total={transferTotal}
-              expandedIds={expandedIds}
-              toggleExpand={toggleExpand}
-              type="transfer"
-              onRefresh={loadTransferBills}
-            />
+            <>
+              <HistoryErrorBanner error={transferError} onRetry={loadTransferBills} />
+              <BillList
+                bills={transferBills}
+                total={transferTotal}
+                expandedIds={expandedIds}
+                toggleExpand={toggleExpand}
+                type="transfer"
+                onRefresh={loadTransferBills}
+              />
+            </>
           )}
         </>
       )}
@@ -295,6 +321,42 @@ export function HistoryPage() {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ---- ST-70: History error banner with Retry ---- */
+function HistoryErrorBanner({
+  error,
+  onRetry,
+}: {
+  error: string | null;
+  onRetry: () => void;
+}) {
+  if (!error) return null;
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900"
+    >
+      <AlertTriangle className="h-5 w-5 mt-0.5 text-amber-600 flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium">โหลดข้อมูลไม่สำเร็จ</p>
+        <p className="text-xs mt-1 text-amber-800 break-words">{error}</p>
+        <p className="text-[11px] mt-1 text-amber-600">
+          ข้อมูลเดิมยังแสดงอยู่ — กดลองใหม่เพื่อโหลดซ้ำ
+        </p>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onRetry}
+        className="flex-shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100"
+      >
+        <RefreshCw className="h-3.5 w-3.5 mr-1" />
+        ลองใหม่
+      </Button>
     </div>
   );
 }

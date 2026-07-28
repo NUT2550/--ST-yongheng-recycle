@@ -8,6 +8,7 @@ import { reverseSourceMovements } from '../src/lib/stock-movement-reversal'
 import {
   cancelSortingBill,
   mapSortingCancellationError,
+  SortingCancellationError,
   type SortingCancellationDb,
 } from '../src/lib/sorting-cancellation-service'
 
@@ -189,12 +190,18 @@ describe('ST-70 combined sorting history pagination', () => {
   })
 })
 
-function cancellationDb(options: {
+interface CancellationOptions {
   lots?: Array<{ id: string; productId: string; remainingWeight: number }>
+  movements?: Array<{ id: string; metadata: unknown }>
   claimCount?: number
   failAudit?: boolean
-} = {}) {
+  /** When provided, the mock deleteMany records this lot as "concurrently modified" (returns count=0). */
+  modifiedLotIds?: Set<string>
+}
+
+function cancellationDb(options: CancellationOptions = {}) {
   const calls: string[] = []
+  const deletedLotIds: string[] = []
   const tx = {
     sortingBill: {
       async findUnique() {
@@ -225,9 +232,13 @@ function cancellationDb(options: {
           { id: 'lot-b', productId: 'output-b', remainingWeight: 5 },
         ]
       },
-      async deleteMany(args: { where: { id: { in: string[] } } }) {
-        calls.push('deleteOutputLots')
-        return { count: args.where.id.in.length }
+      async deleteMany(args: { where: { id: string; productId: string; remainingWeight: number } }) {
+        calls.push('deleteOutputLot')
+        deletedLotIds.push(args.where.id)
+        if (options.modifiedLotIds?.has(args.where.id)) {
+          return { count: 0 }
+        }
+        return { count: 1 }
       },
       async create() {
         calls.push('restoreSource')
@@ -243,7 +254,7 @@ function cancellationDb(options: {
     stockMovement: {
       async findMany() {
         calls.push('findMovements')
-        return []
+        return options.movements ?? []
       },
       async createMany() {
         calls.push('createReversals')
@@ -264,32 +275,34 @@ function cancellationDb(options: {
       return fn(tx)
     },
   }
-  return { db: db as unknown as SortingCancellationDb, calls }
+  return { db: db as unknown as SortingCancellationDb, calls, deletedLotIds }
 }
 
 describe('ST-70 sorting cancellation transaction wiring', () => {
-  test('claims once, removes intact outputs, restores source, and audits in one transaction', async () => {
-    const { db, calls } = cancellationDb()
+  test('read-only validation runs before the conditional claim; success path', async () => {
+    const { db, calls, deletedLotIds } = cancellationDb()
     await cancelSortingBill(db, {
       id: 'sorting-bill-1',
       reason: 'test',
       auth: { userId: 'admin-1', name: 'Admin' },
       cancelledAt: new Date('2026-07-24T00:00:00.000Z'),
     })
-    expect(calls).toEqual([
+    // Expected order: transaction → findBill → findOutputLots → findMovements
+    // (cost evidence) → claim → deleteOutputLot (×2, atomic compare-and-delete)
+    // → restoreSource → deleteBonuses → (reversal findMany/createMany) → audit
+    expect(calls.slice(0, 5)).toEqual([
       'transaction',
       'findBill',
-      'claim',
       'findOutputLots',
-      'deleteOutputLots',
-      'restoreSource',
-      'deleteBonuses',
       'findMovements',
-      'audit',
+      'claim',
     ])
+    expect(deletedLotIds).toEqual(['lot-a', 'lot-b'])
+    // claim happens after read-only validation; source restore + audit happen last
+    expect(calls[calls.length - 1]).toBe('audit')
   })
 
-  test('rejects a partially consumed output before delete, restore, reversal, or audit', async () => {
+  test('rejects a partially consumed output before claim, delete, restore, reversal, or audit', async () => {
     const { db, calls } = cancellationDb({
       lots: [
         { id: 'lot-a', productId: 'output-a', remainingWeight: 3.5 },
@@ -305,7 +318,8 @@ describe('ST-70 sorting cancellation transaction wiring', () => {
       status: 409,
       body: { code: 'SORTING_BILL_HAS_DOWNSTREAM_USAGE' },
     })
-    expect(calls).toEqual(['transaction', 'findBill', 'claim', 'findOutputLots'])
+    // assertIntact throws before findMovements/claim/delete/restore/audit run
+    expect(calls).toEqual(['transaction', 'findBill', 'findOutputLots'])
   })
 
   test.each([
@@ -314,7 +328,7 @@ describe('ST-70 sorting cancellation transaction wiring', () => {
       { id: 'lot-a', productId: 'output-a', remainingWeight: 4 },
       { id: 'lot-c', productId: 'unexpected', remainingWeight: 5 },
     ]],
-  ])('fails closed for %s', async (_label, lots) => {
+  ])('fails closed for %s before claim', async (_label, lots) => {
     const { db, calls } = cancellationDb({ lots })
     const error = await cancelSortingBill(db, {
       id: 'sorting-bill-1',
@@ -325,10 +339,11 @@ describe('ST-70 sorting cancellation transaction wiring', () => {
       status: 409,
       body: { code: 'SORTING_BILL_HAS_DOWNSTREAM_USAGE' },
     })
-    expect(calls).toEqual(['transaction', 'findBill', 'claim', 'findOutputLots'])
+    // assertIntact throws before findMovements/claim run
+    expect(calls).toEqual(['transaction', 'findBill', 'findOutputLots'])
   })
 
-  test('a lost atomic claim cannot restore source even for legacy bills without movements', async () => {
+  test('a lost atomic claim (concurrent cancellation) cannot restore source', async () => {
     const { db, calls } = cancellationDb({ claimCount: 0 })
     const error = await cancelSortingBill(db, {
       id: 'sorting-bill-1',
@@ -339,7 +354,8 @@ describe('ST-70 sorting cancellation transaction wiring', () => {
       status: 409,
       body: { code: 'SORTING_CANCEL_CONFLICT' },
     })
-    expect(calls).toEqual(['transaction', 'findBill', 'claim'])
+    // Read-only validation happens first, then claim fails — no delete/restore/audit
+    expect(calls).toEqual(['transaction', 'findBill', 'findOutputLots', 'findMovements', 'claim'])
   })
 
   test('unexpected database failures map to a safe response without internal details', async () => {
@@ -353,5 +369,321 @@ describe('ST-70 sorting cancellation transaction wiring', () => {
     expect(mapped.status).toBe(500)
     expect(mapped.body.code).toBe('SORTING_CANCEL_FAILED')
     expect(mapped.body.error).not.toContain('database host')
+  })
+})
+
+describe('ST-70 atomic compare-and-delete (TOCTOU fix)', () => {
+  test('if a concurrent sale reduces a lot between read and delete, cancellation fails closed', async () => {
+    // Simulate a concurrent mutation: lot-b was 5 at read time but has been
+    // reduced to 4 by the time deleteMany runs (CAS guard fails → count=0).
+    const { db, calls, deletedLotIds } = cancellationDb({
+      modifiedLotIds: new Set(['lot-b']),
+    })
+    const error = await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'race',
+      auth: { userId: 'admin-1', name: 'Admin' },
+    }).catch(value => value)
+    expect(mapSortingCancellationError(error)).toMatchObject({
+      status: 409,
+      body: { code: 'SORTING_BILL_HAS_DOWNSTREAM_USAGE' },
+    })
+    // lot-a was deleted first (count=1), then lot-b CAS failed → rollback
+    expect(deletedLotIds).toEqual(['lot-a', 'lot-b'])
+    // restoreSource + deleteBonuses + createReversals + audit must NOT run
+    expect(calls).not.toContain('restoreSource')
+    expect(calls).not.toContain('deleteBonuses')
+    expect(calls).not.toContain('audit')
+  })
+
+  test('every expected output lot is deleted with product + weight guards (not just id)', async () => {
+    const { db, deletedLotIds } = cancellationDb()
+    await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'test',
+      auth: { userId: 'admin-1', name: 'Admin' },
+      cancelledAt: new Date('2026-07-24T00:00:00.000Z'),
+    })
+    // Both lots must be deleted via compare-and-delete (two deleteOutputLot calls)
+    expect(deletedLotIds.sort()).toEqual(['lot-a', 'lot-b'])
+  })
+})
+
+describe('ST-70 all-waste authoritative cost evidence', () => {
+  function allWasteDb(options: {
+    movements?: Array<{ id: string; metadata: unknown }>
+    claimCount?: number
+  } = {}) {
+    const calls: string[] = []
+    const tx = {
+      sortingBill: {
+        async findUnique() {
+          calls.push('findBill')
+          return {
+            id: 'sorting-bill-1',
+            billNumber: 'SORT-2',
+            sourceProductId: 'source-product',
+            sourceWeight: 10,
+            isCancelled: false,
+            // All-waste bill: no non-waste items, so item-level costPerKg is 0.
+            items: [
+              { productId: 'waste-a', weight: 5, isWaste: true, costPerKg: 0 },
+              { productId: 'waste-b', weight: 5, isWaste: true, costPerKg: 0 },
+            ],
+          }
+        },
+        async updateMany() {
+          calls.push('claim')
+          return { count: options.claimCount ?? 1 }
+        },
+      },
+      stockLot: {
+        async findMany() {
+          calls.push('findOutputLots')
+          // All-waste bill: no SORTING output lots exist
+          return []
+        },
+        async deleteMany() {
+          calls.push('deleteOutputLot')
+          return { count: 0 }
+        },
+        async create() {
+          calls.push('restoreSource')
+          return {}
+        },
+      },
+      sortingBonus: {
+        async deleteMany() {
+          calls.push('deleteBonuses')
+          return { count: 0 }
+        },
+      },
+      stockMovement: {
+        async findMany() {
+          calls.push('findMovements')
+          return options.movements ?? []
+        },
+        async createMany() {
+          calls.push('createReversals')
+          return { count: 0 }
+        },
+      },
+      auditLog: {
+        async create() {
+          calls.push('audit')
+          return {}
+        },
+      },
+    }
+    const db = {
+      async $transaction<T>(fn: (value: typeof tx) => Promise<T>) {
+        calls.push('transaction')
+        return fn(tx)
+      },
+    }
+    return { db: db as unknown as SortingCancellationDb, calls }
+  }
+
+  test('all-waste bill succeeds when StockMovement metadata has authoritative costPerKg', async () => {
+    // Provide a full SORTING_SOURCE_OUT movement row so reverseSourceMovements
+    // can build a valid reversal (with finite signedWeight).
+    const sourceOutMovement = {
+      id: 'mv-source-out',
+      productId: 'source-product',
+      businessDate: new Date('2026-07-24T00:00:00.000Z'),
+      movementType: 'SORTING_SOURCE_OUT',
+      signedWeight: -10,
+      sourceType: 'SORTING_BILL',
+      sourceId: 'sorting-bill-1',
+      sourceItemId: 'source',
+      sourceDocumentNumber: 'SORT-2',
+      reversalOfId: null,
+      idempotencyKey: 'stock-ledger-v1:SORTING_BILL:sorting-bill-1:source:source-out',
+      reason: null,
+      metadata: { sourceCostPerKg: 7.5 },
+      createdById: null,
+      createdByName: null,
+    }
+    const { db, calls } = allWasteDb({ movements: [sourceOutMovement] })
+    await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'all-waste',
+      auth: { userId: 'admin-1', name: 'Admin' },
+      cancelledAt: new Date('2026-07-24T00:00:00.000Z'),
+    })
+    // Source restore + audit ran (no output lots to delete for all-waste)
+    expect(calls).toContain('restoreSource')
+    expect(calls).toContain('audit')
+  })
+
+  test('all-waste bill fails closed when no StockMovement evidence exists', async () => {
+    const { db, calls } = allWasteDb({ movements: [] })
+    const error = await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'all-waste',
+      auth: { userId: 'admin-1', name: 'Admin' },
+    }).catch(value => value)
+    expect(mapSortingCancellationError(error)).toMatchObject({
+      status: 409,
+      body: { code: 'SORTING_CANCEL_COST_EVIDENCE_MISSING' },
+    })
+    expect(calls).not.toContain('claim')
+    expect(calls).not.toContain('restoreSource')
+    expect(calls).not.toContain('audit')
+  })
+
+  test('all-waste bill fails closed when StockMovement metadata cost is zero', async () => {
+    const { db, calls } = allWasteDb({
+      movements: [{ id: 'mv-source-out', metadata: { sourceCostPerKg: 0 } }],
+    })
+    const error = await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'all-waste',
+      auth: { userId: 'admin-1', name: 'Admin' },
+    }).catch(value => value)
+    expect(mapSortingCancellationError(error)).toMatchObject({
+      status: 409,
+      body: { code: 'SORTING_CANCEL_COST_EVIDENCE_ZERO' },
+    })
+    expect(calls).not.toContain('claim')
+  })
+
+  test('conflicting cost evidence between StockMovement and SortingBillItem fails closed', async () => {
+    // Non-waste bill (has item.costPerKg = 12) but StockMovement metadata says 7.5
+    const { db, calls } = cancellationDb({
+      movements: [{ id: 'mv-source-out', metadata: { sourceCostPerKg: 7.5 } }],
+    })
+    const error = await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'conflict',
+      auth: { userId: 'admin-1', name: 'Admin' },
+    }).catch(value => value)
+    expect(mapSortingCancellationError(error)).toMatchObject({
+      status: 409,
+      body: { code: 'SORTING_CANCEL_COST_EVIDENCE_CONFLICTING' },
+    })
+    expect(calls).not.toContain('claim')
+    expect(calls).not.toContain('restoreSource')
+  })
+
+  test('conflicting cost evidence across multiple StockMovement rows fails closed', async () => {
+    const { db, calls } = allWasteDb({
+      movements: [
+        { id: 'mv-1', metadata: { sourceCostPerKg: 7.5 } },
+        { id: 'mv-2', metadata: { sourceCostPerKg: 9.0 } },
+      ],
+    })
+    const error = await cancelSortingBill(db, {
+      id: 'sorting-bill-1',
+      reason: 'conflict',
+      auth: { userId: 'admin-1', name: 'Admin' },
+    }).catch(value => value)
+    expect(mapSortingCancellationError(error)).toMatchObject({
+      status: 409,
+      body: { code: 'SORTING_CANCEL_COST_EVIDENCE_CONFLICTING' },
+    })
+    expect(calls).not.toContain('claim')
+  })
+
+  test('zero sourceWeight does not require cost evidence', async () => {
+    const calls: string[] = []
+    const tx = {
+      sortingBill: {
+        async findUnique() {
+          calls.push('findBill')
+          return {
+            id: 'sorting-bill-1',
+            billNumber: 'SORT-0',
+            sourceProductId: 'source-product',
+            sourceWeight: 0,
+            isCancelled: false,
+            items: [],
+          }
+        },
+        async updateMany() {
+          calls.push('claim')
+          return { count: 1 }
+        },
+      },
+      stockLot: {
+        async findMany() {
+          calls.push('findOutputLots')
+          return []
+        },
+        async deleteMany() {
+          calls.push('deleteOutputLot')
+          return { count: 0 }
+        },
+        async create() {
+          calls.push('restoreSource')
+          return {}
+        },
+      },
+      sortingBonus: {
+        async deleteMany() {
+          calls.push('deleteBonuses')
+          return { count: 0 }
+        },
+      },
+      stockMovement: {
+        async findMany() {
+          calls.push('findMovements')
+          return []
+        },
+        async createMany() {
+          calls.push('createReversals')
+          return { count: 0 }
+        },
+      },
+      auditLog: {
+        async create() {
+          calls.push('audit')
+          return {}
+        },
+      },
+    }
+    const db = {
+      async $transaction<T>(fn: (value: typeof tx) => Promise<T>) {
+        calls.push('transaction')
+        return fn(tx)
+      },
+    }
+    await cancelSortingBill(db as unknown as SortingCancellationDb, {
+      id: 'sorting-bill-1',
+      reason: 'zero',
+      auth: { userId: 'admin-1', name: 'Admin' },
+    })
+    // No restoreSource because sourceWeight is 0; audit still runs
+    expect(calls).not.toContain('restoreSource')
+    expect(calls).toContain('audit')
+  })
+})
+
+describe('ST-70 error code surface', () => {
+  test('every documented cancellation code maps to a structured body', () => {
+    const codes: Array<{ code: import('../src/lib/sorting-cancellation-service').SortingCancellationCode; status: number }> = [
+      { code: 'SORTING_BILL_NOT_FOUND', status: 404 },
+      { code: 'SORTING_BILL_ALREADY_CANCELLED', status: 409 },
+      { code: 'SORTING_BILL_HAS_DOWNSTREAM_USAGE', status: 409 },
+      { code: 'SORTING_CANCEL_CONFLICT', status: 409 },
+      { code: 'SORTING_CANCEL_COST_EVIDENCE_MISSING', status: 409 },
+      { code: 'SORTING_CANCEL_COST_EVIDENCE_CONFLICTING', status: 409 },
+      { code: 'SORTING_CANCEL_COST_EVIDENCE_ZERO', status: 409 },
+    ]
+    for (const { code, status } of codes) {
+      const err = new SortingCancellationError(code, status, 'msg')
+      const mapped = mapSortingCancellationError(err)
+      expect(mapped.status).toBe(status)
+      expect(mapped.body.code).toBe(code)
+      expect(typeof mapped.body.error).toBe('string')
+    }
+  })
+
+  test('unknown errors map to safe 500 without internal details', () => {
+    const mapped = mapSortingCancellationError(new Error('relation "User" does not exist — connection string postgres://user:pass@host:5432'))
+    expect(mapped.status).toBe(500)
+    expect(mapped.body.code).toBe('SORTING_CANCEL_FAILED')
+    expect(mapped.body.error).not.toContain('postgres://')
+    expect(mapped.body.error).not.toContain('relation')
   })
 })
