@@ -55,7 +55,10 @@
 - Employee + Sorting bonus
 - Weight formula parsing (`860-3` → 857) — ใช้ในหน้า buy/sell/sort แต่ **ไม่ได้เก็บ expression ใน DB**
 
-### ✅ ใช้งานได้ใน production ปัจจุบัน — เพิ่มเติมจาก ST-70 (verified 2026-07-28)
+### ✅ มีใน codebase ปัจจุบัน (verified 2026-07-28) — แต่ยังไม่ได้ verify ใน Production
+
+> ⚠️ **หมายเหตุสำคัญ**: features ด้านล่างมีอยู่ใน codebase และผ่าน CI (รวม real PostgreSQL concurrency tests) แต่ **ยังไม่ได้ verify ใน Production** — ST-70 PR #49 ยังเป็น Draft, ยังไม่ merge/deploy, และไม่มี Production access. Production verification จะเกิดขึ้นหลัง Owner อนุมัติ merge + deploy.
+
 - `billNumber` (BUY-/SELL-/SORT-2569-XXXXX format) — `src/lib/bill-helpers.ts` generateBillNumber
 - `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` บน Buy/Sell/SortingBill
 - `AuditLog` model + `src/lib/bill-helpers.ts` writeAuditLog
