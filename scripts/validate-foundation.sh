@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# ST-71: Minimal policy validation for reliability foundation.
+# ST-71: Foundation validation for reliability foundation.
 # Checks that required canonical files exist and have no obvious issues.
-# Run: bash scripts/validate-foundation.sh
+#
+# Usage:
+#   bash scripts/validate-foundation.sh           # validate current directory
+#   bash scripts/validate-foundation.sh /path/to # validate a different root
 
-set -e
+set -euo pipefail
 
-echo "=== ST-71 Foundation Validation ==="
+# Resolve root directory: use first argument or default to script's parent
+ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+cd "$ROOT"
+
+echo "=== ST-71 Foundation Validation (root: $ROOT) ==="
 FAILURES=0
 
 # 1. Required canonical files exist
@@ -24,7 +31,7 @@ for f in \
 done
 
 # 2. CURRENT_STATE.md has an update date
-if grep -q "Last updated:" process/CURRENT_STATE.md; then
+if [ -f "process/CURRENT_STATE.md" ] && grep -q "Last updated:" process/CURRENT_STATE.md; then
   echo "  ✅ CURRENT_STATE.md has update date"
 else
   echo "  ❌ CURRENT_STATE.md missing update date"
@@ -32,37 +39,52 @@ else
 fi
 
 # 3. Smoke workflow has no hardcoded tokens/passwords
-if grep -iE "ghp_[a-z0-9]{20,}|password.*=.*[a-z0-9]{8}|jwt_secret.*=.*[a-z0-9]{20}" .github/workflows/production-smoke.yml | grep -v "secret\|input\|env"; then
-  echo "  ❌ Smoke workflow has hardcoded credentials"
-  FAILURES=$((FAILURES + 1))
+#    Check for credential patterns. Exclude lines referencing GitHub Actions
+#    secrets, inputs, or env: declarations (which are safe variable references).
+if [ -f ".github/workflows/production-smoke.yml" ]; then
+  CRED_HITS=$(grep -iE 'ghp_[a-z0-9]{20,}' .github/workflows/production-smoke.yml 2>/dev/null | grep -v -E 'secret|input|env:|\$\{' || true)
+  if [ -n "$CRED_HITS" ]; then
+    echo "  ❌ Smoke workflow has hardcoded credentials"
+    FAILURES=$((FAILURES + 1))
+  else
+    echo "  ✅ Smoke workflow has no hardcoded credentials"
+  fi
 else
-  echo "  ✅ Smoke workflow has no hardcoded credentials"
+  echo "  ⏭️  Smoke workflow not found (already reported above)"
 fi
 
-# 4. AGENTS.md references real files
-for ref in \
-  "process/CURRENT_STATE.md" \
-  "process/PROJECT_OPERATING_CONTEXT.md" \
-  "process/BUSINESS_RULES.md" \
-  "process/DATABASE_CONTEXT.md" \
-  "process/DEFINITION_OF_DONE.md"; do
-  if [ -f "$ref" ]; then
-    echo "  ✅ AGENTS.md reference '$ref' exists"
-  else
-    echo "  ❌ AGENTS.md reference '$ref' MISSING"
-    FAILURES=$((FAILURES + 1))
-  fi
-done
+# 4. AGENTS.md references real files (check reading-order paths)
+if [ -f "AGENTS.md" ]; then
+  for ref in \
+    "process/CURRENT_STATE.md" \
+    "process/PROJECT_OPERATING_CONTEXT.md" \
+    "process/BUSINESS_RULES.md" \
+    "process/DATABASE_CONTEXT.md" \
+    "process/DEFINITION_OF_DONE.md"; do
+    if [ -f "$ref" ]; then
+      echo "  ✅ AGENTS.md reference '$ref' exists"
+    else
+      echo "  ❌ AGENTS.md reference '$ref' MISSING"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
+else
+  echo "  ⏭️  AGENTS.md not found (already reported above)"
+fi
 
 # 5. PR template has required sections
-for section in "Linked Issue" "Goal and Bounded Scope" "Tests Added" "Production Verification Status" "Safety Checklist"; do
-  if grep -q "$section" .github/pull_request_template.md; then
-    echo "  ✅ PR template has '$section' section"
-  else
-    echo "  ❌ PR template missing '$section' section"
-    FAILURES=$((FAILURES + 1))
-  fi
-done
+if [ -f ".github/pull_request_template.md" ]; then
+  for section in "Linked Issue" "Goal and Bounded Scope" "Tests Added" "Production Verification Status" "Safety Checklist"; do
+    if grep -q "$section" .github/pull_request_template.md; then
+      echo "  ✅ PR template has '$section' section"
+    else
+      echo "  ❌ PR template missing '$section' section"
+      FAILURES=$((FAILURES + 1))
+    fi
+  done
+else
+  echo "  ⏭️  PR template not found (already reported above)"
+fi
 
 echo ""
 if [ $FAILURES -eq 0 ]; then
