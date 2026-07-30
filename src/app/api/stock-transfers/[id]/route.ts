@@ -2,15 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
-
-async function requireEditPermission(request: NextRequest) {
-  const token = getTokenFromRequest(request);
-  if (!token) return null;
-  const payload = await verifyToken(token);
-  if (!payload) return null;
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['history.edit'] === true;
-  return hasPermission ? payload : null;
-}
+import { resolveHistoryEditAuth, authFailedResponse } from '@/lib/cancel-auth';
 
 // GET /api/stock-transfers/[id]
 export async function GET(
@@ -44,10 +36,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireEditPermission(request);
-  if (!auth) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์แก้ไข — ต้องการสิทธิ์ history.edit' }, { status: 403 });
-  }
+  const auth = await resolveHistoryEditAuth(request);
+  if (!auth.ok) return authFailedResponse(auth);
 
   try {
     const { id } = await params;
@@ -78,8 +68,8 @@ export async function PATCH(
           action: 'UPDATE',
           entityType: 'STOCK_TRANSFER',
           entityId: existing.id,
-          userId: auth.userId,
-          userName: auth.name,
+          userId: auth.payload.userId,
+          userName: auth.payload.name,
           details: JSON.stringify({
             billNumber: existing.billNumber,
             changes: { date: date !== undefined, note: note !== undefined },
@@ -103,10 +93,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireEditPermission(request);
-  if (!auth) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์ — ต้องการสิทธิ์ history.edit' }, { status: 403 });
-  }
+  const auth = await resolveHistoryEditAuth(request);
+  if (!auth.ok) return authFailedResponse(auth);
 
   try {
     const { id } = await params;
@@ -174,7 +162,7 @@ export async function DELETE(
         data: {
           isCancelled: true,
           cancelledAt,
-          cancelledBy: auth.userId,
+          cancelledBy: auth.payload.userId,
           cancelReason: reason || null,
         },
       });
@@ -187,8 +175,8 @@ export async function DELETE(
           action: 'CANCEL',
           entityType: 'STOCK_TRANSFER',
           entityId: id,
-          userId: auth.userId,
-          userName: auth.name,
+          userId: auth.payload.userId,
+          userName: auth.payload.name,
           details: JSON.stringify({
             billNumber: existing.billNumber,
             reason: reason || null,

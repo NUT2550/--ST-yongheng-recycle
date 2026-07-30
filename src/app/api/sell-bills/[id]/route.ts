@@ -2,15 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
 import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
-
-async function requireEditPermission(request: NextRequest) {
-  const token = getTokenFromRequest(request);
-  if (!token) return null;
-  const payload = await verifyToken(token);
-  if (!payload) return null;
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['history.edit'] === true;
-  return hasPermission ? payload : null;
-}
+import { resolveHistoryEditAuth, authFailedResponse } from '@/lib/cancel-auth';
 
 // GET /api/sell-bills/[id]
 export async function GET(
@@ -44,10 +36,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireEditPermission(request);
-  if (!auth) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์แก้ไขบิล — ต้องการสิทธิ์ history.edit' }, { status: 403 });
-  }
+  const auth = await resolveHistoryEditAuth(request);
+  if (!auth.ok) return authFailedResponse(auth);
 
   try {
     const { id } = await params;
@@ -137,7 +127,7 @@ export async function PATCH(
       await tx.auditLog.create({
         data: {
           action: 'UPDATE', entityType: 'SELL_BILL', entityId: existing.id,
-          userId: auth.userId, userName: auth.name,
+          userId: auth.payload.userId, userName: auth.payload.name,
           details: JSON.stringify({
             billNumber: existing.billNumber, priceChanges,
             billFieldsChanged: { date: date !== undefined, isCredit: isCredit !== undefined, note: note !== undefined, customerId: customerId !== undefined },
@@ -162,10 +152,8 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireEditPermission(request);
-  if (!auth) {
-    return NextResponse.json({ error: 'ไม่มีสิทธิ์ — ต้องการสิทธิ์ history.edit' }, { status: 403 });
-  }
+  const auth = await resolveHistoryEditAuth(request);
+  if (!auth.ok) return authFailedResponse(auth);
 
   try {
     const { id } = await params;
@@ -207,7 +195,7 @@ export async function DELETE(
       // Mark bill as cancelled
       await tx.sellBill.update({
         where: { id },
-        data: { isCancelled: true, cancelledAt, cancelledBy: auth.userId, cancelReason: reason || null },
+        data: { isCancelled: true, cancelledAt, cancelledBy: auth.payload.userId, cancelReason: reason || null },
       });
 
       await reverseSourceMovements(tx, 'SELL_BILL', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Sale cancelled');
@@ -216,7 +204,7 @@ export async function DELETE(
       await tx.auditLog.create({
         data: {
           action: 'CANCEL', entityType: 'SELL_BILL', entityId: id,
-          userId: auth.userId, userName: auth.name,
+          userId: auth.payload.userId, userName: auth.payload.name,
           details: JSON.stringify({
             billNumber: existing.billNumber, reason: reason || null,
             restoredWeight: existing.items.reduce((s, i) => s + i.weight, 0),
