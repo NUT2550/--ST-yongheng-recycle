@@ -8,8 +8,11 @@
 
 set -euo pipefail
 
+# Resolve script's own directory (before cd changes CWD)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Resolve root directory: use first argument or default to script's parent
-ROOT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+ROOT="${1:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 cd "$ROOT"
 
 echo "=== ST-71 Foundation Validation (root: $ROOT) ==="
@@ -135,6 +138,22 @@ elif [ $RECORD_COUNT -gt 0 ]; then
   echo "  ✅ Knowledge records validated ($RECORD_COUNT records, all have required frontmatter)"
 else
   echo "  ✅ Knowledge records directory exists (no records yet — OK)"
+fi
+
+# 9. Knowledge semantic validation (unique IDs, type/status, INDEX consistency, etc.)
+#    Uses the validator from the script's own repository location, not the fixture root.
+SEMANTIC_VALIDATOR="$SCRIPT_DIR/validate-knowledge.mjs"
+if command -v node &>/dev/null && [ -f "$SEMANTIC_VALIDATOR" ]; then
+  node "$SEMANTIC_VALIDATOR" "$ROOT"
+  SEMANTIC_EXIT=$?
+  if [ $SEMANTIC_EXIT -eq 0 ]; then
+    echo "  ✅ Knowledge semantic validation passed"
+  else
+    echo "  ❌ Knowledge semantic validation failed"
+    FAILURES=$((FAILURES + 1))
+  fi
+else
+  echo "  ⏭️  Knowledge semantic validation skipped (node or validator not available)"
 fi
 
 echo ""
