@@ -93,9 +93,9 @@ describe('ST-71 route-level auth wiring — static analysis', () => {
         expect(deleteMatch).not.toBeNull()
         const deleteBody = deleteMatch![1]
 
-        // The first meaningful line should be the auth check
+        // The first meaningful line should be the auth check (comments excluded)
         // Routes use either 'resolveHistoryEditAuth' or 'resolveAuth' (alias)
-        const lines = deleteBody.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//'))
+        const lines = deleteBody.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('//') && !l.startsWith('/*'))
         const firstMeaningfulLine = lines[0]
         const hasAuthCheck = firstMeaningfulLine.includes('resolveHistoryEditAuth') || firstMeaningfulLine.includes('resolveAuth')
         expect(hasAuthCheck).toBe(true)
@@ -104,25 +104,30 @@ describe('ST-71 route-level auth wiring — static analysis', () => {
       test('returns authFailedResponse when auth fails', () => {
         const deleteMatch = source.match(/export async function DELETE\([^)]*\)\s*{([\s\S]*?)^}/m)
         const deleteBody = deleteMatch![1]
-        expect(deleteBody).toContain('if (!auth.ok)')
-        expect(deleteBody).toContain('authFailedResponse(auth)')
+        // Strip comments before checking — prevents false pass from comment text
+        const codeOnly = deleteBody.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+        expect(codeOnly).toContain('if (!auth.ok)')
+        expect(codeOnly).toContain('authFailedResponse(auth)')
       })
 
       test('no database operation before auth check', () => {
         const deleteMatch = source.match(/export async function DELETE\([^)]*\)\s*{([\s\S]*?)^}/m)
         const deleteBody = deleteMatch![1]
 
+        // Strip comments before checking positions — prevents false pass from comment text
+        const codeOnly = deleteBody.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+
         // Find the position of the auth check (resolveHistoryEditAuth or resolveAuth alias)
         const authCheckPos = Math.max(
-          deleteBody.indexOf('resolveHistoryEditAuth'),
-          deleteBody.indexOf('resolveAuth')
+          codeOnly.indexOf('resolveHistoryEditAuth'),
+          codeOnly.indexOf('resolveAuth')
         )
         expect(authCheckPos).toBeGreaterThan(-1)
 
         // Find the first db operation (including cancelSortingBill which wraps db)
         const dbOps = ['db.', 'tx.', 'prismaTx.', 'cancelSortingBill', 'findUnique', 'findMany']
         for (const dbOp of dbOps) {
-          const dbPos = deleteBody.indexOf(dbOp)
+          const dbPos = codeOnly.indexOf(dbOp)
           if (dbPos !== -1) {
             expect(dbPos).toBeGreaterThan(authCheckPos)
           }
