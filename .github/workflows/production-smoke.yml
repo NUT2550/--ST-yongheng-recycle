@@ -40,6 +40,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate Production URL
+        run: |
+          if ! echo "$PRODUCTION_URL" | grep -qE '^https://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'; then
+            echo "::error::PRODUCTION_URL must start with https:// and be a valid URL"
+            exit 1
+          fi
+          echo "Production URL validated: $PRODUCTION_URL"
+
       - name: Record deployed SHA
         id: sha
         run: |

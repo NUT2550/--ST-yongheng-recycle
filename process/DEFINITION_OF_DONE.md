@@ -51,7 +51,22 @@ A documentation-only change is Done when ALL of the following are satisfied:
 | Internal links | All links point to real repository paths |
 | No secrets | No tokens, passwords, DATABASE_URL, or Production dumps |
 
-## 4. Not Done Conditions
+## 4. Emergency Incident Exception
+
+During an active Production incident (stock mismatch, data loss, system outage),
+the Owner may authorize an expedited fix path that defers non-critical DoD gates
+(documentation, observation period, full write-back) until after the incident
+is stabilized. The following gates remain mandatory even during emergencies:
+
+- Proven root cause (can be brief but must be recorded)
+- Regression test (can be added after the fix, but before merge)
+- Full validation (lint + tsc + tests + build)
+- Exact-head CI
+- Owner approval
+
+Deferred gates must be completed within 48 hours of incident stabilization.
+
+## 5. Not Done Conditions
 
 A task is NOT Done if ANY of the following are true:
 

@@ -5,12 +5,16 @@
 
 ## Version Identity
 
+> **Update this section after every merge to main.**
+> Run `git log --oneline -1 origin/main` to get the current main SHA.
+
 | Item | Value |
 |---|---|
-| **Current main SHA** | `132d21e13ccf5b9ccb9fbd5bc9235b1ee563a733` |
-| **Current Production SHA** | `132d21e13ccf5b9ccb9fbd5bc9235b1ee563a733` (verified 2026-07-30) |
+| **Current main SHA** | Check: `git log --oneline -1 origin/main` |
+| **Current Production SHA** | Check: GitHub deployment API or Vercel dashboard |
+| **Last verified Production SHA** | `132d21e13ccf5b9ccb9fbd5bc9235b1ee563a733` (verified 2026-07-30, ST-71 P0) |
 | **Production URL** | https://st-yongheng-recycle.vercel.app |
-| **Production deployment state** | success |
+| **Production deployment state** | success (as of 2026-07-30) |
 
 ## Active Issues
 
@@ -25,7 +29,7 @@
 | Incident | PR | Merge SHA | Production Verified |
 |---|---|---|---|
 | ST-70 (sorting cancel) | #49 | `de9848e1f3` | ✅ Phases 1-3 (incident read-only, history, controlled cancellation) |
-| ST-71 P0 (cancel auth) | #51 | `132d21e13c` | ✅ 401 AUTH_REQUIRED (8/8 Production checks). ❌ 403 PERMISSION_DENIED (no staff credentials in sandbox) |
+| ST-71 P0 (cancel auth) | #51 | `132d21e` | ✅ 401 AUTH_REQUIRED (8/8 Production checks). ❌ 403 PERMISSION_DENIED (no staff credentials in sandbox) |
 
 ## Current Verified Behavior
 
