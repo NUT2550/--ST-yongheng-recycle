@@ -28,7 +28,7 @@
 | **ST-71 / PR #54** | Merged | Knowledge directory + seed records. |
 | **ST-71 / PR #55** | Merged | Knowledge semantic validation (15 rules). |
 | **ST-71 / PR #56** | Merged | Cancel route auth-wiring static coverage (39 tests). |
-| **ST-71 / PR #57** | Merged | Cancel business-logic contract static coverage (47 tests). CAS guard added. |
+| **ST-71 / PR #57** | Merged | Cancel business-logic contract static coverage (47 tests, 321 expectations). Static CAS-presence verification added; CAS production code landed in PR #58. |
 | **ST-71 / PR #58** | Merged | Cancel PostgreSQL runtime regression harness + CAS concurrency fix. |
 
 ## Recently Completed
