@@ -76,9 +76,58 @@ function createValidFixture(): string {
   mkdirSync(join(dir, 'knowledge', 'decisions'), { recursive: true })
 
   writeFileSync(join(dir, 'knowledge', 'README.md'), '# Knowledge Directory\n')
-  writeFileSync(join(dir, 'knowledge', 'INDEX.md'), '# Knowledge Index\n')
-  writeFileSync(join(dir, 'knowledge', 'schema', 'knowledge-record.schema.json'), '{}\n')
-  writeFileSync(join(dir, 'knowledge', 'templates', 'incident.md'), '---\nid: ERR-STXX-TEST\ntype: incident\nstatus: verified\narea: test\ntitle: Test\ndate: 2026-01-01\n---\n')
+  writeFileSync(join(dir, 'knowledge', 'INDEX.md'), [
+    '# Knowledge Index',
+    '',
+    '## Incidents',
+    '',
+    '| ID | Title | Area | Root Cause | Status |',
+    '|---|---|---|---|---|',
+    '| ERR-ST00-TEST | Test Incident | test | Test root cause | verified |',
+    '',
+    '## Invariants',
+    '',
+    '| ID | Title | Area | Enforced By |',
+    '|---|---|---|---|',
+    '',
+    '## Decisions',
+    '',
+    '| ID | Title | Area | Rationale |',
+    '|---|---|---|---|',
+    '',
+  ].join('\n'))
+  writeFileSync(join(dir, 'knowledge', 'schema', 'knowledge-record.schema.json'), JSON.stringify({
+    required: ['id', 'type', 'status', 'area', 'title', 'date'],
+    properties: {
+      type: { enum: ['incident', 'invariant', 'decision'] },
+      status: { enum: ['verified', 'active', 'superseded'] },
+    }
+  }) + '\n')
+  writeFileSync(join(dir, 'knowledge', 'templates', 'incident.md'), '---\nid: ERR-ST00-TEMPLATE\ntype: incident\nstatus: verified\narea: test\ntitle: Template\ndate: 2026-01-01\n---\n\n## Symptom\n## Root Cause\n## Fix\n## Regression Test\n')
+  // Create a valid record
+  writeFileSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-TEST.md'), [
+    '---',
+    'id: ERR-ST00-TEST',
+    'type: incident',
+    'status: verified',
+    'area: test',
+    'title: Test Incident',
+    'date: 2026-01-01',
+    '---',
+    '',
+    '## Symptom',
+    'Test symptom.',
+    '',
+    '## Root Cause',
+    'Test root cause.',
+    '',
+    '## Fix',
+    'Test fix.',
+    '',
+    '## Regression Test',
+    'Test regression.',
+    '',
+  ].join('\n'))
 
   return dir
 }
@@ -233,13 +282,104 @@ describe('ST-71 foundation validator — regression tests', () => {
     mkdirSync(join(dir, 'knowledge', 'incidents'), { recursive: true })
     writeFileSync(join(dir, 'knowledge', 'incidents', 'bad-record.md'), [
       '---',
-      'id: ERR-STXX-TEST',
+      'id: ERR-ST00-TEST',
       'type: incident',
       // Missing: status, area, title, date
       '---',
       '',
     ].join('\n'))
     await expectValidatorFails(dir, "missing required field 'status'")
+  })
+
+  test('16. duplicate record ID → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-DUP.md'), [
+      '---', 'id: ERR-ST00-TEST', 'type: incident', 'status: verified',
+      'area: test', 'title: Dup', 'date: 2026-01-01', '---',
+      '## Symptom\n## Root Cause\n## Fix\n## Regression Test\n',
+    ].join('\n'))
+    await expectValidatorFails(dir, 'duplicate id')
+  })
+
+  test('17. invalid type value → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-TEST.md'), [
+      '---', 'id: ERR-ST00-TEST', 'type: bogus', 'status: verified',
+      'area: test', 'title: Test', 'date: 2026-01-01', '---',
+      '## Symptom\n## Root Cause\n## Fix\n## Regression Test\n',
+    ].join('\n'))
+    await expectValidatorFails(dir, "invalid type 'bogus'")
+  })
+
+  test('18. record missing from INDEX → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-ORPHAN.md'), [
+      '---', 'id: ERR-ST00-ORPHAN', 'type: incident', 'status: verified',
+      'area: test', 'title: Orphan', 'date: 2026-01-01', '---',
+      '## Symptom\n## Root Cause\n## Fix\n## Regression Test\n',
+    ].join('\n'))
+    await expectValidatorFails(dir, 'missing from INDEX')
+  })
+
+  test('19. INDEX title mismatch → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    writeFileSync(join(dir, 'knowledge', 'INDEX.md'), [
+      '# Knowledge Index', '', '## Incidents', '',
+      '| ID | Title | Area | Root Cause | Status |',
+      '|---|---|---|---|---|',
+      '| ERR-ST00-TEST | WRONG TITLE | test | Test root cause | verified |',
+      '', '## Invariants', '', '| ID | Title | Area | Enforced By |', '|---|---|---|---|',
+      '', '## Decisions', '', '| ID | Title | Area | Rationale |', '|---|---|---|---|',
+      '',
+    ].join('\n'))
+    await expectValidatorFails(dir, 'title mismatch')
+  })
+
+  test('20. filename/ID mismatch → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    rmSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-TEST.md'))
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'wrong-name.md'), [
+      '---', 'id: ERR-ST00-TEST', 'type: incident', 'status: verified',
+      'area: test', 'title: Test Incident', 'date: 2026-01-01', '---',
+      '## Symptom\n## Root Cause\n## Fix\n## Regression Test\n',
+    ].join('\n'))
+    await expectValidatorFails(dir, "filename 'wrong-name' does not match id")
+  })
+
+  test('21. invalid date format → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-TEST.md'), [
+      '---', 'id: ERR-ST00-TEST', 'type: incident', 'status: verified',
+      'area: test', 'title: Test Incident', 'date: 2026-13-45', '---',
+      '## Symptom\n## Root Cause\n## Fix\n## Regression Test\n',
+    ].join('\n'))
+    await expectValidatorFails(dir, 'not a real calendar date')
+  })
+
+  test('22. missing required content section → fail (semantic)', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'ERR-ST00-TEST.md'), [
+      '---', 'id: ERR-ST00-TEST', 'type: incident', 'status: verified',
+      'area: test', 'title: Test Incident', 'date: 2026-01-01', '---',
+      '## Symptom\n## Root Cause\n## Fix\n',
+      // Missing: Regression Test
+    ].join('\n'))
+    await expectValidatorFails(dir, "missing required section '## Regression Test'")
+  })
+
+  test('23. valid foundation with semantic checks → pass', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    const { exitCode, stdout } = await runValidator(dir)
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain('ALL CHECKS PASSED')
   })
 
   test('cleanup: no mutation of source repository', () => {
