@@ -49,7 +49,7 @@
 - ❌ **Transfer cancel** — not tested in Production (no regression test)
 - ❌ **Dashboard** — no automated test, not Production-verified
 - ❌ **Stock page** — no automated test, not Production-verified
-- ❌ **Post-deploy smoke test** — no automated workflow
+- ✅ **Post-deploy smoke test** — production-smoke.yml workflow (PR #52); 401 checks verified, 403 pending secret
 
 ## Active Blockers and Risks
 
@@ -60,7 +60,7 @@
 | Route-level HTTP integration tests missing | P1 | Test infrastructure limitation (`server-only` guard) |
 | No AGENTS.md (until this PR) | P1 | Being implemented in this PR |
 | No knowledge/ directory | P2 | Deferred to separate phase |
-| No post-deploy smoke workflow | P1 | Being implemented in this PR |
+| No post-deploy smoke workflow | P1 | Smoke workflow implemented (PR #52), CI enforcement in progress (PR #53) |
 | weightExpression migration not run | P0 | Pending Owner decision |
 
 ## Pending Owner Decisions

@@ -65,6 +65,7 @@ npx tsc --noEmit                  # TypeScript typecheck
 bun test                          # Full test suite
 bun test tests/st70-*.test.ts     # Targeted ST-70 tests
 bun run build                     # Production build (use non-Production placeholders)
+bash scripts/validate-foundation.sh  # Foundation validation (required files, safety checks)
 ```
 
 CI environment variables (non-Production):
