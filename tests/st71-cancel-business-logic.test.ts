@@ -1,5 +1,18 @@
 /**
- * ST-71: Cancellation business-logic regression coverage.
+ * ST-71: Cancellation business-logic CONTRACT regression coverage.
+ *
+ * IMPORTANT: These are STATIC SOURCE-CODE CONTRACT tests, NOT runtime
+ * business-logic regression tests. They verify:
+ *   - presence of transaction boundaries
+ *   - ordering of source operations
+ *   - presence of downstream checks, reversal calls, audit calls
+ *   - documented status-code branches
+ *
+ * They do NOT prove:
+ *   - runtime PostgreSQL transaction behavior for Buy/Sell/Transfer
+ *   - actual rollback, stock restoration, reversal creation, audit insertion
+ *   - runtime idempotency, downstream-use rejection, concurrency safety
+ *   - route-handler execution
  *
  * Tests the cancellation contract for Buy, Sell, and Transfer by:
  * 1. Static analysis of route source (transaction boundary, operation order)
@@ -18,7 +31,12 @@
 
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'fs'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// Resolve repo root from the test file location so tests are cwd-independent.
+const __filename = fileURLToPath(import.meta.url)
+const REPO_ROOT = join(dirname(__filename), '..')
 
 const ROUTE_FILES = {
   buy: 'src/app/api/buy-bills/[id]/route.ts',
@@ -28,14 +46,32 @@ const ROUTE_FILES = {
 }
 
 function readRoute(routeName: string): string {
-  return readFileSync(join(process.cwd(), ROUTE_FILES[routeName as keyof typeof ROUTE_FILES]), 'utf-8')
+  return readFileSync(join(REPO_ROOT, ROUTE_FILES[routeName as keyof typeof ROUTE_FILES]), 'utf-8')
 }
 
 function getDeleteBody(source: string): string {
   const match = source.match(/export async function DELETE\([^)]*\)\s*{([\s\S]*?)^}/m)
   if (!match) throw new Error('DELETE handler not found')
-  // Strip comments
-  return match[1].replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+  // Strip comments (single-line // and multi-line /* */)
+  let body = match[1].replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
+  // Strip backtick template literals so that expected code patterns (e.g.
+  // 'consumedWeight > 0', 'reverseSourceMovements') are not falsely matched
+  // inside error-message strings. Single/double-quoted strings are preserved
+  // because tests legitimately check for enum-like values such as source: 'BUY'.
+  body = body.replace(/`[\s\S]*?`/g, '``')
+  return body
+}
+
+/**
+ * Extract the transaction-callback body: the substring from the first
+ * '$transaction' opening to the end of the DELETE body. Used to verify
+ * that all mutating calls inside the handler use the transaction client
+ * `tx` rather than the global `db` client (which would escape atomicity).
+ */
+function getTransactionScope(deleteBody: string): string {
+  const start = deleteBody.indexOf('$transaction')
+  if (start === -1) return ''
+  return deleteBody.slice(start)
 }
 
 // ============================================================================
@@ -113,9 +149,13 @@ describe('ST-71 cancellation contract — successful cancellation', () => {
     expect(deleteBody).toContain('cancelReason')
   })
 
-  test('Buy: creates reversal movements', () => {
+  test('Buy: creates reversal movements inside transaction (tx client)', () => {
     const deleteBody = getDeleteBody(readRoute('buy'))
-    expect(deleteBody).toContain("reverseSourceMovements")
+    // Verify the reversal call uses the transaction client `tx`, not the
+    // global `db` - otherwise reversal writes escape the transaction's
+    // atomicity guarantee and will not roll back on failure.
+    expect(deleteBody).toContain('reverseSourceMovements(tx,')
+    expect(deleteBody).not.toContain('reverseSourceMovements(db,')
     expect(deleteBody).toContain("'BUY_BILL'")
     expect(deleteBody).toContain("'CANCELLATION_REVERSAL'")
   })
@@ -143,9 +183,10 @@ describe('ST-71 cancellation contract — successful cancellation', () => {
     expect(deleteBody).toContain('isCancelled: true')
   })
 
-  test('Sell: creates reversal movements', () => {
+  test('Sell: creates reversal movements inside transaction (tx client)', () => {
     const deleteBody = getDeleteBody(readRoute('sell'))
-    expect(deleteBody).toContain("reverseSourceMovements")
+    expect(deleteBody).toContain('reverseSourceMovements(tx,')
+    expect(deleteBody).not.toContain('reverseSourceMovements(db,')
     expect(deleteBody).toContain("'SELL_BILL'")
   })
 
@@ -167,10 +208,15 @@ describe('ST-71 cancellation contract — successful cancellation', () => {
     expect(deleteBody).toContain('deleteMany')
   })
 
-  test('Transfer: creates TRANSFER_CANCEL source restore', () => {
+  test('Transfer: creates TRANSFER_CANCEL source restore with correct cost', () => {
     const deleteBody = getDeleteBody(readRoute('transfer'))
     expect(deleteBody).toContain("source: 'TRANSFER_CANCEL'")
-    expect(deleteBody).toContain('sourceCostPerKg')
+    // Verify the restore lot's costPerKg uses the bill's sourceCostPerKg
+    // (not a hardcoded zero or wrong value). The lowercase 'costPerKg'
+    // distinguishes the restore-lot field from the audit's
+    // 'restoredSourceCostPerKg' (capital C).
+    expect(deleteBody).toContain('costPerKg: existing.sourceCostPerKg')
+    expect(deleteBody).not.toContain('costPerKg: 0')
   })
 
   test('Transfer: marks bill as cancelled', () => {
@@ -178,9 +224,10 @@ describe('ST-71 cancellation contract — successful cancellation', () => {
     expect(deleteBody).toContain('isCancelled: true')
   })
 
-  test('Transfer: creates reversal movements', () => {
+  test('Transfer: creates reversal movements inside transaction (tx client)', () => {
     const deleteBody = getDeleteBody(readRoute('transfer'))
-    expect(deleteBody).toContain("reverseSourceMovements")
+    expect(deleteBody).toContain('reverseSourceMovements(tx,')
+    expect(deleteBody).not.toContain('reverseSourceMovements(db,')
     expect(deleteBody).toContain("'STOCK_TRANSFER'")
   })
 
@@ -319,10 +366,10 @@ describe('ST-71 cancellation contract — cost and audit integrity', () => {
     expect(deleteBody).toContain('restoredSourceCostPerKg')
   })
 
-  test('All routes: use reverseSourceMovements for ledger reversal', () => {
-    expect(getDeleteBody(readRoute('buy'))).toContain("reverseSourceMovements")
-    expect(getDeleteBody(readRoute('sell'))).toContain("reverseSourceMovements")
-    expect(getDeleteBody(readRoute('transfer'))).toContain("reverseSourceMovements")
+  test('All routes: use reverseSourceMovements with tx client for ledger reversal', () => {
+    expect(getDeleteBody(readRoute('buy'))).toContain('reverseSourceMovements(tx,')
+    expect(getDeleteBody(readRoute('sell'))).toContain('reverseSourceMovements(tx,')
+    expect(getDeleteBody(readRoute('transfer'))).toContain('reverseSourceMovements(tx,')
   })
 })
 
@@ -372,6 +419,44 @@ describe('ST-71 cancellation contract — operation ordering', () => {
     const deletePos = deleteBody.indexOf('deleteMany')
     const restorePos = deleteBody.indexOf('TRANSFER_CANCEL')
     expect(restorePos).toBeGreaterThan(deletePos)
+  })
+})
+
+
+// ============================================================================
+// Phase 12: Transaction containment — no db-mutations after $transaction
+// ============================================================================
+
+describe('ST-71 cancellation contract — transaction containment', () => {
+  // Verifies that after $transaction begins, all mutating model calls use
+  // the `tx` transaction client, not the global `db` client. A `db.<model>.<mut>`
+  // call inside the transaction scope would write OUTSIDE the transaction's
+  // atomicity guarantee and would NOT roll back on failure.
+  const MUTATING_MODELS = ['stockLot', 'buyBill', 'sellBill', 'stockTransfer', 'creditEntry', 'auditLog', 'stockMovement', 'sortingBill', 'sortingBonus']
+  const MUTATING_OPS = ['create', 'createMany', 'update', 'updateMany', 'delete', 'deleteMany', 'upsert']
+
+  function assertNoDbMutationsInTx(routeName: string) {
+    const deleteBody = getDeleteBody(readRoute(routeName))
+    const txScope = getTransactionScope(deleteBody)
+    expect(txScope.length).toBeGreaterThan(0)
+    for (const model of MUTATING_MODELS) {
+      for (const op of MUTATING_OPS) {
+        const pattern = `db.${model}.${op}`
+        expect(txScope).not.toContain(pattern)
+      }
+    }
+  }
+
+  test('Buy: no db-mutations inside transaction scope', () => {
+    assertNoDbMutationsInTx('buy')
+  })
+
+  test('Sell: no db-mutations inside transaction scope', () => {
+    assertNoDbMutationsInTx('sell')
+  })
+
+  test('Transfer: no db-mutations inside transaction scope', () => {
+    assertNoDbMutationsInTx('transfer')
   })
 })
 
