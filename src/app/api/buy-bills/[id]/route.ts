@@ -1,8 +1,12 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
 import { resolveHistoryEditAuth, authFailedResponse } from '@/lib/cancel-auth';
+import {
+  cancelBuyBill,
+  mapBuyCancellationError,
+  type BuyCancellationDb,
+} from '@/lib/buy-cancellation-service';
 
 // GET /api/buy-bills/[id]
 export async function GET(
@@ -239,19 +243,6 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const existing = await db.buyBill.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!existing) {
-      return NextResponse.json({ error: 'ไม่พบใบรับซื้อ' }, { status: 404 });
-    }
-    if (existing.isCancelled) {
-      return NextResponse.json(
-        { error: 'ใบรับซื้อนี้ถูกยกเลิกไปแล้ว' },
-        { status: 400 }
-      );
-    }
 
     let reason = '';
     try {
@@ -261,73 +252,16 @@ export async function DELETE(
       // No body or invalid JSON
     }
 
-    await db.$transaction(async (tx) => {
-      const cancelledAt = new Date();
-      // Check if stock was consumed downstream
-      const buyLots = await tx.stockLot.findMany({
-        where: { source: 'BUY', sourceId: id },
-      });
-      const totalRemaining = buyLots.reduce((s, l) => s + l.remainingWeight, 0);
-      const totalOriginal = existing.items.reduce((s, i) => s + i.weight, 0);
-      const consumedWeight = totalOriginal - totalRemaining;
-
-      if (consumedWeight > 0.001) {
-        throw new Error(
-          `ไม่สามารถยกเลิกได้: สต็อกจากบิลนี้ถูกขาย/คัดแยกไปแล้ว ${consumedWeight.toFixed(2)} กก. กรุณาย้อนกลับไปลบบิลขาย/คัดแยกที่เกี่ยวข้องก่อน`
-        );
-      }
-
-      // Safe to restore: delete BUY StockLots
-      await tx.stockLot.deleteMany({
-        where: { source: 'BUY', sourceId: id },
-      });
-
-      // Cancel credit entry
-      await tx.creditEntry.updateMany({
-        where: { referenceId: id, referenceType: 'BUY_BILL' },
-        data: {
-          isSettled: true,
-          description: `ยกเลิกแล้ว: ${reason || 'ไม่ระบุเหตุผล'}`,
-        },
-      });
-
-      // Mark bill as cancelled
-      await tx.buyBill.update({
-        where: { id },
-        data: {
-          isCancelled: true,
-          cancelledAt,
-          cancelledBy: auth.payload.userId,
-          cancelReason: reason || null,
-        },
-      });
-
-      await reverseSourceMovements(tx, 'BUY_BILL', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Purchase cancelled');
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          action: 'CANCEL',
-          entityType: 'BUY_BILL',
-          entityId: id,
-          userId: auth.payload.userId,
-          userName: auth.payload.name,
-          details: JSON.stringify({
-            billNumber: existing.billNumber,
-            reason: reason || null,
-            restoredWeight: totalRemaining,
-          }),
-        },
-      });
+    await cancelBuyBill(db as unknown as BuyCancellationDb, {
+      id,
+      reason,
+      auth: { userId: auth.payload.userId, name: auth.payload.name },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown';
     console.error('Error cancelling buy bill:', error);
-    return NextResponse.json(
-      { error: message },
-      { status: message.includes('ไม่สามารถยกเลิกได้') ? 400 : 500 }
-    );
+    const mapped = mapBuyCancellationError(error);
+    return NextResponse.json(mapped.body, { status: mapped.status });
   }
 }

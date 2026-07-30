@@ -1,0 +1,126 @@
+# ST-71: PostgreSQL Runtime Regression Harness for Buy/Sell/Transfer cancellation.
+#
+# Executes real production cancellation logic (extracted services) against an
+# ephemeral PostgreSQL database. Proves:
+#   - successful/duplicate/downstream/rollback behavior
+#   - concurrent cancellation safety (CAS guard)
+#   - stock, cost, movement, audit, credit integrity
+#
+# Triggers:
+#   - Pull request to main when cancellation-related files change
+#   - Push to st-71-cancel-postgres-runtime-harness branch
+#
+# No Production access. No migration. No deploy. Uses non-Production
+# credentials only.
+
+name: ST-71 PostgreSQL Runtime
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/buy-cancellation-service.ts'
+      - 'src/lib/sell-cancellation-service.ts'
+      - 'src/lib/transfer-cancellation-service.ts'
+      - 'src/lib/sorting-cancellation-service.ts'
+      - 'src/lib/stock-movement-reversal.ts'
+      - 'src/lib/stock-movement-ledger.ts'
+      - 'src/lib/cancel-auth.ts'
+      - 'src/app/api/buy-bills/**'
+      - 'src/app/api/sell-bills/**'
+      - 'src/app/api/stock-transfers/**'
+      - 'src/app/api/sorting-bills/**'
+      - 'tests/st71-postgres-runtime-harness.test.ts'
+      - 'tests/st71-cancel-business-logic.test.ts'
+      - 'tests/st70-postgres-concurrency.test.ts'
+      - 'tests/st70-sorting-cancellation-history.test.ts'
+      - '.github/workflows/st71-postgres-runtime.yml'
+      - 'prisma/schema.prisma'
+      - 'package.json'
+      - 'bun.lock'
+  push:
+    branches:
+      - 'st-71-cancel-postgres-runtime-harness'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: st71-pg-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-runtime:
+    name: ST-71 PostgreSQL Runtime Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: st71_test
+          POSTGRES_PASSWORD: st71_test_nonprod_only
+          POSTGRES_DB: st71_runtime_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U st71_test -d st71_runtime_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://st71_test:st71_test_nonprod_only@localhost:5432/st71_runtime_test?schema=public
+      JWT_SECRET: st71-ci-jwt-secret-not-for-production-use-only
+      CI_ST71_POSTGRES_REQUIRED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-st71-pg-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies (lockfile-consistent)
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Push schema to test database (non-Production)
+        run: bunx prisma db push --skip-generate
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Run ST-71 PostgreSQL runtime tests
+        run: bun test tests/st71-postgres-runtime-harness.test.ts
+
+      - name: Run ST-70 PostgreSQL concurrency tests (regression)
+        run: bun test tests/st70-postgres-concurrency.test.ts
+
+      - name: Verify zero-skip guard
+        run: |
+          set -e
+          echo "Checking that no ST-71 PostgreSQL tests were skipped..."
+          OUTPUT=$(bun test tests/st71-postgres-runtime-harness.test.ts 2>&1 || true)
+          echo "$OUTPUT" | tee /tmp/st71-pg-output.txt
+          if echo "$OUTPUT" | grep -q "SKIPPED]"; then
+            echo "::error::ST-71 PostgreSQL tests were skipped — see output above"
+            exit 1
+          fi
+          echo "All ST-71 PostgreSQL tests executed (none skipped)"
