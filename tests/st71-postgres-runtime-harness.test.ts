@@ -621,25 +621,67 @@ describe('ST-71 Buy runtime cancellation', () => {
     }
   })
 
-  test('4. rollback: failure after CAS claim leaves zero partial writes', async () => {
+  test('4a. rollback: failure after CAS claim (beforeAudit) leaves zero partial writes', async () => {
     if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
-    const salt = `buy4-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
+    const salt = `buy4a-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
     const fx = await seedBuyBill(salt, { isCredit: true })
     try {
       await expect(
         cancelBuyBill(prisma() as never, {
-          id: fx.billId,
-          reason: 'rollback test',
-          auth: { userId: 'u', name: 'U' },
-          _testHook: { beforeAudit: () => { throw new Error('INJECTED_FAILURE_BEFORE_AUDIT') } },
+          id: fx.billId, reason: 'rb-audit', auth: { userId: 'u', name: 'U' },
+          _testHook: { beforeAudit: () => { throw new Error('INJECTED_BEFORE_AUDIT') } },
         })
-      ).rejects.toThrow('INJECTED_FAILURE_BEFORE_AUDIT')
+      ).rejects.toThrow('INJECTED_BEFORE_AUDIT')
+      const post = await inspectBuyPostState(fx.billId)
+      expect(post.isCancelled).toBe(false)
+      expect(post.buyLotCount).toBeGreaterThan(0)
+      expect(post.auditCount).toBe(0)
+      expect(post.reversalCount).toBe(0)
+      expect(post.creditSettled).toBe(false)
+    } finally {
+      await cleanupBuyBill(fx.billId)
+    }
+  })
+
+  test('4b. rollback: failure after CAS claim (afterClaim) leaves zero partial writes', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const salt = `buy4b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
+    const fx = await seedBuyBill(salt, { isCredit: true })
+    try {
+      await expect(
+        cancelBuyBill(prisma() as never, {
+          id: fx.billId, reason: 'rb-claim', auth: { userId: 'u', name: 'U' },
+          _testHook: { afterClaim: () => { throw new Error('INJECTED_AFTER_CLAIM') } },
+        })
+      ).rejects.toThrow('INJECTED_AFTER_CLAIM')
       const post = await inspectBuyPostState(fx.billId)
       expect(post.isCancelled).toBe(false) // CAS claim rolled back
       expect(post.buyLotCount).toBeGreaterThan(0) // lots NOT deleted
-      expect(post.auditCount).toBe(0) // no audit
-      expect(post.reversalCount).toBe(0) // no reversal
-      expect(post.creditSettled).toBe(false) // credit NOT settled
+      expect(post.auditCount).toBe(0)
+      expect(post.reversalCount).toBe(0)
+      expect(post.creditSettled).toBe(false)
+    } finally {
+      await cleanupBuyBill(fx.billId)
+    }
+  })
+
+  test('4c. rollback: failure before reversal (after lot deletion + credit) leaves zero partial writes', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const salt = `buy4c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
+    const fx = await seedBuyBill(salt, { isCredit: true })
+    try {
+      await expect(
+        cancelBuyBill(prisma() as never, {
+          id: fx.billId, reason: 'rb-rev', auth: { userId: 'u', name: 'U' },
+          _testHook: { beforeReversal: () => { throw new Error('INJECTED_BEFORE_REVERSAL') } },
+        })
+      ).rejects.toThrow('INJECTED_BEFORE_REVERSAL')
+      const post = await inspectBuyPostState(fx.billId)
+      expect(post.isCancelled).toBe(false) // everything rolled back
+      expect(post.buyLotCount).toBeGreaterThan(0) // lots restored
+      expect(post.auditCount).toBe(0)
+      expect(post.reversalCount).toBe(0)
+      expect(post.creditSettled).toBe(false) // credit restored
     } finally {
       await cleanupBuyBill(fx.billId)
     }
@@ -791,7 +833,7 @@ describe('ST-71 Transfer runtime cancellation', () => {
     }
   })
 
-  test('3b. downstream rejection: below tolerance (consumed <= 0.01)', async () => {
+  test('3b. downstream rejection: below tolerance (consumed < 0.01)', async () => {
     if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
     const salt = `xfer3b-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
     // consumedWeight = 0.005 (below 0.01 tolerance) → cancellation should SUCCEED
@@ -801,6 +843,21 @@ describe('ST-71 Transfer runtime cancellation', () => {
       const post = await inspectTransferPostState(fx.billId)
       expect(post.isCancelled).toBe(true)
       expect(post.outputLotCount).toBe(0)
+      expect(post.restoreLotCount).toBe(1)
+    } finally {
+      await cleanupTransferBill(fx.billId)
+    }
+  })
+
+  test('3c. downstream rejection: exact boundary (consumed = 0.01) succeeds', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const salt = `xfer3c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,6)}`
+    // consumed = exactly 0.01 → condition is consumed > 0.01 (strict), so 0.01 does NOT trigger rejection
+    const fx = await seedTransferBill(salt, { outputCount: 1, consumedWeight: 0.01 })
+    try {
+      await cancelTransferBill(prisma() as never, { id: fx.billId, reason: 'boundary', auth: { userId: 'u', name: 'U' } })
+      const post = await inspectTransferPostState(fx.billId)
+      expect(post.isCancelled).toBe(true) // exactly 0.01 is NOT > 0.01, so succeeds
       expect(post.restoreLotCount).toBe(1)
     } finally {
       await cleanupTransferBill(fx.billId)
