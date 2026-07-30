@@ -1,0 +1,189 @@
+# ST-71: Post-deploy Production smoke test.
+#
+# Non-mutating: uses nonexistent IDs and unauthenticated/invalid-token
+# requests that are rejected at the auth gate before any database access.
+#
+# Expects 401 AUTH_REQUIRED for all checks. Does NOT test 403
+# PERMISSION_DENIED (requires a valid staff token without history.edit,
+# which must come from GitHub Actions secrets — if not configured, the
+# 403 check is reported as skipped, NOT as passed).
+#
+# Trigger: manual dispatch only (first version). Can be extended to
+# auto-trigger on deployment events later.
+
+name: Production Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      production_url:
+        description: 'Production base URL (no trailing slash)'
+        required: true
+        default: 'https://st-yongheng-recycle.vercel.app'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-test:
+    name: Non-mutating Auth Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      PRODUCTION_URL: ${{ inputs.production_url }}
+      # Optional: staff token without history.edit for 403 check.
+      # If empty, 403 check is skipped (NOT marked as passed).
+      STAFF_TOKEN_NO_HISTORY_EDIT: ${{ secrets.STAFF_TOKEN_NO_HISTORY_EDIT }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Production URL
+        run: |
+          if ! echo "$PRODUCTION_URL" | grep -qE '^https://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'; then
+            echo "::error::PRODUCTION_URL must start with https:// and be a valid URL"
+            exit 1
+          fi
+          echo "Production URL validated: $PRODUCTION_URL"
+
+      - name: Record deployed SHA
+        id: sha
+        run: |
+          echo "workflow_run_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "production_url=$PRODUCTION_URL" >> $GITHUB_OUTPUT
+
+      - name: Smoke test — unauthenticated 401 checks
+        id: unauth
+        run: |
+          set -e
+          NONEXISTENT_ID="nonexistent-smoke-test-id"
+          ROUTES=(
+            "/api/buy-bills/$NONEXISTENT_ID"
+            "/api/sell-bills/$NONEXISTENT_ID"
+            "/api/stock-transfers/$NONEXISTENT_ID"
+            "/api/sorting-bills/$NONEXISTENT_ID"
+          )
+          ALL_PASS=true
+          for route in "${ROUTES[@]}"; do
+            HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+              -X DELETE \
+              -H "Content-Type: application/json" \
+              -d '{"reason":"smoke-test"}' \
+              "$PRODUCTION_URL$route")
+            BODY=$(cat /tmp/response.json)
+            echo "Route: $route"
+            echo "  HTTP: $HTTP_CODE"
+            echo "  Body: $BODY"
+            if [ "$HTTP_CODE" != "401" ]; then
+              echo "  FAIL: expected 401, got $HTTP_CODE"
+              ALL_PASS=false
+            fi
+            if ! echo "$BODY" | grep -q "AUTH_REQUIRED"; then
+              echo "  FAIL: expected AUTH_REQUIRED code"
+              ALL_PASS=false
+            fi
+          done
+          if [ "$ALL_PASS" != "true" ]; then
+            echo "::error::Unauthenticated 401 smoke test failed"
+            exit 1
+          fi
+          echo "All unauthenticated 401 checks passed ✅"
+
+      - name: Smoke test — invalid token 401 checks
+        id: invalid
+        run: |
+          set -e
+          NONEXISTENT_ID="nonexistent-smoke-test-id"
+          INVALID_TOKEN="invalid-smoke-test-token-xxx"
+          ROUTES=(
+            "/api/buy-bills/$NONEXISTENT_ID"
+            "/api/sell-bills/$NONEXISTENT_ID"
+            "/api/stock-transfers/$NONEXISTENT_ID"
+            "/api/sorting-bills/$NONEXISTENT_ID"
+          )
+          ALL_PASS=true
+          for route in "${ROUTES[@]}"; do
+            HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+              -X DELETE \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $INVALID_TOKEN" \
+              -d '{"reason":"smoke-test"}' \
+              "$PRODUCTION_URL$route")
+            BODY=$(cat /tmp/response.json)
+            echo "Route: $route (invalid token)"
+            echo "  HTTP: $HTTP_CODE"
+            echo "  Body: $BODY"
+            if [ "$HTTP_CODE" != "401" ]; then
+              echo "  FAIL: expected 401, got $HTTP_CODE"
+              ALL_PASS=false
+            fi
+            if ! echo "$BODY" | grep -q "AUTH_REQUIRED"; then
+              echo "  FAIL: expected AUTH_REQUIRED code"
+              ALL_PASS=false
+            fi
+          done
+          if [ "$ALL_PASS" != "true" ]; then
+            echo "::error::Invalid token 401 smoke test failed"
+            exit 1
+          fi
+          echo "All invalid token 401 checks passed ✅"
+
+      - name: Smoke test — 403 PERMISSION_DENIED (optional)
+        id: forbidden
+        run: |
+          if [ -z "$STAFF_TOKEN_NO_HISTORY_EDIT" ]; then
+            echo "STAFF_TOKEN_NO_HISTORY_EDIT secret not configured — 403 check SKIPPED (not failed, not passed)"
+            echo "::notice::403 PERMISSION_DENIED check skipped — configure STAFF_TOKEN_NO_HISTORY_EDIT secret to enable"
+            exit 0
+          fi
+          echo "STAFF_TOKEN_NO_HISTORY_EDIT configured — running 403 checks..."
+          # If token is configured, test all 4 routes expect 403 PERMISSION_DENIED
+          NONEXISTENT_ID="nonexistent-smoke-test-id"
+          ROUTES=(
+            "/api/buy-bills/$NONEXISTENT_ID"
+            "/api/sell-bills/$NONEXISTENT_ID"
+            "/api/stock-transfers/$NONEXISTENT_ID"
+            "/api/sorting-bills/$NONEXISTENT_ID"
+          )
+          ALL_PASS=true
+          for route in "${ROUTES[@]}"; do
+            HTTP_CODE=$(curl -s -o /tmp/response.json -w "%{http_code}" \
+              -X DELETE \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $STAFF_TOKEN_NO_HISTORY_EDIT" \
+              -d '{"reason":"smoke-test"}' \
+              "$PRODUCTION_URL$route")
+            BODY=$(cat /tmp/response.json)
+            echo "Route: $route (staff without history.edit)"
+            echo "  HTTP: $HTTP_CODE"
+            echo "  Body: $BODY"
+            if [ "$HTTP_CODE" != "403" ]; then
+              echo "  FAIL: expected 403, got $HTTP_CODE"
+              ALL_PASS=false
+            fi
+            if ! echo "$BODY" | grep -q "PERMISSION_DENIED"; then
+              echo "  FAIL: expected PERMISSION_DENIED code"
+              ALL_PASS=false
+            fi
+          done
+          if [ "$ALL_PASS" != "true" ]; then
+            echo "::error::403 PERMISSION_DENIED smoke test failed"
+            exit 1
+          fi
+          echo "All 403 PERMISSION_DENIED checks passed ✅"
+
+      - name: Summary
+        run: |
+          echo "## Production Smoke Test Summary"
+          echo ""
+          echo "- URL: $PRODUCTION_URL"
+          echo "- Timestamp: ${{ steps.sha.outputs.workflow_run_at }}"
+          echo "- Unauthenticated 401: ✅ Passed"
+          echo "- Invalid token 401: ✅ Passed"
+          if [ -z "$STAFF_TOKEN_NO_HISTORY_EDIT" ]; then
+            echo "- 403 PERMISSION_DENIED: ⏭️ Skipped (no secret configured)"
+          else
+            echo "- 403 PERMISSION_DENIED: ✅ Passed"
+          fi
