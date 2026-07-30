@@ -6,40 +6,7 @@ import {
   mapSortingCancellationError,
   type SortingCancellationDb,
 } from '@/lib/sorting-cancellation-service';
-
-/**
- * ST-70: Separate 401 AUTH_REQUIRED from 403 PERMISSION_DENIED.
- *
- * - No token / invalid token → 401 AUTH_REQUIRED
- * - Valid token but missing permission → 403 PERMISSION_DENIED
- *
- * The previous implementation collapsed both into a single null return from
- * `requireEditPermission`, which made it impossible for clients to know
- * whether to re-authenticate or request elevated permissions.
- */
-async function resolveAuth(request: NextRequest): Promise<
-  | { ok: true; payload: { userId: string; name: string; role: string; permissions?: Record<string, boolean> } }
-  | { ok: false; status: 401; code: 'AUTH_REQUIRED'; error: string }
-  | { ok: false; status: 403; code: 'PERMISSION_DENIED'; error: string }
-> {
-  const token = getTokenFromRequest(request);
-  if (!token) {
-    return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'ไม่ได้เข้าสู่ระบบ' };
-  }
-  const payload = await verifyToken(token);
-  if (!payload) {
-    return { ok: false, status: 401, code: 'AUTH_REQUIRED', error: 'token ไม่ถูกต้องหรือหมดอายุ กรุณาเข้าสู่ระบบใหม่' };
-  }
-  const hasPermission = payload.role === 'admin' || payload.permissions?.['history.edit'] === true;
-  if (!hasPermission) {
-    return { ok: false, status: 403, code: 'PERMISSION_DENIED', error: 'ไม่มีสิทธิ์ — ต้องการสิทธิ์ history.edit' };
-  }
-  return { ok: true, payload };
-}
-
-function authFailedResponse(result: { status: number; code: string; error: string }) {
-  return NextResponse.json({ error: result.error, code: result.code }, { status: result.status });
-}
+import { resolveHistoryEditAuth as resolveAuth, authFailedResponse } from '@/lib/cancel-auth';
 
 // GET /api/sorting-bills/[id]
 export async function GET(
