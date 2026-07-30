@@ -19,7 +19,8 @@
 3. **`process/PROJECT_OPERATING_CONTEXT.md`** — project summary, tech stack, file structure
 4. **`process/BUSINESS_RULES.md`** — bill number format, cancel behavior, FIFO, permissions, stable error codes
 5. **`process/DATABASE_CONTEXT.md`** — Prisma schema, stock flow, forbidden operations
-6. Task-specific code, tests, and docs
+6. **`knowledge/`** — durable technical knowledge (incidents, invariants, decisions)
+7. Task-specific code, tests, and docs
 
 ## Source-of-Truth Responsibilities
 
