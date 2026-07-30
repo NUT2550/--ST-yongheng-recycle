@@ -1,7 +1,7 @@
 # Current State — YH Stock System
 
 > **Concise, current, dated. No progress diaries. No raw logs.**
-> Last updated: 2026-07-30 (ST-71 runtime cancellation released — PR #58)
+> Last updated: 2026-07-30 (ST-71 core closure — follow-ups tracked separately)
 
 ## Version Identity
 
@@ -20,7 +20,7 @@
 
 | Issue | Status | Summary |
 |---|---|---|
-| **ST-71 / Issue #50** | In Progress | Reliability foundation + regression prevention. Static contract + PostgreSQL runtime coverage released (PRs #57, #58). Production 403 verification pending Owner credential setup. |
+| **ST-71 / Issue #50** | Core Complete | Core engineering work complete (PRs #51–#59). Owner-controlled follow-ups moved to #60 (branch protection) and #61 (Production 403). |
 | **ST-70 / PR #49** | Closed | Sorting cancellation atomic + duplicate-safe. Production verified (Phases 1-3). |
 | **ST-71 P0 / PR #51** | Merged | 401/403 separation for Buy/Sell/Transfer cancel. Production 401 verified. |
 | **ST-71 / PR #52** | Merged | Reliability foundation: AGENTS.md, DoD, PR template, smoke workflow. |
@@ -30,6 +30,9 @@
 | **ST-71 / PR #56** | Merged | Cancel route auth-wiring static coverage (39 tests). |
 | **ST-71 / PR #57** | Merged | Cancel business-logic contract static coverage (47 tests, 321 expectations). Static CAS-presence verification added; CAS production code landed in PR #58. |
 | **ST-71 / PR #58** | Merged | Cancel PostgreSQL runtime regression harness + CAS concurrency fix. |
+| **ST-71 / PR #59** | Merged | CURRENT_STATE reconciliation after PR #58. |
+| **Follow-up / Issue #60** | Open | Configure and verify main branch protection. |
+| **Follow-up / Issue #61** | Open | Verify authenticated Production 403 cancellation authorization. |
 
 ## Recently Completed
 
@@ -73,26 +76,40 @@
 |---|---|---|
 | Buy/Sell/Transfer cancel runtime PostgreSQL coverage | P0 | ✅ Resolved: PostgreSQL runtime coverage released (PR #58). 21 tests, 104 expectations, 0 skipped in CI. Covers successful, duplicate, downstream rejection, rollback, concurrent. |
 | Buy/Sell/Transfer concurrent cancellation race | P0 | ✅ Resolved: CAS guard (`updateMany` + `isCancelled: false` + `count !== 1`) proven effective by PostgreSQL concurrent tests (PR #58). Exactly one winner, loser gets 409, zero duplicate writes. |
-| 403 PERMISSION_DENIED not Production-verified | P1 | Pending: requires `STAFF_TOKEN_NO_HISTORY_EDIT` GitHub Actions secret. Owner must create non-admin staff account without `history.edit`, authenticate, store JWT as encrypted secret. |
+| 403 PERMISSION_DENIED not Production-verified | P2 | Moved to follow-up #61. Owner acceptance test (not regression gate). 71 automated + runtime tests cover contract. |
 | Direct route-handler import blocked by `server-only` | P1 | ✅ Resolved: cancellation logic extracted to service functions (PR #58). Runtime tests import services directly. |
-| Production 403 verification | P1 | Pending: `STAFF_TOKEN_NO_HISTORY_EDIT` secret not configured as of latest verified state. |
-| Branch protection not configured | P1 | Pending Owner action |
+| Production 403 verification | P2 | Moved to follow-up #61. `STAFF_TOKEN_NO_HISTORY_EDIT` secret not configured. |
+| Branch protection not configured | P2 | Moved to follow-up #60. Governance follow-up (not engineering). Owner UI action. |
 | weightExpression migration not run | P0 | Pending Owner decision |
 
 ## Pending Owner Decisions
 
 1. **weightExpression migration** — `prisma/migrations/add_weight_expression.sql` ready but NOT run. Owner decision required.
-2. **Production 403 verification** — Owner must create a non-admin `staff` account without `history.edit`, authenticate, and store the JWT as GitHub Actions secret `STAFF_TOKEN_NO_HISTORY_EDIT`. Secret is not yet configured.
-3. **Branch protection** — Foundation Validation CI check not yet required. Owner action needed.
-4. **CURRENT_STATE.md follow-up** — this update reconciles PR #58 merge. Further updates needed after Production 403 verification.
+2. **Follow-up #60**: Configure main branch protection (GitHub UI action)
+3. **Follow-up #61**: Verify Production 403 (requires `STAFF_TOKEN_NO_HISTORY_EDIT` secret + temporary staff account)
 
 ## Current Status
 
-`ST-71 CORE CANCELLATION REGRESSION COVERAGE COMPLETE — PRODUCTION 403 AND GOVERNANCE GATES PENDING`
+`ST-71 CORE WORK COMPLETE — OWNER-CONTROLLED FOLLOW-UPS TRACKED SEPARATELY`
+
+**Owner decision**: `APPROVED — CLOSE ST-71 CORE WORK AND CREATE TWO FOLLOW-UP ISSUES` (2026-07-30)
+
+**Accepted residual risks** (P2, Owner-controlled):
+1. Production 403 not executed — follow-up #61
+2. Branch protection absent — follow-up #60
+3. JWT valid after account deactivation (applies only after #61)
+4. Main push CI excluded by design — pre-merge exact-head CI is evidence of record
+5. Path-filtered PostgreSQL checks not universally required — by design
+
+**No P0/P1 technical findings remain.**
 
 ## Next Safe Work Item
 
-Production 403 verification (Owner-gated): create a non-admin `staff` account without `history.edit`, authenticate, store the JWT as GitHub Actions secret `STAFF_TOKEN_NO_HISTORY_EDIT`, then dispatch the `Production Smoke Test` workflow. No code changes needed — workflow is ready.
+Two Owner-controlled follow-ups are tracked separately:
+1. **Issue #60**: Configure and verify main branch protection (GitHub UI)
+2. **Issue #61**: Verify authenticated Production 403 (requires `STAFF_TOKEN_NO_HISTORY_EDIT` secret + temporary staff account)
+
+ST-71 core engineering work is complete. No further code changes are required for ST-71 closure.
 
 ## References
 
