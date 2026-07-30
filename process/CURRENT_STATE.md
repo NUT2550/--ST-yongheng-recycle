@@ -1,7 +1,7 @@
 # Current State — YH Stock System
 
 > **Concise, current, dated. No progress diaries. No raw logs.**
-> Last updated: 2026-07-30
+> Last updated: 2026-07-31
 
 ## Version Identity
 
@@ -60,7 +60,7 @@
 | Route-level HTTP integration tests missing | P1 | Test infrastructure limitation (`server-only` guard) |
 | No AGENTS.md (until this PR) | P1 | Being implemented in this PR |
 | No knowledge/ directory | P2 | Deferred to separate phase |
-| No post-deploy smoke workflow | P1 | Smoke workflow implemented (PR #52), CI enforcement in progress (PR #53) |
+| No post-deploy smoke workflow | P1 | ✅ Smoke workflow implemented (PR #52), CI enforcement merged (PR #53) |
 | weightExpression migration not run | P0 | Pending Owner decision |
 
 ## Pending Owner Decisions

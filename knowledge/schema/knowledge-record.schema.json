@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "knowledge/knowledge-record.schema.json",
+  "title": "Knowledge Record",
+  "description": "Schema for durable technical knowledge records in the YH Stock System.",
+  "type": "object",
+  "required": ["id", "type", "status", "area", "title", "date"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier. Format: <TYPE>-<ST-XX>-<SHORT-ID>",
+      "pattern": "^(ERR|INV|DEC)-ST[0-9]+-[A-Z0-9-]+$"
+    },
+    "type": {
+      "type": "string",
+      "enum": ["incident", "invariant", "decision"]
+    },
+    "status": {
+      "type": "string",
+      "enum": ["verified", "active", "superseded"]
+    },
+    "area": {
+      "type": "string",
+      "description": "Functional area, e.g. sorting-cancellation, auth, fifo"
+    },
+    "title": {
+      "type": "string",
+      "description": "One-line summary"
+    },
+    "date": {
+      "type": "string",
+      "format": "date",
+      "description": "YYYY-MM-DD date of verification or decision"
+    },
+    "issue": { "type": "string", "description": "Linear issue ID, e.g. ST-70" },
+    "pr": { "type": "number", "description": "GitHub PR number" },
+    "commit": { "type": "string", "description": "Git commit SHA" },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

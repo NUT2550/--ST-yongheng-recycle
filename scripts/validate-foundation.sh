@@ -86,6 +86,57 @@ else
   echo "  ⏭️  PR template not found (already reported above)"
 fi
 
+# 6. Knowledge directory structure exists
+for kf in \
+  knowledge/README.md \
+  knowledge/INDEX.md \
+  knowledge/schema/knowledge-record.schema.json; do
+  if [ -f "$kf" ]; then
+    echo "  ✅ $kf exists"
+  else
+    echo "  ❌ $kf MISSING"
+    FAILURES=$((FAILURES + 1))
+  fi
+done
+
+# 7. At least one knowledge template exists
+TEMPLATE_COUNT=$(find knowledge/templates -name "*.md" 2>/dev/null | wc -l)
+if [ "$TEMPLATE_COUNT" -ge 1 ]; then
+  echo "  ✅ Knowledge templates exist ($TEMPLATE_COUNT)"
+else
+  echo "  ❌ Knowledge templates MISSING (expected at least 1)"
+  FAILURES=$((FAILURES + 1))
+fi
+
+# 8. Knowledge records have YAML frontmatter with required fields
+RECORD_COUNT=0
+BAD_RECORDS=0
+for record in knowledge/incidents/*.md knowledge/invariants/*.md knowledge/decisions/*.md; do
+  [ -f "$record" ] || continue
+  RECORD_COUNT=$((RECORD_COUNT + 1))
+  # Check for YAML frontmatter block
+  if ! head -1 "$record" | grep -q '^---$'; then
+    echo "  ❌ $record missing YAML frontmatter"
+    BAD_RECORDS=$((BAD_RECORDS + 1))
+    continue
+  fi
+  # Check for required fields in frontmatter
+  FRONTMATTER=$(sed -n '/^---$/,/^---$/p' "$record" | head -n -1 | tail -n +2)
+  for field in id type status area title date; do
+    if ! echo "$FRONTMATTER" | grep -q "^${field}:"; then
+      echo "  ❌ $record missing required field '$field' in frontmatter"
+      BAD_RECORDS=$((BAD_RECORDS + 1))
+    fi
+  done
+done
+if [ $BAD_RECORDS -gt 0 ]; then
+  FAILURES=$((FAILURES + 1))
+elif [ $RECORD_COUNT -gt 0 ]; then
+  echo "  ✅ Knowledge records validated ($RECORD_COUNT records, all have required frontmatter)"
+else
+  echo "  ✅ Knowledge records directory exists (no records yet — OK)"
+fi
+
 echo ""
 if [ $FAILURES -eq 0 ]; then
   echo "=== ALL CHECKS PASSED ✅ ==="

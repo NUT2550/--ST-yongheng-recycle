@@ -68,6 +68,18 @@ function createValidFixture(): string {
     '',
   ].join('\n'))
 
+  // Knowledge directory
+  mkdirSync(join(dir, 'knowledge', 'schema'), { recursive: true })
+  mkdirSync(join(dir, 'knowledge', 'templates'), { recursive: true })
+  mkdirSync(join(dir, 'knowledge', 'incidents'), { recursive: true })
+  mkdirSync(join(dir, 'knowledge', 'invariants'), { recursive: true })
+  mkdirSync(join(dir, 'knowledge', 'decisions'), { recursive: true })
+
+  writeFileSync(join(dir, 'knowledge', 'README.md'), '# Knowledge Directory\n')
+  writeFileSync(join(dir, 'knowledge', 'INDEX.md'), '# Knowledge Index\n')
+  writeFileSync(join(dir, 'knowledge', 'schema', 'knowledge-record.schema.json'), '{}\n')
+  writeFileSync(join(dir, 'knowledge', 'templates', 'incident.md'), '---\nid: ERR-STXX-TEST\ntype: incident\nstatus: verified\narea: test\ntitle: Test\ndate: 2026-01-01\n---\n')
+
   return dir
 }
 
@@ -186,6 +198,50 @@ describe('ST-71 foundation validator — regression tests', () => {
     expect(stdout).toContain('ALL CHECKS PASSED')
   })
 
+  test('11. missing knowledge/README.md → fail', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    rmSync(join(dir, 'knowledge', 'README.md'))
+    await expectValidatorFails(dir, 'knowledge/README.md MISSING')
+  })
+
+  test('12. missing knowledge/INDEX.md → fail', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    rmSync(join(dir, 'knowledge', 'INDEX.md'))
+    await expectValidatorFails(dir, 'knowledge/INDEX.md MISSING')
+  })
+
+  test('13. missing knowledge schema → fail', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    rmSync(join(dir, 'knowledge', 'schema', 'knowledge-record.schema.json'))
+    await expectValidatorFails(dir, 'knowledge-record.schema.json MISSING')
+  })
+
+  test('14. knowledge record missing YAML frontmatter → fail', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    mkdirSync(join(dir, 'knowledge', 'incidents'), { recursive: true })
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'bad-record.md'), 'No frontmatter here\n')
+    await expectValidatorFails(dir, 'missing YAML frontmatter')
+  })
+
+  test('15. knowledge record missing required field → fail', async () => {
+    const dir = createValidFixture()
+    fixtures.push(dir)
+    mkdirSync(join(dir, 'knowledge', 'incidents'), { recursive: true })
+    writeFileSync(join(dir, 'knowledge', 'incidents', 'bad-record.md'), [
+      '---',
+      'id: ERR-STXX-TEST',
+      'type: incident',
+      // Missing: status, area, title, date
+      '---',
+      '',
+    ].join('\n'))
+    await expectValidatorFails(dir, "missing required field 'status'")
+  })
+
   test('cleanup: no mutation of source repository', () => {
     // Verify the real repository still has all files
     expect(existsSync('AGENTS.md')).toBe(true)
@@ -194,6 +250,9 @@ describe('ST-71 foundation validator — regression tests', () => {
     expect(existsSync('.github/pull_request_template.md')).toBe(true)
     expect(existsSync('.github/workflows/production-smoke.yml')).toBe(true)
     expect(existsSync('scripts/validate-foundation.sh')).toBe(true)
+    expect(existsSync('knowledge/README.md')).toBe(true)
+    expect(existsSync('knowledge/INDEX.md')).toBe(true)
+    expect(existsSync('knowledge/schema/knowledge-record.schema.json')).toBe(true)
   })
 
   // Cleanup all temp fixtures after all tests
