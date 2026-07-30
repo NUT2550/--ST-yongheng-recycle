@@ -1,8 +1,12 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
 import { resolveHistoryEditAuth, authFailedResponse } from '@/lib/cancel-auth';
+import {
+  cancelSellBill,
+  mapSellCancellationError,
+  type SellCancellationDb,
+} from '@/lib/sell-cancellation-service';
 
 // GET /api/sell-bills/[id]
 export async function GET(
@@ -157,67 +161,20 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const existing = await db.sellBill.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!existing) return NextResponse.json({ error: 'ไม่พบใบขาย' }, { status: 404 });
-    if (existing.isCancelled) return NextResponse.json({ error: 'ใบขายนี้ถูกยกเลิกไปแล้ว' }, { status: 400 });
 
     let reason = '';
     try { const body = await request.json(); reason = (body?.reason || '').toString().trim(); } catch {}
 
-    await db.$transaction(async (tx) => {
-      const cancelledAt = new Date();
-      // Restore stock: create NEW StockLots for each sold item
-      const now = new Date();
-      for (const item of existing.items) {
-        if (item.weight > 0) {
-          await tx.stockLot.create({
-            data: {
-              productId: item.productId,
-              remainingWeight: item.weight,
-              costPerKg: item.costPerKg,
-              dateAdded: now,
-              source: 'SELL_CANCEL',
-              sourceId: existing.id,
-            },
-          });
-        }
-      }
-
-      // Cancel credit entry
-      await tx.creditEntry.updateMany({
-        where: { referenceId: id, referenceType: 'SELL_BILL' },
-        data: { isSettled: true, description: `ยกเลิกแล้ว: ${reason || 'ไม่ระบุเหตุผล'}` },
-      });
-
-      // Mark bill as cancelled
-      await tx.sellBill.update({
-        where: { id },
-        data: { isCancelled: true, cancelledAt, cancelledBy: auth.payload.userId, cancelReason: reason || null },
-      });
-
-      await reverseSourceMovements(tx, 'SELL_BILL', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Sale cancelled');
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          action: 'CANCEL', entityType: 'SELL_BILL', entityId: id,
-          userId: auth.payload.userId, userName: auth.payload.name,
-          details: JSON.stringify({
-            billNumber: existing.billNumber, reason: reason || null,
-            restoredWeight: existing.items.reduce((s, i) => s + i.weight, 0),
-            restoredCost: existing.items.reduce((s, i) => s + i.totalCost, 0),
-          }),
-        },
-      });
+    await cancelSellBill(db as unknown as SellCancellationDb, {
+      id,
+      reason,
+      auth: { userId: auth.payload.userId, name: auth.payload.name },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown';
     console.error('Error cancelling sell bill:', error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const mapped = mapSellCancellationError(error);
+    return NextResponse.json(mapped.body, { status: mapped.status });
   }
 }

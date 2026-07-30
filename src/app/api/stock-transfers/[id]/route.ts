@@ -1,8 +1,12 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyToken, getTokenFromRequest } from '@/lib/auth';
-import { reverseSourceMovements } from '@/lib/stock-movement-reversal';
 import { resolveHistoryEditAuth, authFailedResponse } from '@/lib/cancel-auth';
+import {
+  cancelTransferBill,
+  mapTransferCancellationError,
+  type TransferCancellationDb,
+} from '@/lib/transfer-cancellation-service';
 
 // GET /api/stock-transfers/[id]
 export async function GET(
@@ -98,14 +102,6 @@ export async function DELETE(
 
   try {
     const { id } = await params;
-    const existing = await db.stockTransfer.findUnique({
-      where: { id },
-      include: { items: true },
-    });
-    if (!existing) return NextResponse.json({ error: 'ไม่พบใบย้ายสต็อก' }, { status: 404 });
-    if (existing.isCancelled) {
-      return NextResponse.json({ error: 'ใบย้ายสต็อกนี้ถูกยกเลิกไปแล้ว' }, { status: 400 });
-    }
 
     let reason = '';
     try {
@@ -115,86 +111,16 @@ export async function DELETE(
       // No body or invalid JSON
     }
 
-    await db.$transaction(async (tx) => {
-      const cancelledAt = new Date();
-      // STRICT CHECK: verify no output stock lot has been consumed downstream.
-      // For each non-waste output item, find the StockLot created by this transfer
-      // (source='TRANSFER', sourceId=id, productId=item.productId) and confirm its
-      // remainingWeight still equals the original item weight. If any was consumed
-      // (sold / sorted / transferred further), block the cancellation.
-      for (const item of existing.items) {
-        if (item.isWaste) continue;
-        const outLot = await tx.stockLot.findFirst({
-          where: { source: 'TRANSFER', sourceId: existing.id, productId: item.productId },
-        });
-        if (!outLot) continue;
-        const consumed = item.weight - outLot.remainingWeight;
-        if (consumed > 0.01) {
-          const prod = await tx.product.findUnique({ where: { id: item.productId }, select: { name: true } });
-          throw new Error(
-            `ไม่สามารถยกเลิกได้: สต็อก output "${prod?.name || item.productId}" ถูกใช้ไปแล้ว ${consumed.toFixed(2)} กก. (จาก ${item.weight} กก.). กรุณาย้อนกลับไปลบบิลขาย/คัดแยก/ย้ายที่เกี่ยวข้องก่อน`
-          );
-        }
-      }
-
-      // Safe to cancel: delete all output StockLots (they are fully unconsumed)
-      await tx.stockLot.deleteMany({
-        where: { source: 'TRANSFER', sourceId: existing.id },
-      });
-
-      // Restore source stock as a new lot (cost preserved from bill)
-      if (existing.sourceWeight > 0) {
-        await tx.stockLot.create({
-          data: {
-            productId: existing.sourceProductId,
-            remainingWeight: existing.sourceWeight,
-            costPerKg: existing.sourceCostPerKg,
-            dateAdded: new Date(),
-            source: 'TRANSFER_CANCEL',
-            sourceId: existing.id,
-          },
-        });
-      }
-
-      // Mark bill as cancelled
-      await tx.stockTransfer.update({
-        where: { id },
-        data: {
-          isCancelled: true,
-          cancelledAt,
-          cancelledBy: auth.payload.userId,
-          cancelReason: reason || null,
-        },
-      });
-
-      await reverseSourceMovements(tx, 'STOCK_TRANSFER', id, 'CANCELLATION_REVERSAL', cancelledAt, reason || 'Transfer cancelled');
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          action: 'CANCEL',
-          entityType: 'STOCK_TRANSFER',
-          entityId: id,
-          userId: auth.payload.userId,
-          userName: auth.payload.name,
-          details: JSON.stringify({
-            billNumber: existing.billNumber,
-            reason: reason || null,
-            restoredSourceWeight: existing.sourceWeight,
-            restoredSourceCostPerKg: existing.sourceCostPerKg,
-            deletedOutputLots: existing.items.filter((i) => !i.isWaste).length,
-          }),
-        },
-      });
+    await cancelTransferBill(db as unknown as TransferCancellationDb, {
+      id,
+      reason,
+      auth: { userId: auth.payload.userId, name: auth.payload.name },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'unknown';
     console.error('Error cancelling stock transfer:', error);
-    return NextResponse.json(
-      { error: message },
-      { status: message.includes('ไม่สามารถยกเลิกได้') ? 400 : 500 }
-    );
+    const mapped = mapTransferCancellationError(error);
+    return NextResponse.json(mapped.body, { status: mapped.status });
   }
 }

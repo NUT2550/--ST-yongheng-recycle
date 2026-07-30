@@ -1,7 +1,7 @@
 # Current State — YH Stock System
 
 > **Concise, current, dated. No progress diaries. No raw logs.**
-> Last updated: 2026-07-31
+> Last updated: 2026-07-30 (ST-71 runtime harness)
 
 ## Version Identity
 
@@ -20,9 +20,16 @@
 
 | Issue | Status | Summary |
 |---|---|---|
-| **ST-71 / Issue #50** | In Progress | Reliability foundation + regression prevention. P0 cancel auth released (PR #51). Broader scope pending. |
+| **ST-71 / Issue #50** | In Progress | Reliability foundation + regression prevention. Static contract coverage released (PR #57). Runtime PostgreSQL harness in progress. |
 | **ST-70 / PR #49** | Closed | Sorting cancellation atomic + duplicate-safe. Production verified (Phases 1-3). |
 | **ST-71 P0 / PR #51** | Merged | 401/403 separation for Buy/Sell/Transfer cancel. Production 401 verified. |
+| **ST-71 / PR #52** | Merged | Reliability foundation: AGENTS.md, DoD, PR template, smoke workflow. |
+| **ST-71 / PR #53** | Merged | CI foundation validation enforcement + regression tests. |
+| **ST-71 / PR #54** | Merged | Knowledge directory + seed records. |
+| **ST-71 / PR #55** | Merged | Knowledge semantic validation (15 rules). |
+| **ST-71 / PR #56** | Merged | Cancel route auth-wiring static coverage (39 tests). |
+| **ST-71 / PR #57** | Merged | Cancel business-logic contract static coverage (47 tests). CAS guard added. |
+| **ST-71 runtime harness** | Draft PR pending | PostgreSQL runtime regression harness for Buy/Sell/Transfer cancellation. |
 
 ## Recently Completed
 
@@ -30,6 +37,12 @@
 |---|---|---|---|
 | ST-70 (sorting cancel) | #49 | `de9848e1f3` | ✅ Phases 1-3 (incident read-only, history, controlled cancellation) |
 | ST-71 P0 (cancel auth) | #51 | `132d21e` | ✅ 401 AUTH_REQUIRED (8/8 Production checks). ❌ 403 PERMISSION_DENIED (no staff credentials in sandbox) |
+| ST-71 reliability foundation | #52 | `19d6171` | n/a (docs + workflow only) |
+| ST-71 CI foundation enforcement | #53 | `b81da4a` | n/a (CI only) |
+| ST-71 knowledge directory | #54 | `f77f138` | n/a (docs only) |
+| ST-71 knowledge semantic validation | #55 | `e836b9f` | n/a (tests only) |
+| ST-71 cancel route auth-wiring | #56 | `97eabee` | n/a (static tests only) |
+| ST-71 cancel business-logic contract | #57 | `172929d` | n/a (static tests + CAS fix) |
 
 ## Current Verified Behavior
 
@@ -55,23 +68,24 @@
 
 | Risk | Priority | Status |
 |---|---|---|
-| Buy/Sell/Transfer cancel have no regression tests | P0 | Identified, not yet implemented |
+| Buy/Sell/Transfer cancel runtime PostgreSQL coverage | P0 | ✅ Static contract coverage released (PR #57). Runtime harness in progress (Draft PR pending). CAS guard added. |
+| Buy/Sell/Transfer concurrent cancellation race | P0 | ✅ CAS guard added in extracted services (PR #57 merge). Runtime verification pending (ST-71 harness). |
 | 403 PERMISSION_DENIED not Production-verified | P1 | Requires Owner to test with staff account |
-| Route-level HTTP integration tests missing | P1 | Test infrastructure limitation (`server-only` guard) |
-| No AGENTS.md (until this PR) | P1 | Being implemented in this PR |
-| No knowledge/ directory | P2 | Deferred to separate phase |
-| No post-deploy smoke workflow | P1 | ✅ Smoke workflow implemented (PR #52), CI enforcement merged (PR #53) |
+| Direct route-handler import blocked by `server-only` | P1 | ✅ Resolved: cancellation logic extracted to service functions (PR #57). Runtime tests import services directly. |
+| Production 403 verification | P1 | Pending (no staff credentials in sandbox) |
+| Branch protection not configured | P1 | Pending Owner action |
 | weightExpression migration not run | P0 | Pending Owner decision |
 
 ## Pending Owner Decisions
 
 1. **weightExpression migration** — `prisma/migrations/add_weight_expression.sql` ready but NOT run. Owner decision required.
 2. **403 Production verification** — Owner should test cancel routes with a staff account (no `history.edit`).
-3. **ST-71 broader scope** — AGENTS.md, Definition of Done, PR template, smoke workflow (this PR). Knowledge/ system deferred.
+3. **ST-71 runtime PostgreSQL harness** — Draft PR pending Owner review. Extends ST-70 CI infrastructure to Buy/Sell/Transfer.
+4. **Branch protection** — Foundation Validation CI check not yet required. Owner action needed.
 
 ## Next Safe Work Item
 
-Review and merge this reliability foundation PR (AGENTS.md, CURRENT_STATE.md, DEFINITION_OF_DONE.md, PR template, smoke workflow).
+Review and merge the ST-71 PostgreSQL runtime harness Draft PR. This extends the ST-70 CI infrastructure to Buy/Sell/Transfer cancellation, proving runtime behavior including concurrent cancellation safety via the CAS guard.
 
 ## References
 
