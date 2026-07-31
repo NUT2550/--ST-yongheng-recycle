@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'fs'
 import { createStockTransfer, type StockTransferDeps, type StockTransferInput, type AuthInfo } from '../src/lib/stock-transfer-service'
 
 const AUTH: AuthInfo = { userId: 'user-1', username: 'test', name: 'Test' }
@@ -112,9 +113,9 @@ describe('ST-62 stock-transfer idempotency', () => {
   test('4. idempotencyKey passed through to service creates correct key in data', async () => {
     // Verify the service includes idempotencyKey in the createStockTransfer data
     // by checking the source code pattern (static verification)
-    const src = require('fs').readFileSync('src/lib/stock-transfer-service.ts', 'utf-8')
+    const serviceSrc = readFileSync('src/lib/stock-transfer-service.ts', 'utf-8')
     // The service should add idempotencyKey to createData
-    expect(src).toContain('idempotencyKey')
-    expect(src).toContain('createData')
+    expect(serviceSrc).toContain('idempotencyKey')
+    expect(serviceSrc).toContain('createData')
   })
 })
