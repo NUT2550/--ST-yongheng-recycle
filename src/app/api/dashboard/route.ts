@@ -49,11 +49,18 @@ export async function GET(request: NextRequest) {
         select: { totalAmount: true, items: { select: { weight: true } } },
       }),
       // Recent buy bills (exclude cancelled)
+      // ST-68: explicit select on items to avoid querying weightExpression
+      // (column exists in schema but migration not yet applied to Production DB)
       db.buyBill.findMany({
         where: { isCancelled: false },
         include: {
           items: {
-            include: {
+            select: {
+              id: true,
+              productId: true,
+              weight: true,
+              pricePerKg: true,
+              totalAmount: true,
               product: { select: { id: true, name: true } },
             },
           },
@@ -62,11 +69,19 @@ export async function GET(request: NextRequest) {
         take: 5,
       }),
       // Recent sell bills (exclude cancelled)
+      // ST-68: explicit select on items to avoid querying weightExpression
       db.sellBill.findMany({
         where: { isCancelled: false },
         include: {
           items: {
-            include: {
+            select: {
+              id: true,
+              productId: true,
+              weight: true,
+              pricePerKg: true,
+              totalAmount: true,
+              costPerKg: true,
+              totalCost: true,
               product: { select: { id: true, name: true } },
             },
           },
