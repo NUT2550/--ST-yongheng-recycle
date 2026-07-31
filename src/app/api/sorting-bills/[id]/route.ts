@@ -24,7 +24,19 @@ export async function GET(
       where: { id },
       include: {
         sourceProduct: { select: { id: true, name: true } },
-        items: { include: { product: { select: { id: true, name: true } } } },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            weight: true,
+            isWaste: true,
+            costPerKg: true,
+            totalCost: true,
+            sortedPricePerKg: true,
+            bonusAmount: true,
+            product: { select: { id: true, name: true } },
+          },
+        },
       },
     });
     if (!bill) return NextResponse.json({ error: 'ไม่พบใบคัดแยก' }, { status: 404 });
