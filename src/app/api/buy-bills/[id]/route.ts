@@ -24,7 +24,12 @@ export async function GET(
       where: { id },
       include: {
         items: {
-          include: {
+          select: {
+            id: true,
+            productId: true,
+            weight: true,
+            pricePerKg: true,
+            totalAmount: true,
             product: { select: { id: true, name: true, defaultBuyPrice: true } },
           },
         },
@@ -171,7 +176,7 @@ export async function PATCH(
           note: note === null ? null : note || undefined,
           totalAmount,
         },
-        include: { items: { include: { product: true } } },
+        include: { items: { select: { id: true, productId: true, weight: true, pricePerKg: true, totalAmount: true, product: { select: { id: true, name: true, defaultBuyPrice: true } } } } },
       });
 
       // Handle CreditEntry

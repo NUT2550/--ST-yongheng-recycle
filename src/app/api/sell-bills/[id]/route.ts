@@ -23,7 +23,18 @@ export async function GET(
     const bill = await db.sellBill.findUnique({
       where: { id },
       include: {
-        items: { include: { product: { select: { id: true, name: true } } } },
+        items: {
+          select: {
+            id: true,
+            productId: true,
+            weight: true,
+            pricePerKg: true,
+            totalAmount: true,
+            costPerKg: true,
+            totalCost: true,
+            product: { select: { id: true, name: true } },
+          },
+        },
         customer: { select: { id: true, name: true, phone: true } },
       },
     });
@@ -90,7 +101,7 @@ export async function PATCH(
           customerId: customerId === null ? null : customerId || undefined,
           totalAmount,
         },
-        include: { items: { include: { product: { select: { id: true, name: true } } } }, customer: { select: { id: true, name: true, phone: true } } },
+        include: { items: { select: { id: true, productId: true, weight: true, pricePerKg: true, totalAmount: true, costPerKg: true, totalCost: true, product: { select: { id: true, name: true } } } }, customer: { select: { id: true, name: true, phone: true } } },
       });
 
       // Handle CreditEntry

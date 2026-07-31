@@ -139,14 +139,16 @@ export async function GET(request: NextRequest) {
         where,
         include: {
           items: {
-            include: {
-              product: {
-                select: { id: true, name: true },
-              },
+            select: {
+              id: true,
+              productId: true,
+              weight: true,
+              pricePerKg: true,
+              totalAmount: true,
+              costPerKg: true,
+              totalCost: true,
+              product: { select: { id: true, name: true } },
             },
-          },
-          customer: {
-            select: { id: true, name: true, phone: true },
           },
         },
         orderBy: { date: 'desc' },
