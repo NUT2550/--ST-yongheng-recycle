@@ -86,7 +86,7 @@
 
 1. **weightExpression migration** — `prisma/migrations/add_weight_expression.sql` ready but NOT run. Owner decision required.
 2. **ST-72 / GitHub #60**: Configure main branch protection (GitHub UI action)
-3. **ST-73 / GitHub #61**: ✅ Complete — Production 403 verified (smoke run 30615346890). Secret cleaned up. Account cleanup is Owner action (JWT remains valid up to 7 days).
+3. **ST-73 / GitHub #61**: ✅ Complete — Production 403 verified (smoke run 30615346890). Secret cleaned up. Temporary account disabled/deleted by Owner. JWT may remain cryptographically valid up to 7 days.
 
 ## Current Status
 
@@ -95,7 +95,7 @@
 **ST-72**: Branch protection configured and verified ✅
 **ST-73**: Production 403 verified ✅ (smoke run 30615346890)
 
-**Residual note**: The temporary staff account JWT may remain cryptographically valid for up to 7 days after verification. Account deactivation does not revoke issued JWTs. Owner should disable/delete the temporary account.
+**Residual note**: The temporary staff account has been disabled/deleted by Owner. The JWT may remain cryptographically valid for up to 7 days after issue, but is no longer stored in any system (GitHub secret deleted, account disabled). No further use is authorized.
 
 **Owner decision**: `APPROVED — CLOSE ST-71 CORE WORK AND CREATE TWO FOLLOW-UP ISSUES` (2026-07-30)
 **Linear status**: Done (core engineering complete)
@@ -115,7 +115,7 @@ Both Owner-controlled follow-ups are complete:
 1. **ST-72 / GitHub #60**: ✅ Branch protection configured and verified (Ruleset "Protect main", ID 20102920)
 2. **ST-73 / GitHub #61**: ✅ Production 403 verified (smoke run 30615346890, all 4 routes passed, secret cleaned up)
 
-ST-71 core engineering work and all follow-ups are complete. Remaining: temporary account cleanup (Owner action — JWT valid up to 7 days).
+ST-71 core engineering work and all follow-ups are complete. Temporary account disabled/deleted by Owner. All credentials cleaned up.
 
 ## ST-72 Branch Protection Verification
 
@@ -125,7 +125,7 @@ ST-71 core engineering work and all follow-ups are complete. Remaining: temporar
 - Branch must be up to date before merging (strict policy).
 - Force pushes blocked. Branch deletion blocked.
 - Bypass list empty. Administrators cannot bypass.
-- ST-73 / GitHub #61 (Production 403 verification) remains pending separately.
+- ST-73 / GitHub #61 (Production 403 verification) — ✅ verified (smoke run 30615346890), secret + account cleaned up.
 
 ## References
 
