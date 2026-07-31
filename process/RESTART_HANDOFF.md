@@ -27,7 +27,7 @@
 ## 2. Current project status
 
 - **ST-71 core engineering work is COMPLETE** (PRs #51–#59 merged)
-- **Linear ST-71**: Owner may mark Done — verify actual state on resume
+- **Linear ST-71**: Done (core engineering work complete)
 - **GitHub Issue #50**: OPEN (closure pending PR #62 merge)
 - **PR #62**: DRAFT, unmerged — closure documentation
 - **Closure documentation still requires Owner release approval**:
@@ -94,8 +94,10 @@ APPROVED — RELEASE ST-71 CLOSURE DOCUMENTATION
 3. Squash merge: `PUT /pulls/62/merge` with `merge_method: squash`
 4. Verify `main` points to merge commit
 5. Close Issue #50 as completed
-6. Mark Linear ST-71 complete
-7. Update Notion Command Center
+6. Preserve Linear ST-71 as Done (already Done — do not change)
+7. Add Linear closure comment with merge commit + follow-up links
+8. Update Notion Command Center
+9. Keep ST-72/ST-73 and #60/#61 open
 
 ---
 
@@ -215,9 +217,9 @@ RESUME FROM process/RESTART_HANDOFF.md — VERIFY STATE BEFORE ACTION
 
 These inconsistencies exist as of 2026-07-30 23:30 +07. **Do NOT silently correct them tonight.**
 
-1. **Linear ST-71 may already be Done** while GitHub #50 remains open.
-   - This is expected: Owner may have updated Linear before GitHub closure.
-   - Resolution: close GitHub #50 after PR #62 merges, then verify Linear reflects final state.
+1. **Linear ST-71 is Done** while GitHub #50 remains open.
+   - This is expected: Owner marked ST-71 Done before GitHub closure.
+   - Resolution: close GitHub #50 after PR #62 merges. Preserve Linear ST-71 as Done.
 
 2. **PR #62 remains Draft** despite ST-71 core completion.
    - This is by design: closure documentation must be reviewed and merged with separate Owner approval.
