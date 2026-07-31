@@ -299,7 +299,20 @@ export function createPrismaStockTransferDeps(
         data: data as Prisma.StockTransferCreateInput,
         include: {
           sourceProduct: { select: { id: true, name: true } },
-          items: { include: { product: { select: { id: true, name: true } } } },
+          // ST-60: explicit select on items to avoid querying weightExpression
+          // (column exists in schema but migration not yet applied to Production DB)
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              weight: true,
+              isWaste: true,
+              costPerKg: true,
+              totalCost: true,
+              outputPricePerKg: true,
+              product: { select: { id: true, name: true } },
+            },
+          },
         },
       });
       return created as unknown as CreatedTransfer;
