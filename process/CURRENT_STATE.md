@@ -114,7 +114,13 @@ ST-71 core engineering work is complete. No further code changes are required fo
 
 ## ST-72 Branch Protection Verification
 
-- ST-72 branch protection verification PR in progress.
+- ST-72 branch protection configured and verified via Repository Ruleset "Protect main" (ID 20102920, enforcement: active).
+- Required approvals: 0 (single-maintainer repository).
+- Five universal checks required: `Foundation Validation`, `Lint`, `TypeScript Typecheck`, `Production Build`, `Unit Tests`.
+- Branch must be up to date before merging (strict policy).
+- Force pushes blocked. Branch deletion blocked.
+- Bypass list empty. Administrators cannot bypass.
+- ST-73 / GitHub #61 (Production 403 verification) remains pending separately.
 
 ## References
 
