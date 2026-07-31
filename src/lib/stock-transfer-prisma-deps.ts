@@ -292,6 +292,33 @@ export function createPrismaStockTransferDeps(
       return { costPerKg: Math.round((totalCost / weightToDeduct) * 100) / 100, totalCost: Math.round(totalCost * 100) / 100, deductedLots };
     },
 
+    // ST-62: Find existing transfer by idempotency key
+    async findByIdempotencyKey(key: string): Promise<{ transfer: CreatedTransfer; auditDetails: Record<string, unknown> } | null> {
+      const existing = await client.stockTransfer.findFirst({
+        where: { idempotencyKey: key },
+        include: {
+          sourceProduct: { select: { id: true, name: true } },
+          items: {
+            select: {
+              id: true,
+              productId: true,
+              weight: true,
+              isWaste: true,
+              costPerKg: true,
+              totalCost: true,
+              outputPricePerKg: true,
+              product: { select: { id: true, name: true } },
+            },
+          },
+        },
+      });
+      if (!existing) return null;
+      return {
+        transfer: existing as unknown as CreatedTransfer,
+        auditDetails: { idempotentReplay: true, originalTransferId: existing.id },
+      };
+    },
+
     async createStockTransfer(data: Record<string, unknown>): Promise<CreatedTransfer> {
       // The service builds the data via buildStockTransferCreateData; cast to the
       // Prisma-expected input shape and include the same relations as the old route.

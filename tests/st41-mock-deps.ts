@@ -102,6 +102,7 @@ export function createMockDeps(options: {
         deductedLots: [{ id: 'lot-1', deducted: weightToDeduct }],
       };
     },
+    async findByIdempotencyKey(_key: string) { return null; },
     async createStockTransfer(data: Record<string, unknown>) {
       state.createStockTransferCalls.push(data);
       if (options.createTransferShouldThrow) throw options.createTransferShouldThrow;

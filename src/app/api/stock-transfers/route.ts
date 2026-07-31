@@ -49,6 +49,9 @@ export async function POST(request: NextRequest) {
     request.headers.get('x-request-id') ||
     `srv-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+  // ST-62: Read durable idempotency key (optional, backward-compatible).
+  const idempotencyKey = request.headers.get('x-idempotency-key') || null;
+
   const tracker = createStageTracker();
 
   // --- Auth: admin or transfer.create permission (staff allowed by default) ---
@@ -139,7 +142,7 @@ export async function POST(request: NextRequest) {
 
   try {
     result = await createStockTransfer(
-      deps, body, auth, requestId,
+      deps, body, auth, requestId, idempotencyKey,
       (stage, durationMs) => { tracker.push(stage, durationMs); },
       (key, value) => { if (key === 'sourceLotCount') sourceLotCount = value as number; },
     );

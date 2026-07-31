@@ -249,6 +249,7 @@ model SortingBillItem {
 model StockTransfer {
   id                     String              @id @default(cuid())
   billNumber             String?             @unique
+  idempotencyKey         String?             @unique // ST-62: durable request-level idempotency
   date                   DateTime            @default(now())
   roomNumber             String? // เลขห้อง (dedicated field; do not use note for room)
   businessType           String? // คัดแยก | แกะของ | null — business classification for History tab display (null/empty = แกะของ default)

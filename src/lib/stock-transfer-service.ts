@@ -125,6 +125,7 @@ export interface StockTransferDeps {
   generateBillNumber(): Promise<string>;
   deductSourceLots(productId: string, weightToDeduct: number): Promise<DeductResult>;
   createStockTransfer(data: Record<string, unknown>): Promise<CreatedTransfer>;
+  findByIdempotencyKey(key: string): Promise<{ transfer: CreatedTransfer; auditDetails: Record<string, unknown> } | null>;
   createOutputStockLot(data: Record<string, unknown>): Promise<void>;
   createStockMovements(data: StockMovementDraft[]): Promise<void>;
   createAuditLog(data: AuditLogInput): Promise<void>;
@@ -425,10 +426,24 @@ export async function createStockTransfer(
   input: StockTransferInput,
   auth: AuthInfo,
   requestId: string,
+  idempotencyKey?: string | null,
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<ServiceResult> {
-  const result = await createStockTransferInternal(deps, input, auth, requestId, onStage, onMeta);
+  // ST-62: Durable idempotency check
+  if (idempotencyKey) {
+    const existing = await deps.findByIdempotencyKey(idempotencyKey);
+    if (existing) {
+      return {
+        ok: true,
+        status: 201,
+        transfer: existing.transfer,
+        auditDetails: existing.auditDetails,
+        transactionOutcome: 'COMMIT',
+      };
+    }
+  }
+  const result = await createStockTransferInternal(deps, input, auth, requestId, idempotencyKey, onStage, onMeta);
   return { ...result, transactionOutcome: result.transactionOutcome ?? 'UNKNOWN' };
 }
 
@@ -437,6 +452,7 @@ async function createStockTransferInternal(
   input: StockTransferInput,
   auth: AuthInfo,
   requestId: string,
+  idempotencyKey?: string | null,
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<InternalServiceResult> {
@@ -620,7 +636,7 @@ async function createStockTransferInternal(
     try {
       const committed = await deps.transaction(async tx => {
         transactionCallbackStarted = true;
-        const result = await createStockTransferInternal(tx, input, auth, requestId, onStage, onMeta);
+        const result = await createStockTransferInternal(tx, input, auth, requestId, idempotencyKey, onStage, onMeta);
         if (!result.ok) {
           failed = result;
           throw rollback;
@@ -711,6 +727,9 @@ async function createStockTransferInternal(
       allocatedItems,
       storedBusinessDate: dateValidation.storedBusinessDate,
     });
+    if (idempotencyKey) {
+      (createData as Record<string, unknown>).idempotencyKey = idempotencyKey;
+    }
     created = await time('transfer_creation', () => deps.createStockTransfer(createData));
   } catch (err) {
     // Compensate: restore deducted lots + ROLLED_BACK audit
