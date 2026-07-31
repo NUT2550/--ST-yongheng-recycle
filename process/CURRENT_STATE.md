@@ -112,6 +112,10 @@ Two Owner-controlled follow-ups are tracked separately:
 
 ST-71 core engineering work is complete. No further code changes are required for ST-71 closure.
 
+## ST-72 Branch Protection Verification
+
+- ST-72 branch protection verification PR in progress.
+
 ## References
 
 - `AGENTS.md` — AI entry point
