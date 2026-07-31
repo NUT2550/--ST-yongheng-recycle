@@ -32,7 +32,7 @@
 | **ST-71 / PR #58** | Merged | Cancel PostgreSQL runtime regression harness + CAS concurrency fix. |
 | **ST-71 / PR #59** | Merged | CURRENT_STATE reconciliation after PR #58. |
 | **ST-72 / GitHub #60** | Open | Configure and verify main branch protection. |
-| **ST-73 / GitHub #61** | Open | Verify authenticated Production 403 cancellation authorization. |
+| **ST-73 / GitHub #61** | Verified | Production 403 PERMISSION_DENIED verified (smoke run 30615346890). All 4 routes returned 403. Secret cleaned up. |
 
 ## Recently Completed
 
@@ -63,12 +63,12 @@
 
 ## Current Unverified Behavior
 
-- ❌ **403 PERMISSION_DENIED** — not tested in Production (requires `STAFF_TOKEN_NO_HISTORY_EDIT` GitHub Actions secret; Owner credential setup pending). Automated tests + PostgreSQL runtime tests cover the contract.
+- ✅ **403 PERMISSION_DENIED** — verified in Production (smoke run 30615346890, 2026-07-31). All 4 routes (Buy/Sell/Transfer/Sorting DELETE) returned HTTP 403 with code `PERMISSION_DENIED` for authenticated staff without `history.edit`. Secret cleaned up after verification.
 - ✅ **Buy/Sell/Transfer cancellation** — covered by PostgreSQL runtime tests (PR #58: successful, duplicate, downstream rejection, rollback, concurrent). NOT tested in Production (no live cancellation performed).
 - ❌ **Buy/Sell/Transfer Production cancellation** — not tested in Production (by design — no Production mutation performed)
 - ❌ **Dashboard** — no automated test, not Production-verified
 - ❌ **Stock page** — no automated test, not Production-verified
-- ✅ **Post-deploy smoke test** — production-smoke.yml workflow (PR #52); 401 checks verified, 403 pending `STAFF_TOKEN_NO_HISTORY_EDIT` secret
+- ✅ **Post-deploy smoke test** — production-smoke.yml workflow (PR #52); 401 + 403 checks verified (smoke run 30615346890)
 
 ## Active Blockers and Risks
 
@@ -76,9 +76,9 @@
 |---|---|---|
 | Buy/Sell/Transfer cancel runtime PostgreSQL coverage | P0 | ✅ Resolved: PostgreSQL runtime coverage released (PR #58). 21 tests, 104 expectations, 0 skipped in CI. Covers successful, duplicate, downstream rejection, rollback, concurrent. |
 | Buy/Sell/Transfer concurrent cancellation race | P0 | ✅ Resolved: CAS guard (`updateMany` + `isCancelled: false` + `count !== 1`) proven effective by PostgreSQL concurrent tests (PR #58). Exactly one winner, loser gets 409, zero duplicate writes. |
-| 403 PERMISSION_DENIED not Production-verified | P2 | Moved to ST-73 / GitHub #61. Owner acceptance test (not regression gate). 71 automated + runtime tests cover contract. |
+| 403 PERMISSION_DENIED Production-verified | P2 | ✅ Resolved: ST-73 / GitHub #61. Smoke run 30615346890 verified all 4 routes return 403 `PERMISSION_DENIED`. Secret cleaned up. |
 | Direct route-handler import blocked by `server-only` | P1 | ✅ Resolved: cancellation logic extracted to service functions (PR #58). Runtime tests import services directly. |
-| Production 403 verification | P2 | Moved to ST-73 / GitHub #61. `STAFF_TOKEN_NO_HISTORY_EDIT` secret not configured. |
+| Production 403 verification | P2 | ✅ Resolved: ST-73 / GitHub #61. Verified via smoke run 30615346890. Secret deleted after verification. |
 | Branch protection not configured | P2 | Moved to ST-72 / GitHub #60. Governance follow-up (not engineering). Owner UI action. |
 | weightExpression migration not run | P0 | Pending Owner decision |
 
@@ -86,11 +86,16 @@
 
 1. **weightExpression migration** — `prisma/migrations/add_weight_expression.sql` ready but NOT run. Owner decision required.
 2. **ST-72 / GitHub #60**: Configure main branch protection (GitHub UI action)
-3. **ST-73 / GitHub #61**: Verify Production 403 (requires `STAFF_TOKEN_NO_HISTORY_EDIT` secret + temporary staff account)
+3. **ST-73 / GitHub #61**: ✅ Complete — Production 403 verified (smoke run 30615346890). Secret cleaned up. Account cleanup is Owner action (JWT remains valid up to 7 days).
 
 ## Current Status
 
-`ST-71 CORE WORK COMPLETE — OWNER-CONTROLLED FOLLOW-UPS TRACKED SEPARATELY`
+`ST-71 FULLY COMPLETE — ALL FOLLOW-UPS VERIFIED`
+
+**ST-72**: Branch protection configured and verified ✅
+**ST-73**: Production 403 verified ✅ (smoke run 30615346890)
+
+**Residual note**: The temporary staff account JWT may remain cryptographically valid for up to 7 days after verification. Account deactivation does not revoke issued JWTs. Owner should disable/delete the temporary account.
 
 **Owner decision**: `APPROVED — CLOSE ST-71 CORE WORK AND CREATE TWO FOLLOW-UP ISSUES` (2026-07-30)
 **Linear status**: Done (core engineering complete)
@@ -106,11 +111,11 @@
 
 ## Next Safe Work Item
 
-Two Owner-controlled follow-ups are tracked separately:
-1. **ST-72 / GitHub #60**: Configure and verify main branch protection (GitHub UI)
-2. **ST-73 / GitHub #61**: Verify authenticated Production 403 (requires `STAFF_TOKEN_NO_HISTORY_EDIT` secret + temporary staff account)
+Both Owner-controlled follow-ups are complete:
+1. **ST-72 / GitHub #60**: ✅ Branch protection configured and verified (Ruleset "Protect main", ID 20102920)
+2. **ST-73 / GitHub #61**: ✅ Production 403 verified (smoke run 30615346890, all 4 routes passed, secret cleaned up)
 
-ST-71 core engineering work is complete. No further code changes are required for ST-71 closure.
+ST-71 core engineering work and all follow-ups are complete. Remaining: temporary account cleanup (Owner action — JWT valid up to 7 days).
 
 ## ST-72 Branch Protection Verification
 
