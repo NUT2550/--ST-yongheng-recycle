@@ -33,25 +33,25 @@ function prismaError(code: string, message: string): Error {
 describe('ST-61 explicit transaction boundary outcome', () => {
   test('pre-transaction malformed input is UNKNOWN', async () => {
     const { deps } = createMockDeps();
-    const result = await createStockTransfer(deps, { ...INPUT, sourceWeight: 0 }, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, { ...INPUT, sourceWeight: 0 }, AUTH, REQUEST_ID, null);
     expect(result.transactionOutcome).toBe('UNKNOWN');
   });
 
   test('pre-transaction product not found is UNKNOWN', async () => {
     const { deps } = createMockDeps({ sourceProduct: null });
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.transactionOutcome).toBe('UNKNOWN');
   });
 
   test('pre-transaction insufficient stock is UNKNOWN', async () => {
     const { deps } = createMockDeps({ sourceLots: [{ ...LOTS[0], remainingWeight: 1 }] });
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.transactionOutcome).toBe('UNKNOWN');
   });
 
   test('successful transaction resolution is COMMIT', async () => {
     const { deps } = createMockDeps({ sourceLots: LOTS });
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.ok).toBe(true);
     expect(result.transactionOutcome).toBe('COMMIT');
   });
@@ -61,7 +61,7 @@ describe('ST-61 explicit transaction boundary outcome', () => {
       sourceLots: LOTS,
       createTransferShouldThrow: new Error('write failed'),
     });
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.ok).toBe(false);
     expect(result.transactionOutcome).toBe('ROLLBACK');
   });
@@ -71,14 +71,14 @@ describe('ST-61 explicit transaction boundary outcome', () => {
       sourceLots: LOTS,
       createTransferShouldThrow: prismaError('P2028', 'expired'),
     });
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.transactionOutcome).toBe('ROLLBACK');
   });
 
   test('P2028 before the transaction callback starts is UNKNOWN', async () => {
     const { deps } = createMockDeps({ sourceLots: LOTS });
     deps.transaction = async () => { throw prismaError('P2028', 'connection acquisition timeout'); };
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.ok).toBe(false);
     expect(result.transactionOutcome).toBe('UNKNOWN');
     if (!result.ok) {
@@ -91,7 +91,7 @@ describe('ST-61 explicit transaction boundary outcome', () => {
   test('generic rejection before the transaction callback starts is UNKNOWN', async () => {
     const { deps } = createMockDeps({ sourceLots: LOTS });
     deps.transaction = async () => { throw new Error('pool unavailable'); };
-    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID);
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, null);
     expect(result.transactionOutcome).toBe('UNKNOWN');
   });
 

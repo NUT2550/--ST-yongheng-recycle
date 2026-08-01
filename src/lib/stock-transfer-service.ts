@@ -425,10 +425,11 @@ export async function createStockTransfer(
   input: StockTransferInput,
   auth: AuthInfo,
   requestId: string,
+  idempotencyKey?: string | null,
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<ServiceResult> {
-  const result = await createStockTransferInternal(deps, input, auth, requestId, onStage, onMeta);
+  const result = await createStockTransferInternal(deps, input, auth, requestId, idempotencyKey, onStage, onMeta);
   return { ...result, transactionOutcome: result.transactionOutcome ?? 'UNKNOWN' };
 }
 
@@ -437,6 +438,7 @@ async function createStockTransferInternal(
   input: StockTransferInput,
   auth: AuthInfo,
   requestId: string,
+  idempotencyKey?: string | null,
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<InternalServiceResult> {
@@ -620,7 +622,7 @@ async function createStockTransferInternal(
     try {
       const committed = await deps.transaction(async tx => {
         transactionCallbackStarted = true;
-        const result = await createStockTransferInternal(tx, input, auth, requestId, onStage, onMeta);
+        const result = await createStockTransferInternal(tx, input, auth, requestId, idempotencyKey, onStage, onMeta);
         if (!result.ok) {
           failed = result;
           throw rollback;
@@ -711,6 +713,11 @@ async function createStockTransferInternal(
       allocatedItems,
       storedBusinessDate: dateValidation.storedBusinessDate,
     });
+    // ST-62: Write idempotencyKey to StockTransfer during creation
+    // This creates a durable correlation that survives even if markSucceeded fails
+    if (idempotencyKey) {
+      (createData as Record<string, unknown>).idempotencyKey = idempotencyKey;
+    }
     created = await time('transfer_creation', () => deps.createStockTransfer(createData));
   } catch (err) {
     // Compensate: restore deducted lots + ROLLED_BACK audit

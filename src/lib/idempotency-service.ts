@@ -146,8 +146,13 @@ export async function markFailed(
 }
 
 /**
- * Check if a stale PROCESSING record has a corresponding committed resource.
- * Used for recovery when the success-state update may have failed.
+ * Check if a stale PROCESSING record has a corresponding committed StockTransfer.
+ * Used for recovery when the success-state update (markSucceeded) may have failed.
+ *
+ * ST-62 atomicity fix: The idempotencyKey is written to StockTransfer DURING
+ * creation (same Prisma create call), so if the transfer committed, we can
+ * always find it by querying StockTransfer WHERE idempotencyKey = key.
+ * This closes the commit-versus-state-update window.
  */
 export async function checkStaleProcessing(
   db: PrismaClient,
@@ -155,20 +160,45 @@ export async function checkStaleProcessing(
 ): Promise<{ resourceId: string | null } | null> {
   const record = await db.idempotencyRecord.findUnique({ where: { key } })
   if (!record || record.state !== 'PROCESSING') return null
-  // Check if a StockTransfer exists with this idempotency key
-  // Note: StockTransfer no longer has idempotencyKey column (removed in hardened design)
-  // Instead, we check by resourceId if it was partially set
+
+  // First check if resourceId was already set (markSucceeded partially ran)
   if (record.resourceId) {
     const transfer = await db.stockTransfer.findUnique({
       where: { id: record.resourceId },
       select: { id: true },
     })
     if (transfer) {
-      // The transfer was committed but the SUCCEEDED update failed
-      // Reconstruct the record
       return { resourceId: record.resourceId }
     }
   }
+
+  // ST-62 atomicity fix: query StockTransfer by idempotencyKey
+  // This finds transfers that committed but whose markSucceeded failed
+  const transfer = await db.stockTransfer.findFirst({
+    where: { idempotencyKey: key },
+    select: { id: true },
+  })
+  if (transfer) {
+    // The transfer was committed but markSucceeded failed
+    // Reconstruct the record by marking it SUCCEEDED
+    try {
+      await db.idempotencyRecord.update({
+        where: { key },
+        data: {
+          state: 'SUCCEEDED',
+          resourceId: transfer.id,
+          responseStatus: 201,
+          completedAt: new Date(),
+        },
+      })
+    } catch {
+      // If update fails (e.g., record was deleted by another reclaimer),
+      // the transfer still exists — return it for response reconstruction
+    }
+    return { resourceId: transfer.id }
+  }
+
+  // No committed transfer found — safe to treat as failed
   return { resourceId: null }
 }
 

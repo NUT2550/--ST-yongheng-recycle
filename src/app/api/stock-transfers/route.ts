@@ -18,7 +18,7 @@ import {
   type StageTiming,
 } from '@/lib/stock-transfer-logging';
 import { performance } from 'perf_hooks';
-import { claimIdempotency, markSucceeded, markFailed } from '@/lib/idempotency-service';
+import { claimIdempotency, markSucceeded, markFailed, checkStaleProcessing } from '@/lib/idempotency-service';
 import { computePayloadFingerprint, validateIdempotencyKey } from '@/lib/idempotency-fingerprint';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
@@ -175,6 +175,30 @@ export async function POST(request: NextRequest) {
     }
 
     if (claimResult.type === 'IN_PROGRESS') {
+      // ST-62: Check if the PROCESSING record is stale (committed transfer exists)
+      const staleCheck = await checkStaleProcessing(db, idempotencyKey);
+      if (staleCheck?.resourceId) {
+        // The previous request committed but didn't finish marking SUCCEEDED
+        // Reconstruct and return the original response
+        const existingTransfer = await db.stockTransfer.findUnique({
+          where: { id: staleCheck.resourceId },
+          include: {
+            sourceProduct: { select: { id: true, name: true } },
+            items: {
+              select: { id: true, productId: true, weight: true, isWaste: true,
+                        costPerKg: true, totalCost: true, outputPricePerKg: true,
+                        product: { select: { id: true, name: true } } },
+            },
+          },
+        });
+        if (existingTransfer) {
+          const replayBody = { bill: existingTransfer };
+          return NextResponse.json(
+            { ...replayBody, idempotentReplay: true },
+            { status: 201, headers: { 'X-Request-ID': requestId } }
+          );
+        }
+      }
       return NextResponse.json(
         { error: 'คำขอกำลังดำเนินการ กรุณารอสักครู่', code: 'IDEMPOTENCY_IN_PROGRESS', requestId },
         { status: 409, headers: { 'X-Request-ID': requestId } }
@@ -202,7 +226,7 @@ export async function POST(request: NextRequest) {
 
   try {
     result = await createStockTransfer(
-      deps, body, auth, requestId,
+      deps, body, auth, requestId, idempotencyKey,
       (stage, durationMs) => { tracker.push(stage, durationMs); },
       (key, value) => { if (key === 'sourceLotCount') sourceLotCount = value as number; },
     );
