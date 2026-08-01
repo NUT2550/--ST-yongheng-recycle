@@ -1,0 +1,139 @@
+# ST-62: PostgreSQL runtime tests for stock-transfer idempotency.
+#
+# Runs real PostgreSQL tests for claim/replay/conflict/concurrency/recovery.
+# Uses ephemeral PostgreSQL 16 service container with non-Production credentials.
+#
+# Triggers:
+#   - Pull request to main when idempotency-related files change
+#   - Push to st-62 branch
+
+name: ST-62 PostgreSQL Idempotency
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/idempotency-service.ts'
+      - 'src/lib/idempotency-fingerprint.ts'
+      - 'src/lib/stock-transfer-service.ts'
+      - 'src/lib/stock-transfer-prisma-deps.ts'
+      - 'src/app/api/stock-transfers/**'
+      - 'tests/st62-postgres-idempotency.test.ts'
+      - 'tests/st62-idempotency.test.ts'
+      - '.github/workflows/st62-postgres-idempotency.yml'
+      - 'prisma/schema.prisma'
+      - 'prisma/migrations/**'
+      - 'package.json'
+      - 'bun.lock'
+  push:
+    branches:
+      - 'fix/st-62-stock-transfer-idempotency'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: st62-pg-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-idempotency:
+    name: ST-62 PostgreSQL Idempotency Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: st62_test
+          POSTGRES_PASSWORD: st62_test_nonprod_only
+          POSTGRES_DB: st62_idempotency_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U st62_test -d st62_idempotency_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://st62_test:st62_test_nonprod_only@localhost:5432/st62_idempotency_test?schema=public
+      JWT_SECRET: st62-ci-jwt-secret-not-for-production-use-only
+      CI_ST62_POSTGRES_REQUIRED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-st62-pg-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Validate Prisma schema
+        run: bunx prisma validate
+
+      - name: Push schema to test database (includes ST-62 migration)
+        run: bunx prisma db push --skip-generate
+
+      - name: Verify schema (IdempotencyRecord table exists)
+        run: |
+          set -e
+          PGPASSWORD=st62_test_nonprod_only psql -h localhost -U st62_test -d st62_idempotency_test -c "
+            SELECT table_name FROM information_schema.tables WHERE table_name = 'IdempotencyRecord';
+          " | grep -q IdempotencyRecord
+          echo "✓ IdempotencyRecord table exists"
+
+          PGPASSWORD=st62_test_nonprod_only psql -h localhost -U st62_test -d st62_idempotency_test -c "
+            SELECT column_name FROM information_schema.columns WHERE table_name = 'StockTransfer' AND column_name = 'idempotencyKey';
+          " | grep -q idempotencyKey
+          echo "✓ StockTransfer.idempotencyKey column exists"
+
+          PGPASSWORD=st62_test_nonprod_only psql -h localhost -U st62_test -d st62_idempotency_test -c "
+            SELECT indexname FROM pg_indexes WHERE tablename = 'IdempotencyRecord' AND indexname = 'IdempotencyRecord_key_key';
+          " | grep -q IdempotencyRecord_key_key
+          echo "✓ IdempotencyRecord_key_key unique index exists"
+
+          PGPASSWORD=st62_test_nonprod_only psql -h localhost -U st62_test -d st62_idempotency_test -c "
+            SELECT indexname FROM pg_indexes WHERE tablename = 'StockTransfer' AND indexname = 'StockTransfer_idempotencyKey_idx';
+          " | grep -q StockTransfer_idempotencyKey_idx
+          echo "✓ StockTransfer_idempotencyKey_idx index exists"
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Run ST-62 PostgreSQL idempotency tests
+        run: bun test tests/st62-postgres-idempotency.test.ts
+
+      - name: Run ST-62 unit tests
+        run: bun test tests/st62-idempotency.test.ts
+
+      - name: Verify zero-skip guard
+        run: |
+          set -e
+          echo "Checking that no ST-62 PostgreSQL tests were skipped..."
+          OUTPUT=$(bun test tests/st62-postgres-idempotency.test.ts 2>&1 || true)
+          echo "$OUTPUT" | tee /tmp/st62-pg-output.txt
+          if echo "$OUTPUT" | grep -q "SKIPPED]"; then
+            echo "::error::ST-62 PostgreSQL tests were skipped — see output above"
+            exit 1
+          fi
+          echo "All ST-62 PostgreSQL tests executed (none skipped)"
