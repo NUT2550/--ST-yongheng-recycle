@@ -99,7 +99,7 @@ describe('ST-61: P2028 transaction timeout classification', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createTransferShouldThrow: prismaError('P2028', 'Transaction expired'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(503);
@@ -115,7 +115,7 @@ describe('ST-61: P2028 transaction timeout classification', () => {
       sourceLots: ENOUGH_SOURCE_LOTS,
       deductShouldThrow: prismaError('P2028', 'Transaction expired during deduction'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(503);
@@ -130,7 +130,7 @@ describe('ST-61: P2028 transaction timeout classification', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createLotShouldThrow: prismaError('P2028', 'Transaction expired during lot creation'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(503);
@@ -147,7 +147,7 @@ describe('ST-61: P2028 transaction timeout classification', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createMovementShouldThrow: prismaError('P2028', 'Transaction expired during movements'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(503);
@@ -205,7 +205,7 @@ describe('ST-61: valid transfer saves successfully', () => {
       sourceLots: ENOUGH_SOURCE_LOTS,
       deductResult: ENOUGH_DEDUCT_RESULT,
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.status).toBe(201);
@@ -224,7 +224,7 @@ describe('ST-61: valid transfer saves successfully', () => {
       sourceLots: ENOUGH_SOURCE_LOTS,
       deductResult: ENOUGH_DEDUCT_RESULT,
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(true);
     // Verify the StockTransfer create data includes correct lossWeight
     // The mock deps records the create data
@@ -238,7 +238,7 @@ describe('ST-61: valid transfer saves successfully', () => {
     await createStockTransfer(deps, makeValidInput({
       sourceWeight: 135.6,
       roomNumber: '24',
-    }), AUTH, REQUEST_ID, null);
+    }), AUTH, REQUEST_ID);
     expect(state.createStockTransferCalls).toHaveLength(1);
     const createData = state.createStockTransferCalls[0];
     expect(createData).toBeDefined();
@@ -260,7 +260,7 @@ describe('ST-61: rollback on failure — no partial records', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createTransferShouldThrow: new Error('DB connection lost'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(500);
@@ -277,7 +277,7 @@ describe('ST-61: rollback on failure — no partial records', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createLotShouldThrow: new Error('DB error during lot creation'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     // Transaction rolled back
     expect(state.createStockTransferCalls).toHaveLength(0);
@@ -290,7 +290,7 @@ describe('ST-61: rollback on failure — no partial records', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createMovementShouldThrow: new Error('DB error during movements'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     expect(state.createStockTransferCalls).toHaveLength(0);
     expect(state.createOutputStockLotCalls).toHaveLength(0);
@@ -301,7 +301,7 @@ describe('ST-61: rollback on failure — no partial records', () => {
       sourceLots: ENOUGH_SOURCE_LOTS,
       deductShouldThrow: new Error('DB error during deduction'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     expect(state.createStockTransferCalls).toHaveLength(0);
     expect(state.createOutputStockLotCalls).toHaveLength(0);
@@ -315,7 +315,7 @@ describe('ST-61: rollback on failure — no partial records', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createTransferShouldThrow: prismaError('P2028', 'Transaction expired'),
     });
-    const result1 = await createStockTransfer(deps1, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result1 = await createStockTransfer(deps1, makeValidInput(), AUTH, REQUEST_ID);
     expect(result1.ok).toBe(false);
     expect(state1.createStockTransferCalls).toHaveLength(0);
 
@@ -325,7 +325,7 @@ describe('ST-61: rollback on failure — no partial records', () => {
       deductResult: ENOUGH_DEDUCT_RESULT,
       createTransferShouldThrow: prismaError('P2028', 'Transaction expired'),
     });
-    const result2 = await createStockTransfer(deps2, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result2 = await createStockTransfer(deps2, makeValidInput(), AUTH, REQUEST_ID);
     expect(result2.ok).toBe(false);
     expect(state2.createStockTransferCalls).toHaveLength(0);
     // No partial records from either attempt
@@ -342,7 +342,7 @@ describe('ST-61: insufficient stock — no deduction', () => {
       ],
     });
     // Request 135.6 kg but only 50 kg available
-    const result = await createStockTransfer(deps, makeValidInput({ sourceWeight: 135.6 }), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput({ sourceWeight: 135.6 }), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(400);
@@ -367,7 +367,7 @@ describe('ST-61: state snapshot verification after simulated failure', () => {
     expect(state.createStockTransferCalls).toHaveLength(0);
     expect(state.createOutputStockLotCalls).toHaveLength(0);
 
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
 
     // After a failed transaction, the mock's transaction() method restores
@@ -417,7 +417,7 @@ describe('ST-61: duplicate-submit limitation documented', () => {
       sourceLots: ENOUGH_SOURCE_LOTS,
       deductResult: ENOUGH_DEDUCT_RESULT,
     });
-    const result1 = await createStockTransfer(deps1, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result1 = await createStockTransfer(deps1, makeValidInput(), AUTH, REQUEST_ID);
     expect(result1.ok).toBe(true);
 
     // Second identical request with SAME requestId — currently succeeds
@@ -426,7 +426,7 @@ describe('ST-61: duplicate-submit limitation documented', () => {
       sourceLots: ENOUGH_SOURCE_LOTS,
       deductResult: ENOUGH_DEDUCT_RESULT,
     });
-    const result2 = await createStockTransfer(deps2, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result2 = await createStockTransfer(deps2, makeValidInput(), AUTH, REQUEST_ID);
     expect(result2.ok).toBe(true);
 
     // Both created a transfer — proving no idempotency

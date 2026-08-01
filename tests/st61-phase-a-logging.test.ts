@@ -243,9 +243,7 @@ describe('ST-61 Phase A: stage timing emitted via onStage callback', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
     });
     await createStockTransfer(
-      deps, makeValidInput(), AUTH, REQUEST_ID,
-      null,
-      (stage, durationMs) => stages.push({ stage, durationMs }),
+      deps, makeValidInput(), AUTH, REQUEST_ID, (stage, durationMs) => stages.push({ stage, durationMs }),
     );
 
     const stageNames = stages.map((s) => s.stage);
@@ -268,8 +266,7 @@ describe('ST-61 Phase A: stage timing emitted via onStage callback', () => {
     });
     await createStockTransfer(
       deps, makeValidInput(), AUTH, REQUEST_ID,
-      undefined,
-      undefined,
+        undefined,
       (key, value) => { meta[key] = value; },
     );
     expect(meta.sourceLotCount).toBe(1);
@@ -282,9 +279,7 @@ describe('ST-61 Phase A: stage timing emitted via onStage callback', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
     });
     await createStockTransfer(
-      deps, makeValidInput(), AUTH, REQUEST_ID,
-      null,
-      (stage, durationMs) => stages.push({ stage, durationMs }),
+      deps, makeValidInput(), AUTH, REQUEST_ID, (stage, durationMs) => stages.push({ stage, durationMs }),
     );
     for (const s of stages) {
       expect(typeof s.durationMs).toBe('number');
@@ -301,7 +296,7 @@ describe('ST-61 Phase A: source lot count = 1 (Owner scenario)', () => {
       sourceLots: ENOUGH_SOURCE_LOTS_1,
       deductResult: ENOUGH_DEDUCT_RESULT_1,
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.status).toBe(201);
@@ -316,7 +311,7 @@ describe('ST-61 Phase A: source lot count = 1 (Owner scenario)', () => {
       sourceLots: ENOUGH_SOURCE_LOTS_1,
       deductResult: ENOUGH_DEDUCT_RESULT_1,
     });
-    await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     const createData = state.createStockTransferCalls[0];
     // sourceWeight = 135.6, output total = 130.40, loss = 5.20
     expect(createData.sourceWeight).toBe(135.6);
@@ -333,7 +328,7 @@ describe('ST-61 Phase A: error path coverage', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
       createTransferShouldThrow: prismaError('P2028', 'Transaction expired'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(503);
@@ -349,7 +344,7 @@ describe('ST-61 Phase A: error path coverage', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
       createTransferShouldThrow: new Error('Transaction not found in pgbouncer'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(503);
@@ -363,7 +358,7 @@ describe('ST-61 Phase A: error path coverage', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
       createTransferShouldThrow: new Error('Unexpected internal error'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.status).toBe(500);
@@ -382,7 +377,7 @@ describe('ST-61 Phase A: rollback behavior with 1 source lot', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
       createTransferShouldThrow: new Error('DB error'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     expect(state.createStockTransferCalls).toHaveLength(0);
     expect(state.createOutputStockLotCalls).toHaveLength(0);
@@ -394,7 +389,7 @@ describe('ST-61 Phase A: rollback behavior with 1 source lot', () => {
       deductResult: ENOUGH_DEDUCT_RESULT_1,
       createLotShouldThrow: new Error('DB error during lot creation'),
     });
-    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     expect(result.ok).toBe(false);
     expect(state.createStockTransferCalls).toHaveLength(0);
     expect(state.createOutputStockLotCalls).toHaveLength(0);
@@ -411,9 +406,7 @@ describe('ST-61 Phase A: no business calculation regression', () => {
     });
     const stages: Array<{ stage: string; durationMs: number }> = [];
     await createStockTransfer(
-      deps, makeValidInput(), AUTH, REQUEST_ID,
-      null,
-      (stage, durationMs) => stages.push({ stage, durationMs }),
+      deps, makeValidInput(), AUTH, REQUEST_ID, (stage, durationMs) => stages.push({ stage, durationMs }),
     );
     // Verify the same loss calculation as before
     const createData = state.createStockTransferCalls[0];
@@ -427,7 +420,7 @@ describe('ST-61 Phase A: no business calculation regression', () => {
       sourceLots: ENOUGH_SOURCE_LOTS_1,
       deductResult: ENOUGH_DEDUCT_RESULT_1,
     });
-    await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null);
+    await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID);
     // Verify output lots were created (cost allocation happened)
     expect(state.createOutputStockLotCalls).toHaveLength(2);
     for (const lot of state.createOutputStockLotCalls) {
@@ -448,7 +441,7 @@ describe('ST-61 Phase A: no business calculation regression', () => {
       sourceLots: ENOUGH_SOURCE_LOTS_1,
       deductResult: ENOUGH_DEDUCT_RESULT_1,
     });
-    const result = await createStockTransfer(deps, input, AUTH, REQUEST_ID, null);
+    const result = await createStockTransfer(deps, input, AUTH, REQUEST_ID);
     expect(result.ok).toBe(true);
     expect(state.createOutputStockLotCalls).toHaveLength(3);
   });
