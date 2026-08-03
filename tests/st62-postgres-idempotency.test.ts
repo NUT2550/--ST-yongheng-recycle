@@ -106,6 +106,7 @@ describe('ST-62 claim behavior', () => {
     const hash = computePayloadFingerprint({
       sourceProductId: 'p1', sourceWeight: 100, businessType: null,
       date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
       items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
     })
     try {
@@ -122,6 +123,7 @@ describe('ST-62 claim behavior', () => {
     const hash = computePayloadFingerprint({
       sourceProductId: 'p1', sourceWeight: 100, businessType: null,
       date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
       items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
     })
     try {
@@ -141,11 +143,13 @@ describe('ST-62 claim behavior', () => {
     const hash1 = computePayloadFingerprint({
       sourceProductId: 'p1', sourceWeight: 100, businessType: null,
       date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
       items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
     })
     const hash2 = computePayloadFingerprint({
       sourceProductId: 'p1', sourceWeight: 200, businessType: null,
       date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
       items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
     })
     try {
@@ -164,6 +168,7 @@ describe('ST-62 claim behavior', () => {
     const hash = computePayloadFingerprint({
       sourceProductId: 'p1', sourceWeight: 100, businessType: null,
       date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
       items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
     })
     try {
@@ -182,6 +187,7 @@ describe('ST-62 claim behavior', () => {
     const hash = computePayloadFingerprint({
       sourceProductId: 'p1', sourceWeight: 100, businessType: null,
       date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
       items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
     })
     try {
@@ -365,5 +371,201 @@ describe('ST-62 missing key compatibility', () => {
 
   test('15. undefined key passes validation', () => {
     expect(validateIdempotencyKey(undefined)).toBeNull()
+  })
+})
+
+// ============================================================================
+// ST-62 review fix: concurrent duplicate submit → at most ONE StockTransfer
+// ============================================================================
+
+describe('ST-62 concurrent duplicate submit (review goal: at most one transfer)', () => {
+  test('16. two concurrent claimIdempotency with same key → exactly one NEW, one IN_PROGRESS', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `concurrent-dup-${SALT}`
+    const hash = computePayloadFingerprint({
+      sourceProductId: 'p1', sourceWeight: 100, businessType: null,
+      date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
+      items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
+    })
+    try {
+      // Fire two claims concurrently — the unique constraint on `key` guarantees
+      // only one INSERT wins; the other gets P2002 and returns IN_PROGRESS.
+      const [a, b] = await Promise.all([
+        claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE'),
+        claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE'),
+      ])
+      const types = [a.type, b.type].sort()
+      // Exactly one NEW and one IN_PROGRESS (order is non-deterministic).
+      expect(types).toEqual(['IN_PROGRESS', 'NEW'])
+    } finally {
+      await cleanup(key)
+    }
+  })
+
+  test('17. N=10 concurrent claims with same key → exactly one NEW, rest IN_PROGRESS', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `concurrent-n10-${SALT}`
+    const hash = computePayloadFingerprint({
+      sourceProductId: 'p1', sourceWeight: 100, businessType: null,
+      date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
+      items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
+    })
+    try {
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE'),
+        ),
+      )
+      const newCount = results.filter((r) => r.type === 'NEW').length
+      const inProgressCount = results.filter((r) => r.type === 'IN_PROGRESS').length
+      expect(newCount).toBe(1)
+      expect(inProgressCount).toBe(9)
+    } finally {
+      await cleanup(key)
+    }
+  })
+
+  test('18. only the NEW winner can create a StockTransfer — IN_PROGRESS loser does NOT', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `concurrent-create-${SALT}`
+    const hash = computePayloadFingerprint({
+      sourceProductId: 'p1', sourceWeight: 100, businessType: null,
+      date: '2026-07-31', laborCost: 0, gainReason: null,
+      roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null,
+      items: [{ productId: 'p2', weight: 50, isWaste: false, outputPricePerKg: 10 }],
+    })
+    try {
+      const [a, b] = await Promise.all([
+        claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE'),
+        claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE'),
+      ])
+      const winner = a.type === 'NEW' ? a : b
+      const loser = a.type === 'NEW' ? b : a
+      expect(winner.type).toBe('NEW')
+      expect(loser.type).toBe('IN_PROGRESS')
+
+      // Simulate the winner creating + committing the StockTransfer.
+      const client = prisma()
+      const cat = await client.productCategory.create({
+        data: { name: `ST62-cat-conc-${SALT}`, type: 'METAL', sortOrder: 0 },
+      })
+      const sourceProd = await client.product.create({
+        data: { name: `ST62-src-conc-${SALT}`, categoryId: cat.id },
+      })
+      const transfer = await client.stockTransfer.create({
+        data: {
+          billNumber: `XFER-CONC-${SALT}`,
+          sourceProductId: sourceProd.id,
+          sourceWeight: 100,
+          sourceCostPerKg: 10,
+          idempotencyKey: key,
+        },
+      })
+      await markSucceeded(prisma(), key, transfer.id, 201, '{"bill":{"id":"' + transfer.id + '"}}')
+
+      // The loser must NOT create its own transfer — it received IN_PROGRESS,
+      // which the route translates to 409 (no business operation runs).
+      const transfersForKey = await client.stockTransfer.findMany({
+        where: { idempotencyKey: key },
+        select: { id: true },
+      })
+      expect(transfersForKey).toHaveLength(1)
+      expect(transfersForKey[0].id).toBe(transfer.id)
+
+      // Cleanup transfer
+      await client.stockTransfer.delete({ where: { id: transfer.id } })
+      await client.product.delete({ where: { id: sourceProd.id } })
+      await client.productCategory.delete({ where: { id: cat.id } })
+    } finally {
+      await cleanup(key)
+    }
+  })
+})
+
+// ============================================================================
+// ST-62 review fix (M-3): stale-PROCESSING TTL recovery
+// ============================================================================
+
+describe('ST-62 stale-PROCESSING TTL recovery (M-3 fix)', () => {
+  test('19. fresh PROCESSING (< TTL) with no transfer → IN_PROGRESS (not reclaimed)', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `stale-fresh-${SALT}`
+    const hash = 'fake-hash'
+    try {
+      // Create a fresh PROCESSING record.
+      await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      // Immediately re-claim — should be IN_PROGRESS (not old enough to reclaim).
+      const result = await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      expect(result.type).toBe('IN_PROGRESS')
+    } finally {
+      await cleanup(key)
+    }
+  })
+
+  test('20. old PROCESSING (> TTL) with no committed transfer → reclaimed as NEW', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `stale-old-${SALT}`
+    const hash = 'fake-hash'
+    try {
+      // Create a PROCESSING record, then backdate its updatedAt past the TTL.
+      await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      const oldDate = new Date(Date.now() - (10 * 60 * 1000)) // 10 min ago > 5 min TTL
+      await prisma().idempotencyRecord.updateMany({
+        where: { key },
+        data: { updatedAt: oldDate },
+      })
+      // Re-claim — should reclaim (delete old + create new) and return NEW.
+      const result = await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      expect(result.type).toBe('NEW')
+    } finally {
+      await cleanup(key)
+    }
+  })
+
+  test('21. old PROCESSING (> TTL) WITH committed transfer → recovered via IN_PROGRESS path', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `stale-old-committed-${SALT}`
+    const hash = 'fake-hash'
+    try {
+      await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      const oldDate = new Date(Date.now() - (10 * 60 * 1000))
+      await prisma().idempotencyRecord.updateMany({
+        where: { key },
+        data: { updatedAt: oldDate },
+      })
+      // Create a committed transfer for this key (markSucceeded never ran).
+      const client = prisma()
+      const cat = await client.productCategory.create({
+        data: { name: `ST62-cat-stale-${SALT}`, type: 'METAL', sortOrder: 0 },
+      })
+      const sourceProd = await client.product.create({
+        data: { name: `ST62-src-stale-${SALT}`, categoryId: cat.id },
+      })
+      const transfer = await client.stockTransfer.create({
+        data: {
+          billNumber: `XFER-STALE-${SALT}`,
+          sourceProductId: sourceProd.id,
+          sourceWeight: 100,
+          sourceCostPerKg: 10,
+          idempotencyKey: key,
+        },
+      })
+      // Re-claim: stale + committed transfer exists → IN_PROGRESS (route will
+      // call checkStaleProcessing which recovers the committed transfer).
+      const result = await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      expect(result.type).toBe('IN_PROGRESS')
+      // And checkStaleProcessing finds the committed transfer.
+      const recovery = await checkStaleProcessing(prisma(), key)
+      expect(recovery?.resourceId).toBe(transfer.id)
+
+      // Cleanup transfer
+      await client.stockTransfer.delete({ where: { id: transfer.id } })
+      await client.product.delete({ where: { id: sourceProd.id } })
+      await client.productCategory.delete({ where: { id: cat.id } })
+    } finally {
+      await cleanup(key)
+    }
   })
 })

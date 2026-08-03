@@ -149,6 +149,12 @@ export async function POST(request: NextRequest) {
       date: body.date || '',
       laborCost: body.laborCost || 0,
       gainReason: body.gainReason,
+      // ST-62 review fix (M-5): include all business-meaningful fields so that
+      // changing any of them between same-key retries is a CONFLICT, not a REPLAY.
+      roomNumber: body.roomNumber,
+      note: body.note,
+      sourcePricePerKg: body.sourcePricePerKg,
+      weighedTotal: body.weighedTotal,
       items: (body.items || []).map((i) => ({
         productId: i.productId,
         weight: i.weight,
@@ -255,6 +261,18 @@ export async function POST(request: NextRequest) {
     transactionOutcome = 'UNKNOWN';
     errorCategory = classifyErrorSafe(err);
     prismaCode = errorCategory.prismaCode;
+    // ST-62 review fix (M-4): a throw that escapes the service leaves the
+    // IdempotencyRecord stuck in PROCESSING (the result.ok branch above never
+    // ran). Transition it to FAILED so the key is reclaimable on retry.
+    // If the throw happened AFTER commit, checkStaleProcessing will recover
+    // via the StockTransfer.idempotencyKey correlation on the next request.
+    if (idempotencyKey) {
+      try {
+        await markFailed(db, idempotencyKey, err instanceof Error ? err.message : 'unexpected throw');
+      } catch {
+        // Non-fatal: stale PROCESSING recovery (TTL) will handle this.
+      }
+    }
     const totalDurationMs = Math.round((performance.now() - requestStart) * 1000) / 1000;
     const transactionDurationMs = Math.round((performance.now() - serviceStart) * 1000) / 1000;
 

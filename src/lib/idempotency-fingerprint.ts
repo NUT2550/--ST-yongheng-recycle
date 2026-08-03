@@ -12,6 +12,12 @@
  * - Output items are sorted by productId
  * - Dates are normalized to ISO format (YYYY-MM-DD)
  * - JWT, requestId, and server-generated timestamps are excluded
+ * - ST-62 review fix: ALL business-meaningful fields are covered
+ *   (roomNumber, note, sourcePricePerKg, weighedTotal) so that changing
+ *   any of them between same-key retries is detected as CONFLICT, not REPLAY.
+ * - Expression strings (sourceWeightExpression, weighedTotalExpression,
+ *   item.weightExpression) are EXCLUDED — they are presentation of the
+ *   resolved numeric value already in the fingerprint, not business data.
  */
 
 import { createHash } from 'crypto'
@@ -30,6 +36,11 @@ interface FingerprintInput {
   date: string
   laborCost: number
   gainReason: string | null | undefined
+  // ST-62 review fix (M-5): business-meaningful fields previously omitted.
+  roomNumber: string | null | undefined
+  note: string | null | undefined
+  sourcePricePerKg: number | null | undefined
+  weighedTotal: number | null | undefined
   items: FingerprintItem[]
 }
 
@@ -51,6 +62,11 @@ export function computePayloadFingerprint(input: FingerprintInput): string {
     date: input.date.trim(),
     laborCost: round2(input.laborCost),
     gainReason: normalizeString(input.gainReason),
+    // ST-62 review fix (M-5): include business-meaningful fields.
+    roomNumber: normalizeString(input.roomNumber),
+    note: normalizeString(input.note),
+    sourcePricePerKg: input.sourcePricePerKg == null ? null : round2(input.sourcePricePerKg),
+    weighedTotal: input.weighedTotal == null ? null : round2(input.weighedTotal),
     items: [...input.items]
       .sort((a, b) => a.productId.localeCompare(b.productId))
       .map(item => ({

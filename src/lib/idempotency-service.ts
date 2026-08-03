@@ -3,11 +3,26 @@
  *
  * Manages IdempotencyRecord lifecycle: PROCESSING → SUCCEEDED/FAILED.
  * Uses DB unique constraint on key for atomic claim.
+ *
+ * ST-62 review fix (M-3/M-4): stale-PROCESSING recovery now has a TTL —
+ * a PROCESSING record older than STALE_PROCESSING_TTL_MS with no committed
+ * StockTransfer is treated as reclaimable (deleted + re-created as NEW),
+ * so a crashed request cannot permanently block a key with 409 IN_PROGRESS.
  */
 
 import type { PrismaClient } from '@prisma/client'
 
 export type IdempotencyState = 'PROCESSING' | 'SUCCEEDED' | 'FAILED'
+
+/**
+ * ST-62 review fix (M-3): a PROCESSING record older than this with no
+ * committed StockTransfer is considered stuck (the originating request
+ * likely crashed before commit) and may be reclaimed by a new request.
+ * 5 minutes is well above the longest legitimate stock-transfer transaction
+ * (Vercel Pro function timeout is 60s; PgBouncer transaction timeout is
+ * shorter) so a live in-flight request is never falsely reclaimed.
+ */
+export const STALE_PROCESSING_TTL_MS = 5 * 60 * 1000;
 
 export interface IdempotencyClaimResult {
   type: 'NEW' | 'REPLAY' | 'CONFLICT' | 'IN_PROGRESS' | 'RETRY_AFTER_FAILURE'
@@ -57,7 +72,27 @@ export async function claimIdempotency(
       return { type: 'CONFLICT', record: toRecord(existing) }
     }
     if (existing.state === 'PROCESSING') {
-      return { type: 'IN_PROGRESS', record: toRecord(existing) }
+      // ST-62 review fix (M-3): if the PROCESSING record is older than the TTL
+      // and no committed StockTransfer exists for this key, the originating
+      // request likely crashed before commit — reclaim it rather than blocking
+      // the key forever with 409 IN_PROGRESS.
+      const ageMs = Date.now() - existing.updatedAt.getTime()
+      if (ageMs >= STALE_PROCESSING_TTL_MS) {
+        const committed = await db.stockTransfer.findFirst({
+          where: { idempotencyKey: key },
+          select: { id: true },
+        })
+        if (!committed) {
+          // No committed transfer → safe to reclaim.
+          await db.idempotencyRecord.deleteMany({ where: { id: existing.id, state: 'PROCESSING' } })
+          // Fall through to create a new PROCESSING record.
+        } else {
+          // Transfer committed but markSucceeded never finished — recover.
+          return { type: 'IN_PROGRESS', record: toRecord(existing) }
+        }
+      } else {
+        return { type: 'IN_PROGRESS', record: toRecord(existing) }
+      }
     }
     if (existing.state === 'FAILED') {
       // Delete the failed record and retry
@@ -180,10 +215,13 @@ export async function checkStaleProcessing(
   })
   if (transfer) {
     // The transfer was committed but markSucceeded failed
-    // Reconstruct the record by marking it SUCCEEDED
+    // Reconstruct the record by marking it SUCCEEDED.
+    // ST-62 review fix (L-6): use updateMany with state='PROCESSING' guard
+    // (consistent with markSucceeded/markFailed) so a concurrent transition
+    // to FAILED cannot be overwritten back to SUCCEEDED here.
     try {
-      await db.idempotencyRecord.update({
-        where: { key },
+      await db.idempotencyRecord.updateMany({
+        where: { key, state: 'PROCESSING' },
         data: {
           state: 'SUCCEEDED',
           resourceId: transfer.id,
