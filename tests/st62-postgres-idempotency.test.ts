@@ -318,25 +318,25 @@ describe('ST-62 post-commit recovery', () => {
 
 describe('ST-62 fingerprint precision', () => {
   test('10. 100 and 100.00 produce same fingerprint', () => {
-    const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, items: [] as any[] }
+    const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null, items: [] as any[] }
     expect(computePayloadFingerprint({ ...base, sourceWeight: 100 }))
       .toBe(computePayloadFingerprint({ ...base, sourceWeight: 100.00 }))
   })
 
   test('11. 100.004 rounds to 100.00 (same fingerprint)', () => {
-    const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, items: [] as any[] }
+    const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null, items: [] as any[] }
     expect(computePayloadFingerprint({ ...base, sourceWeight: 100.004 }))
       .toBe(computePayloadFingerprint({ ...base, sourceWeight: 100 }))
   })
 
   test('12. 100.005 rounds to 100.01 (different fingerprint from 100.00)', () => {
-    const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, items: [] as any[] }
+    const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null, items: [] as any[] }
     expect(computePayloadFingerprint({ ...base, sourceWeight: 100.005 }))
       .not.toBe(computePayloadFingerprint({ ...base, sourceWeight: 100 }))
   })
 
   test('13. duplicate output rows with same productId are deterministic', () => {
-    const base = { sourceProductId: 'p', sourceWeight: 30, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null }
+    const base = { sourceProductId: 'p', sourceWeight: 30, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null }
     const items1 = [
       { productId: 'p2', weight: 10, isWaste: false, outputPricePerKg: 5 },
       { productId: 'p2', weight: 15, isWaste: false, outputPricePerKg: 5 },

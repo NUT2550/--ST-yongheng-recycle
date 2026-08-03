@@ -18,10 +18,6 @@ import {
   isFutureThailandDate,
   formatThailandBuddhistDate,
 } from '@/lib/thailand-date';
-import {
-  transferFormReducer,
-  type TransferFormState,
-} from '@/lib/transfer-form-controller';
 import { Product, TransferCartItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
