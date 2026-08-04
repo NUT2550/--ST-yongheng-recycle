@@ -18,6 +18,8 @@ import {
   type StageTiming,
 } from '@/lib/stock-transfer-logging';
 import { performance } from 'perf_hooks';
+import { claimIdempotency, markSucceeded, markRecoveredSucceeded, markFailed, checkStaleProcessing } from '@/lib/idempotency-service';
+import { computePayloadFingerprint, validateIdempotencyKey } from '@/lib/idempotency-fingerprint';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
 //
@@ -48,6 +50,23 @@ export async function POST(request: NextRequest) {
   const requestId =
     request.headers.get('x-request-id') ||
     `srv-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+  // ST-62: Read and validate idempotency key (optional, backward-compatible)
+  const rawIdempotencyKey = request.headers.get('x-idempotency-key') || null;
+  if (rawIdempotencyKey) {
+    const validationError = validateIdempotencyKey(rawIdempotencyKey);
+    if (validationError) {
+      return NextResponse.json(
+        { error: validationError === 'IDEMPOTENCY_KEY_TOO_LONG'
+            ? 'คีย์ยาวเกินไป'
+            : 'รูปแบบคีย์ไม่ถูกต้อง', code: validationError, requestId },
+        { status: 400, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+  }
+  const idempotencyKey = rawIdempotencyKey?.trim() || null;
+
+
 
   const tracker = createStageTracker();
 
@@ -121,6 +140,90 @@ export async function POST(request: NextRequest) {
   }
   tracker.end('validation');
 
+  // ST-62: Idempotency claim — check for existing record if key provided
+  if (idempotencyKey) {
+    const payloadHash = computePayloadFingerprint({
+      sourceProductId: body.sourceProductId || '',
+      sourceWeight: body.sourceWeight || 0,
+      sourceWeightExpression: body.sourceWeightExpression,
+      businessType: body.businessType,
+      date: body.date || '',
+      laborCost: body.laborCost || 0,
+      gainReason: body.gainReason,
+      // ST-62 review fix (M-5): include all business-meaningful fields so that
+      // changing any of them between same-key retries is a CONFLICT, not a REPLAY.
+      roomNumber: body.roomNumber,
+      note: body.note,
+      sourcePricePerKg: body.sourcePricePerKg,
+      weighedTotal: body.weighedTotal,
+      weighedTotalExpression: body.weighedTotalExpression,
+      items: (body.items || []).map((i) => ({
+        productId: i.productId,
+        weight: i.weight,
+        weightExpression: i.weightExpression,
+        isWaste: i.isWaste,
+        outputPricePerKg: i.outputPricePerKg || 0,
+      })),
+    });
+
+    const claimResult = await claimIdempotency(db, idempotencyKey, payloadHash, 'STOCK_TRANSFER_CREATE');
+
+    if (claimResult.type === 'REPLAY' && claimResult.record) {
+      const replayBody = JSON.parse(claimResult.record.responseBody || '{}');
+      return NextResponse.json(
+        { ...replayBody, idempotentReplay: true },
+        { status: claimResult.record.responseStatus || 201, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+
+    if (claimResult.type === 'CONFLICT') {
+      return NextResponse.json(
+        { error: 'คีย์นี้ถูกใช้กับคำขออื่นแล้ว', code: 'IDEMPOTENCY_KEY_REUSED_WITH_DIFFERENT_PAYLOAD', requestId },
+        { status: 409, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+
+    if (claimResult.type === 'IN_PROGRESS') {
+      // ST-62: Check if the PROCESSING record is stale (committed transfer exists)
+      const staleCheck = await checkStaleProcessing(db, idempotencyKey);
+      if (staleCheck?.resourceId) {
+        // The previous request committed but didn't finish marking SUCCEEDED
+        // Reconstruct and return the original response
+        const existingTransfer = await db.stockTransfer.findUnique({
+          where: { id: staleCheck.resourceId },
+          include: {
+            sourceProduct: { select: { id: true, name: true } },
+            items: {
+              select: { id: true, productId: true, weight: true, isWaste: true,
+                        costPerKg: true, totalCost: true, outputPricePerKg: true,
+                        product: { select: { id: true, name: true } } },
+            },
+          },
+        });
+        if (existingTransfer) {
+          const replayBody = { bill: existingTransfer };
+          await markRecoveredSucceeded(
+            db,
+            idempotencyKey,
+            existingTransfer.id,
+            201,
+            JSON.stringify(replayBody),
+          );
+          return NextResponse.json(
+            { ...replayBody, idempotentReplay: true },
+            { status: 201, headers: { 'X-Request-ID': requestId } }
+          );
+        }
+      }
+      return NextResponse.json(
+        { error: 'คำขอกำลังดำเนินการ กรุณารอสักครู่', code: 'IDEMPOTENCY_IN_PROGRESS', requestId },
+        { status: 409, headers: { 'X-Request-ID': requestId } }
+      );
+    }
+    // type === 'NEW' or 'RETRY_AFTER_FAILURE' — proceed with business operation
+  }
+
+
   // --- Call the production service via the Prisma deps adapter ---
   const auth: AuthInfo = {
     userId: payload.userId,
@@ -139,19 +242,43 @@ export async function POST(request: NextRequest) {
 
   try {
     result = await createStockTransfer(
-      deps, body, auth, requestId,
+      deps, body, auth, requestId, idempotencyKey,
       (stage, durationMs) => { tracker.push(stage, durationMs); },
       (key, value) => { if (key === 'sourceLotCount') sourceLotCount = value as number; },
     );
     transactionOutcome = result.transactionOutcome;
+
+    // Mark only confirmed-safe failures as FAILED. UNKNOWN 5xx outcomes may
+    // represent a committed PostgreSQL transaction with a lost acknowledgement,
+    // so they stay PROCESSING for durable recovery by idempotencyKey.
+    if (idempotencyKey) {
+      if (result.ok) {
+        const responseSnapshot = JSON.stringify({ bill: result.transfer });
+        try {
+          await markSucceeded(db, idempotencyKey, result.transfer.id, 201, responseSnapshot);
+        } catch {
+          // Non-fatal: stale PROCESSING recovery will handle this
+        }
+      } else if (result.transactionOutcome === 'ROLLBACK' || result.status < 500) {
+        try {
+          await markFailed(db, idempotencyKey, result.error || 'unknown error');
+        } catch {
+          // Non-fatal: stale PROCESSING recovery will handle this
+        }
+      }
+    }
   } catch (err) {
     // Defensive: the service catches all known errors internally and returns
     // a ServiceResult. Any throw that escapes is unexpected — log + 500.
     transactionOutcome = 'UNKNOWN';
     errorCategory = classifyErrorSafe(err);
     prismaCode = errorCategory.prismaCode;
+    // Do not mark an escaped throw FAILED: the transaction outcome is unknown.
+    // Keeping PROCESSING preserves the recovery path and prevents unsafe retry.
     const totalDurationMs = Math.round((performance.now() - requestStart) * 1000) / 1000;
     const transactionDurationMs = Math.round((performance.now() - serviceStart) * 1000) / 1000;
+
+
     emitStockTransferLog({
       requestId, route: '/api/stock-transfers', userId: payload.userId, username: payload.username,
       sourceProductId: body?.sourceProductId ?? '-', sourceWeight: body?.sourceWeight ?? 0,

@@ -249,6 +249,7 @@ model SortingBillItem {
 model StockTransfer {
   id                     String              @id @default(cuid())
   billNumber             String?             @unique
+  idempotencyKey         String?             // ST-62: durable correlation for recovery
   date                   DateTime            @default(now())
   roomNumber             String? // เลขห้อง (dedicated field; do not use note for room)
   businessType           String? // คัดแยก | แกะของ | null — business classification for History tab display (null/empty = แกะของ default)
@@ -281,6 +282,8 @@ model StockTransfer {
   cancelReason           String?
   createdAt              DateTime            @default(now())
   updatedAt              DateTime            @updatedAt
+
+  @@index([idempotencyKey])
 }
 
 model StockTransferItem {
@@ -393,6 +396,25 @@ model AuditLog {
 // ST-14: Compensation Operation Ledger — persistent operation tracking for
 // crash-safe, retry-safe rollback. An Operation has multiple Items (one per lot).
 // Retry with same requestId resumes the existing Operation, skipping COMPLETED items.
+// ST-62: Durable request-level idempotency for POST /api/stock-transfers.
+// Each record represents one idempotency-keyed business operation attempt.
+model IdempotencyRecord {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  operationType   String
+  payloadHash     String
+  state           String    @default("PROCESSING") // PROCESSING, SUCCEEDED, FAILED
+  resourceId      String?
+  responseStatus  Int?
+  responseBody    String?
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  completedAt     DateTime?
+
+  @@index([state, createdAt])
+}
+
 model CompensationOperation {
   id             String    @id @default(cuid())
   requestId      String    @unique // client/server request ID — one operation per request

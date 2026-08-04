@@ -425,10 +425,11 @@ export async function createStockTransfer(
   input: StockTransferInput,
   auth: AuthInfo,
   requestId: string,
+  idempotencyKey?: string | null,
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<ServiceResult> {
-  const result = await createStockTransferInternal(deps, input, auth, requestId, onStage, onMeta);
+  const result = await createStockTransferInternal(deps, input, auth, requestId, idempotencyKey, onStage, onMeta);
   return { ...result, transactionOutcome: result.transactionOutcome ?? 'UNKNOWN' };
 }
 
@@ -437,6 +438,7 @@ async function createStockTransferInternal(
   input: StockTransferInput,
   auth: AuthInfo,
   requestId: string,
+  idempotencyKey?: string | null,
   onStage?: (stage: string, durationMs: number) => void,
   onMeta?: (key: string, value: number | string) => void
 ): Promise<InternalServiceResult> {
@@ -616,20 +618,27 @@ async function createStockTransferInternal(
   if (!deps.isTransactionScoped) {
     let failed: Exclude<InternalServiceResult, { ok: true }> | null = null;
     let transactionCallbackStarted = false;
+    let transactionCallbackCompleted = false;
     const rollback = Symbol('stock-transfer-rollback');
     try {
       const committed = await deps.transaction(async tx => {
         transactionCallbackStarted = true;
-        const result = await createStockTransferInternal(tx, input, auth, requestId, onStage, onMeta);
+        const result = await createStockTransferInternal(tx, input, auth, requestId, idempotencyKey, onStage, onMeta);
         if (!result.ok) {
           failed = result;
           throw rollback;
         }
+        transactionCallbackCompleted = true;
         return result;
       });
       return { ...committed, transactionOutcome: 'COMMIT' };
     } catch (error) {
-      const transactionOutcome: TransactionOutcome = transactionCallbackStarted ? 'ROLLBACK' : 'UNKNOWN';
+      // If the callback returned successfully but Prisma rejected the outer
+      // transaction promise, COMMIT may have reached PostgreSQL while its
+      // acknowledgement was lost. That outcome must remain UNKNOWN/recoverable.
+      const transactionOutcome: TransactionOutcome = transactionCallbackCompleted
+        ? 'UNKNOWN'
+        : transactionCallbackStarted ? 'ROLLBACK' : 'UNKNOWN';
       if (error === rollback && failed) {
         return { ...(failed as Exclude<InternalServiceResult, { ok: true }>), transactionOutcome };
       }
@@ -711,6 +720,11 @@ async function createStockTransferInternal(
       allocatedItems,
       storedBusinessDate: dateValidation.storedBusinessDate,
     });
+    // ST-62: Write idempotencyKey to StockTransfer during creation
+    // This creates a durable correlation that survives even if markSucceeded fails
+    if (idempotencyKey) {
+      (createData as Record<string, unknown>).idempotencyKey = idempotencyKey;
+    }
     created = await time('transfer_creation', () => deps.createStockTransfer(createData));
   } catch (err) {
     // Compensate: restore deducted lots + ROLLED_BACK audit

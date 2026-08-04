@@ -4,6 +4,11 @@ import { useState, useEffect, useMemo, useCallback, useReducer } from 'react';
 import { useAppStore } from '@/lib/store';
 import { fetchProducts, createStockTransfer } from '@/lib/api';
 import {
+  transferFormReducer,
+  generateIdempotencyKey,
+  type TransferFormState,
+} from '@/lib/transfer-form-controller';
+import {
   formatBaht,
   formatWeight,
   calculateCartWeight,
@@ -13,10 +18,6 @@ import {
   isFutureThailandDate,
   formatThailandBuddhistDate,
 } from '@/lib/thailand-date';
-import {
-  transferFormReducer,
-  type TransferFormState,
-} from '@/lib/transfer-form-controller';
 import { Product, TransferCartItem } from '@/lib/types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -55,10 +56,11 @@ export function TransferPage() {
   const [loading, setLoading] = useState(true);
 
   // ST-41: form state (businessDate + submitting) managed by the tested reducer.
-  // Other state (cart, source product, etc.) stays as useState.
+  // ST-62: idempotencyKey is part of this state — stable per submission intent.
   const [formState, dispatch] = useReducer(transferFormReducer, {
     businessDate: '',
     submitting: false,
+    idempotencyKey: '',
   } as TransferFormState);
   const { businessDate } = formState;
 
@@ -99,8 +101,9 @@ export function TransferPage() {
   }, [loadProducts]);
 
   // ST-41: initialize the form reducer to today's Thailand date on mount.
+  // ST-62: generate the first idempotency key for this submission intent.
   useEffect(() => {
-    dispatch({ type: 'INIT' });
+    dispatch({ type: 'INIT', idempotencyKey: generateIdempotencyKey() });
   }, []);
 
   // Group ALL products by category
@@ -355,7 +358,10 @@ export function TransferPage() {
           isWaste: item.isWaste,
           outputPricePerKg: item.outputPricePerKg,
         })),
-      });
+      // ST-62: pass the stable per-intent idempotency key. Reused across
+      // double-click / retry / response-loss because the reducer preserves it
+      // until SUBMIT_SUCCESS. The server dedups via IdempotencyRecord.
+      }, formState.idempotencyKey);
 
       const billData = result as unknown as {
         bill?: { lossWeight: number; lossCost: number; profitLoss: number };
@@ -366,7 +372,8 @@ export function TransferPage() {
       setSourceWeightInput('');
       setWeighedTotalInput('');
       // ST-41: dispatch SUBMIT_SUCCESS — reducer resets date to today + submitting=false
-      dispatch({ type: 'SUBMIT_SUCCESS' });
+      // ST-62: dispatch with a NEW idempotency key — the next submission is a new intent.
+      dispatch({ type: 'SUBMIT_SUCCESS', nextIdempotencyKey: generateIdempotencyKey() });
       setNote('');
       setGainReason('');
 

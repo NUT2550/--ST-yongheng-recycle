@@ -238,11 +238,18 @@ export async function createSortingBill(
 }
 
 export async function createStockTransfer(
-  data: CreateStockTransferRequest
+  data: CreateStockTransferRequest,
+  // ST-62 review fix (H-1): the caller (form component) owns the key lifecycle
+  // and passes it in. The key must be stable per submission intent so that
+  // double-click, retry, timeout, and response-loss all reuse the SAME key,
+  // letting the server dedup via IdempotencyRecord. The key is NOT generated
+  // here — generating per-call defeated idempotency (each call got a new key).
+  idempotencyKey: string,
 ): Promise<StockTransfer> {
   return fetchJSON<StockTransfer>('/stock-transfers', {
     method: 'POST',
     body: JSON.stringify(data),
+    headers: { 'X-Idempotency-Key': idempotencyKey },
   });
 }
 
