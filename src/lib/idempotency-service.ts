@@ -4,10 +4,9 @@
  * Manages IdempotencyRecord lifecycle: PROCESSING → SUCCEEDED/FAILED.
  * Uses DB unique constraint on key for atomic claim.
  *
- * ST-62 review fix (M-3/M-4): stale-PROCESSING recovery now has a TTL —
- * a PROCESSING record older than STALE_PROCESSING_TTL_MS with no committed
- * StockTransfer is treated as reclaimable (deleted + re-created as NEW),
- * so a crashed request cannot permanently block a key with 409 IN_PROGRESS.
+ * Stale PROCESSING and FAILED claims are only reclaimed after checking the
+ * durable StockTransfer correlation. Reclaim uses an updatedAt/state CAS so
+ * concurrent workers cannot both acquire the same abandoned claim.
  */
 
 import type { PrismaClient } from '@prisma/client'
@@ -45,6 +44,36 @@ export interface IdempotencyRecord {
   responseBody: string | null
 }
 
+async function findCommittedTransfer(db: PrismaClient, key: string): Promise<{ id: string } | null> {
+  const transfers = await db.stockTransfer.findMany({
+    where: { idempotencyKey: key },
+    select: { id: true },
+    take: 2,
+  })
+  if (transfers.length > 1) {
+    throw new Error('IDEMPOTENCY_INTEGRITY_VIOLATION: multiple StockTransfer rows share one key')
+  }
+  return transfers[0] ?? null
+}
+
+async function resultAfterLostCas(
+  db: PrismaClient,
+  key: string,
+  payloadHash: string,
+): Promise<IdempotencyClaimResult> {
+  const winner = await db.idempotencyRecord.findUnique({ where: { key } })
+  if (!winner) {
+    throw new Error('IDEMPOTENCY_CLAIM_DISAPPEARED')
+  }
+  if (winner.payloadHash !== payloadHash) {
+    return { type: 'CONFLICT', record: toRecord(winner) }
+  }
+  if (winner.state === 'SUCCEEDED') {
+    return { type: 'REPLAY', record: toRecord(winner) }
+  }
+  return { type: 'IN_PROGRESS', record: toRecord(winner) }
+}
+
 /**
  * Attempt to claim an idempotency key.
  * Returns NEW if the key was successfully claimed (inserted as PROCESSING).
@@ -72,32 +101,71 @@ export async function claimIdempotency(
       return { type: 'CONFLICT', record: toRecord(existing) }
     }
     if (existing.state === 'PROCESSING') {
-      // ST-62 review fix (M-3): if the PROCESSING record is older than the TTL
-      // and no committed StockTransfer exists for this key, the originating
-      // request likely crashed before commit — reclaim it rather than blocking
-      // the key forever with 409 IN_PROGRESS.
+      if (existing.payloadHash !== payloadHash) {
+        return { type: 'CONFLICT', record: toRecord(existing) }
+      }
+
+      // Always check durable business state before permitting any retry.
+      const committed = await findCommittedTransfer(db, key)
+      if (committed) {
+        return { type: 'IN_PROGRESS', record: toRecord(existing) }
+      }
+
       const ageMs = Date.now() - existing.updatedAt.getTime()
       if (ageMs >= STALE_PROCESSING_TTL_MS) {
-        const committed = await db.stockTransfer.findFirst({
-          where: { idempotencyKey: key },
-          select: { id: true },
+        const reclaimed = await db.idempotencyRecord.updateMany({
+          where: {
+            id: existing.id,
+            state: 'PROCESSING',
+            updatedAt: existing.updatedAt,
+          },
+          data: {
+            payloadHash,
+            operationType,
+            updatedAt: new Date(),
+            resourceId: null,
+            responseStatus: null,
+            responseBody: null,
+            errorMessage: null,
+            completedAt: null,
+          },
         })
-        if (!committed) {
-          // No committed transfer → safe to reclaim.
-          await db.idempotencyRecord.deleteMany({ where: { id: existing.id, state: 'PROCESSING' } })
-          // Fall through to create a new PROCESSING record.
-        } else {
-          // Transfer committed but markSucceeded never finished — recover.
-          return { type: 'IN_PROGRESS', record: toRecord(existing) }
+        if (reclaimed.count === 1) {
+          return { type: 'NEW' }
         }
+        return resultAfterLostCas(db, key, payloadHash)
       } else {
         return { type: 'IN_PROGRESS', record: toRecord(existing) }
       }
     }
     if (existing.state === 'FAILED') {
-      // Delete the failed record and retry
-      await db.idempotencyRecord.delete({ where: { id: existing.id } })
-      // Fall through to create new
+      // A FAILED row may have been written by older code for an ambiguous
+      // commit. Durable correlation must be checked before reclaiming it.
+      const committed = await findCommittedTransfer(db, key)
+      if (committed) {
+        if (existing.payloadHash !== payloadHash) {
+          return { type: 'CONFLICT', record: toRecord(existing) }
+        }
+        return { type: 'IN_PROGRESS', record: toRecord(existing) }
+      }
+      const reclaimed = await db.idempotencyRecord.updateMany({
+        where: { id: existing.id, state: 'FAILED', updatedAt: existing.updatedAt },
+        data: {
+          state: 'PROCESSING',
+          payloadHash,
+          operationType,
+          updatedAt: new Date(),
+          resourceId: null,
+          responseStatus: null,
+          responseBody: null,
+          errorMessage: null,
+          completedAt: null,
+        },
+      })
+      if (reclaimed.count === 1) {
+        return { type: 'NEW' }
+      }
+      return resultAfterLostCas(db, key, payloadHash)
     }
   }
 
@@ -162,6 +230,27 @@ export async function markSucceeded(
   })
 }
 
+/** Finalize a recovery only after the route rebuilt the original response. */
+export async function markRecoveredSucceeded(
+  db: PrismaClient,
+  key: string,
+  resourceId: string,
+  responseStatus: number,
+  responseBody: string,
+): Promise<void> {
+  await db.idempotencyRecord.updateMany({
+    where: { key, state: { in: ['PROCESSING', 'FAILED'] } },
+    data: {
+      state: 'SUCCEEDED',
+      resourceId,
+      responseStatus,
+      responseBody,
+      errorMessage: null,
+      completedAt: new Date(),
+    },
+  })
+}
+
 /**
  * Mark an idempotency record as FAILED.
  */
@@ -194,7 +283,7 @@ export async function checkStaleProcessing(
   key: string,
 ): Promise<{ resourceId: string | null } | null> {
   const record = await db.idempotencyRecord.findUnique({ where: { key } })
-  if (!record || record.state !== 'PROCESSING') return null
+  if (!record || (record.state !== 'PROCESSING' && record.state !== 'FAILED')) return null
 
   // First check if resourceId was already set (markSucceeded partially ran)
   if (record.resourceId) {
@@ -209,30 +298,10 @@ export async function checkStaleProcessing(
 
   // ST-62 atomicity fix: query StockTransfer by idempotencyKey
   // This finds transfers that committed but whose markSucceeded failed
-  const transfer = await db.stockTransfer.findFirst({
-    where: { idempotencyKey: key },
-    select: { id: true },
-  })
+  const transfer = await findCommittedTransfer(db, key)
   if (transfer) {
-    // The transfer was committed but markSucceeded failed
-    // Reconstruct the record by marking it SUCCEEDED.
-    // ST-62 review fix (L-6): use updateMany with state='PROCESSING' guard
-    // (consistent with markSucceeded/markFailed) so a concurrent transition
-    // to FAILED cannot be overwritten back to SUCCEEDED here.
-    try {
-      await db.idempotencyRecord.updateMany({
-        where: { key, state: 'PROCESSING' },
-        data: {
-          state: 'SUCCEEDED',
-          resourceId: transfer.id,
-          responseStatus: 201,
-          completedAt: new Date(),
-        },
-      })
-    } catch {
-      // If update fails (e.g., record was deleted by another reclaimer),
-      // the transfer still exists — return it for response reconstruction
-    }
+    // The route must reconstruct the response body before finalizing SUCCEEDED;
+    // otherwise a later REPLAY could return an empty body.
     return { resourceId: transfer.id }
   }
 

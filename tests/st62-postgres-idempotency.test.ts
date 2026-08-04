@@ -23,6 +23,7 @@ import { computePayloadFingerprint, validateIdempotencyKey } from '../src/lib/id
 import {
   claimIdempotency,
   markSucceeded,
+  markRecoveredSucceeded,
   markFailed,
   checkStaleProcessing,
 } from '../src/lib/idempotency-service'
@@ -282,10 +283,12 @@ describe('ST-62 post-commit recovery', () => {
       expect(result).not.toBeNull()
       expect(result?.resourceId).toBe(transfer.id)
 
-      // Verify record was updated to SUCCEEDED
+      // Recovery is finalized only after the response snapshot is rebuilt.
+      await markRecoveredSucceeded(client, key, transfer.id, 201, JSON.stringify({ bill: { id: transfer.id } }))
       const record = await client.idempotencyRecord.findUnique({ where: { key } })
       expect(record?.state).toBe('SUCCEEDED')
       expect(record?.resourceId).toBe(transfer.id)
+      expect(record?.responseBody).toContain(transfer.id)
 
       // Cleanup transfer
       await client.stockTransfer.delete({ where: { id: transfer.id } })
@@ -323,16 +326,16 @@ describe('ST-62 fingerprint precision', () => {
       .toBe(computePayloadFingerprint({ ...base, sourceWeight: 100.00 }))
   })
 
-  test('11. 100.004 rounds to 100.00 (same fingerprint)', () => {
+  test('11. 100.004 remains distinct from 100 because Prisma persists Float precision', () => {
     const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null, items: [] as any[] }
     expect(computePayloadFingerprint({ ...base, sourceWeight: 100.004 }))
-      .toBe(computePayloadFingerprint({ ...base, sourceWeight: 100 }))
+      .not.toBe(computePayloadFingerprint({ ...base, sourceWeight: 100 }))
   })
 
-  test('12. 100.005 rounds to 100.01 (different fingerprint from 100.00)', () => {
+  test('12. item weight and output price precision remain distinct', () => {
     const base = { sourceProductId: 'p', sourceWeight: 100, businessType: null, date: '2026-07-31', laborCost: 0, gainReason: null, roomNumber: null, note: null, sourcePricePerKg: null, weighedTotal: null, items: [] as any[] }
-    expect(computePayloadFingerprint({ ...base, sourceWeight: 100.005 }))
-      .not.toBe(computePayloadFingerprint({ ...base, sourceWeight: 100 }))
+    expect(computePayloadFingerprint({ ...base, items: [{ productId: 'p2', weight: 1.0001, isWaste: false, outputPricePerKg: 2.0001 }] }))
+      .not.toBe(computePayloadFingerprint({ ...base, items: [{ productId: 'p2', weight: 1, isWaste: false, outputPricePerKg: 2 }] }))
   })
 
   test('13. duplicate output rows with same productId are deterministic', () => {
@@ -345,18 +348,11 @@ describe('ST-62 fingerprint precision', () => {
       { productId: 'p2', weight: 15, isWaste: false, outputPricePerKg: 5 },
       { productId: 'p2', weight: 10, isWaste: false, outputPricePerKg: 5 },
     ]
-    // Same items in different order should produce same fingerprint (sorted by productId)
-    // But with duplicate productIds, the sort is stable — order within same productId matters
-    // Since items1 and items2 have different ordering of the same items, the sort by productId
-    // may not reorder them (both have same productId). Let's check:
+    // Item row order is not persisted as business data, so equal row multisets
+    // must have the same canonical fingerprint even with duplicate product IDs.
     const h1 = computePayloadFingerprint({ ...base, items: items1 })
     const h2 = computePayloadFingerprint({ ...base, items: items2 })
-    // With sort by productId only, items with same productId may stay in original order
-    // This means h1 != h2 if the items have different weights
-    // This is actually CORRECT behavior — different payloads should produce different hashes
-    // The fingerprint distinguishes [{w:10},{w:15}] from [{w:15},{w:10}] even with same productId
-    // This is safe because the business operation would create different output lots
-    expect(h1).not.toBe(h2) // Different ordering of same-weight items = different payload
+    expect(h1).toBe(h2)
   })
 })
 
@@ -512,6 +508,7 @@ describe('ST-62 stale-PROCESSING TTL recovery (M-3 fix)', () => {
       // Create a PROCESSING record, then backdate its updatedAt past the TTL.
       await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
       const oldDate = new Date(Date.now() - (10 * 60 * 1000)) // 10 min ago > 5 min TTL
+      const before = await prisma().idempotencyRecord.findUniqueOrThrow({ where: { key } })
       await prisma().idempotencyRecord.updateMany({
         where: { key },
         data: { updatedAt: oldDate },
@@ -519,6 +516,9 @@ describe('ST-62 stale-PROCESSING TTL recovery (M-3 fix)', () => {
       // Re-claim — should reclaim (delete old + create new) and return NEW.
       const result = await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
       expect(result.type).toBe('NEW')
+      const after = await prisma().idempotencyRecord.findUniqueOrThrow({ where: { key } })
+      expect(after.id).toBe(before.id)
+      expect(after.updatedAt.getTime()).toBeGreaterThan(oldDate.getTime())
     } finally {
       await cleanup(key)
     }
@@ -566,6 +566,75 @@ describe('ST-62 stale-PROCESSING TTL recovery (M-3 fix)', () => {
       await client.productCategory.delete({ where: { id: cat.id } })
     } finally {
       await cleanup(key)
+    }
+  })
+
+  test('22. concurrent reclaim uses CAS: exactly one worker gets NEW', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `stale-concurrent-${SALT}`
+    const hash = 'concurrent-reclaim-hash'
+    try {
+      await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      const oldDate = new Date(Date.now() - (10 * 60 * 1000))
+      await prisma().idempotencyRecord.updateMany({ where: { key }, data: { updatedAt: oldDate } })
+
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE'),
+        ),
+      )
+
+      expect(results.filter(result => result.type === 'NEW')).toHaveLength(1)
+      expect(results.filter(result => result.type === 'IN_PROGRESS')).toHaveLength(9)
+      expect(await prisma().idempotencyRecord.count({ where: { key } })).toBe(1)
+      expect(await prisma().stockTransfer.count({ where: { idempotencyKey: key } })).toBe(0)
+    } finally {
+      await cleanup(key)
+    }
+  })
+
+  test('23. FAILED legacy claim checks durable transfer before retry and recovers it', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return }
+    const key = `failed-committed-${SALT}`
+    const hash = 'failed-committed-hash'
+    let categoryId: string | null = null
+    let productId: string | null = null
+    try {
+      await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      await markFailed(prisma(), key, 'legacy ambiguous failure')
+
+      const category = await prisma().productCategory.create({
+        data: { name: `ST62-cat-failed-${SALT}`, type: 'METAL', sortOrder: 0 },
+      })
+      categoryId = category.id
+      const product = await prisma().product.create({
+        data: { name: `ST62-src-failed-${SALT}`, categoryId: category.id },
+      })
+      productId = product.id
+      const transfer = await prisma().stockTransfer.create({
+        data: {
+          billNumber: `XFER-FAILED-${SALT}`,
+          sourceProductId: product.id,
+          sourceWeight: 1,
+          sourceCostPerKg: 1,
+          idempotencyKey: key,
+        },
+      })
+
+      const conflict = await claimIdempotency(prisma(), key, `${hash}-different`, 'STOCK_TRANSFER_CREATE')
+      expect(conflict.type).toBe('CONFLICT')
+
+      const retry = await claimIdempotency(prisma(), key, hash, 'STOCK_TRANSFER_CREATE')
+      expect(retry.type).toBe('IN_PROGRESS')
+      const recovery = await checkStaleProcessing(prisma(), key)
+      expect(recovery?.resourceId).toBe(transfer.id)
+      await markRecoveredSucceeded(prisma(), key, transfer.id, 201, JSON.stringify({ bill: { id: transfer.id } }))
+      expect(await prisma().stockTransfer.count({ where: { idempotencyKey: key } })).toBe(1)
+      expect((await prisma().idempotencyRecord.findUnique({ where: { key } }))?.state).toBe('SUCCEEDED')
+    } finally {
+      await cleanup(key)
+      if (productId) await prisma().product.deleteMany({ where: { id: productId } })
+      if (categoryId) await prisma().productCategory.deleteMany({ where: { id: categoryId } })
     }
   })
 })

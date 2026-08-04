@@ -6,32 +6,36 @@
  * detect same-key-different-payload conflicts.
  *
  * Normalization rules:
- * - Strings are trimmed
- * - Numbers are rounded to 2 decimal places
+ * - Each string follows the exact normalization used by the Prisma write path
+ * - Numbers use JavaScript's canonical JSON number representation, matching
+ *   the Float values passed to Prisma without lossy application rounding
  * - Optional null/undefined values are normalized to null
- * - Output items are sorted by productId
+ * - Output items are sorted by their full canonical persisted representation
  * - Dates are normalized to ISO format (YYYY-MM-DD)
  * - JWT, requestId, and server-generated timestamps are excluded
  * - ST-62 review fix: ALL business-meaningful fields are covered
  *   (roomNumber, note, sourcePricePerKg, weighedTotal) so that changing
  *   any of them between same-key retries is detected as CONFLICT, not REPLAY.
- * - Expression strings (sourceWeightExpression, weighedTotalExpression,
- *   item.weightExpression) are EXCLUDED — they are presentation of the
- *   resolved numeric value already in the fingerprint, not business data.
+ * - Weight expressions are included because the StockTransfer Prisma write
+ *   path persists them as business/audit data when they are real formulas.
  */
 
 import { createHash } from 'crypto'
+import { isRealFormula } from './safe-math'
+import { YIELD_WEIGHT_TOLERANCE } from './transfer-cost-allocation'
 
 interface FingerprintItem {
   productId: string
   weight: number
+  weightExpression?: string | null
   isWaste: boolean
-  outputPricePerKg: number
+  outputPricePerKg?: number | null
 }
 
 interface FingerprintInput {
   sourceProductId: string
   sourceWeight: number
+  sourceWeightExpression?: string | null
   businessType: string | null | undefined
   date: string
   laborCost: number
@@ -41,40 +45,51 @@ interface FingerprintInput {
   note: string | null | undefined
   sourcePricePerKg: number | null | undefined
   weighedTotal: number | null | undefined
+  weighedTotalExpression?: string | null
   items: FingerprintItem[]
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100
-}
-
-function normalizeString(s: string | null | undefined): string | null {
+function normalizeTrimmedOptional(s: string | null | undefined): string | null {
   if (s === null || s === undefined) return null
   const trimmed = s.trim()
   return trimmed === '' ? null : trimmed
 }
 
+function normalizePersistedNote(s: string | null | undefined): string | null {
+  return s || null
+}
+
+function normalizePersistedExpression(s: string | null | undefined): string | null {
+  return isRealFormula(s) ? s!.trim() : null
+}
+
 export function computePayloadFingerprint(input: FingerprintInput): string {
+  const businessType = normalizeTrimmedOptional(input.businessType)
+  const hasPersistedGainReason =
+    input.items.reduce((sum, item) => sum + item.weight, 0) - input.sourceWeight > YIELD_WEIGHT_TOLERANCE
+  const canonicalItems = input.items.map(item => ({
+    productId: item.productId,
+    weight: item.weight,
+    weightExpression: normalizePersistedExpression(item.weightExpression),
+    isWaste: item.isWaste,
+    outputPricePerKg: item.isWaste ? 0 : (item.outputPricePerKg || 0),
+  }))
+
   const normalized = {
-    sourceProductId: input.sourceProductId.trim(),
-    sourceWeight: round2(input.sourceWeight),
-    businessType: normalizeString(input.businessType),
+    sourceProductId: input.sourceProductId,
+    sourceWeight: input.sourceWeight,
+    sourceWeightExpression: normalizePersistedExpression(input.sourceWeightExpression),
+    businessType,
     date: input.date.trim(),
-    laborCost: round2(input.laborCost),
-    gainReason: normalizeString(input.gainReason),
+    laborCost: input.laborCost || 0,
+    gainReason: hasPersistedGainReason ? normalizeTrimmedOptional(input.gainReason) : null,
     // ST-62 review fix (M-5): include business-meaningful fields.
-    roomNumber: normalizeString(input.roomNumber),
-    note: normalizeString(input.note),
-    sourcePricePerKg: input.sourcePricePerKg == null ? null : round2(input.sourcePricePerKg),
-    weighedTotal: input.weighedTotal == null ? null : round2(input.weighedTotal),
-    items: [...input.items]
-      .sort((a, b) => a.productId.localeCompare(b.productId))
-      .map(item => ({
-        productId: item.productId.trim(),
-        weight: round2(item.weight),
-        isWaste: item.isWaste,
-        outputPricePerKg: round2(item.outputPricePerKg),
-      })),
+    roomNumber: normalizeTrimmedOptional(input.roomNumber),
+    note: normalizePersistedNote(input.note),
+    sourcePricePerKg: input.sourcePricePerKg || 0,
+    weighedTotal: input.weighedTotal || 0,
+    weighedTotalExpression: normalizePersistedExpression(input.weighedTotalExpression),
+    items: canonicalItems.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
   }
 
   const json = JSON.stringify(normalized)

@@ -18,7 +18,7 @@ import {
   type StageTiming,
 } from '@/lib/stock-transfer-logging';
 import { performance } from 'perf_hooks';
-import { claimIdempotency, markSucceeded, markFailed, checkStaleProcessing } from '@/lib/idempotency-service';
+import { claimIdempotency, markSucceeded, markRecoveredSucceeded, markFailed, checkStaleProcessing } from '@/lib/idempotency-service';
 import { computePayloadFingerprint, validateIdempotencyKey } from '@/lib/idempotency-fingerprint';
 
 // Task 69: Rebuild trigger — ensures Vercel regenerates Prisma client with businessType field.
@@ -145,6 +145,7 @@ export async function POST(request: NextRequest) {
     const payloadHash = computePayloadFingerprint({
       sourceProductId: body.sourceProductId || '',
       sourceWeight: body.sourceWeight || 0,
+      sourceWeightExpression: body.sourceWeightExpression,
       businessType: body.businessType,
       date: body.date || '',
       laborCost: body.laborCost || 0,
@@ -155,9 +156,11 @@ export async function POST(request: NextRequest) {
       note: body.note,
       sourcePricePerKg: body.sourcePricePerKg,
       weighedTotal: body.weighedTotal,
+      weighedTotalExpression: body.weighedTotalExpression,
       items: (body.items || []).map((i) => ({
         productId: i.productId,
         weight: i.weight,
+        weightExpression: i.weightExpression,
         isWaste: i.isWaste,
         outputPricePerKg: i.outputPricePerKg || 0,
       })),
@@ -199,6 +202,13 @@ export async function POST(request: NextRequest) {
         });
         if (existingTransfer) {
           const replayBody = { bill: existingTransfer };
+          await markRecoveredSucceeded(
+            db,
+            idempotencyKey,
+            existingTransfer.id,
+            201,
+            JSON.stringify(replayBody),
+          );
           return NextResponse.json(
             { ...replayBody, idempotentReplay: true },
             { status: 201, headers: { 'X-Request-ID': requestId } }
@@ -238,7 +248,9 @@ export async function POST(request: NextRequest) {
     );
     transactionOutcome = result.transactionOutcome;
 
-    // ST-62: Mark idempotency record as SUCCEEDED or FAILED
+    // Mark only confirmed-safe failures as FAILED. UNKNOWN 5xx outcomes may
+    // represent a committed PostgreSQL transaction with a lost acknowledgement,
+    // so they stay PROCESSING for durable recovery by idempotencyKey.
     if (idempotencyKey) {
       if (result.ok) {
         const responseSnapshot = JSON.stringify({ bill: result.transfer });
@@ -247,7 +259,7 @@ export async function POST(request: NextRequest) {
         } catch {
           // Non-fatal: stale PROCESSING recovery will handle this
         }
-      } else {
+      } else if (result.transactionOutcome === 'ROLLBACK' || result.status < 500) {
         try {
           await markFailed(db, idempotencyKey, result.error || 'unknown error');
         } catch {
@@ -261,18 +273,8 @@ export async function POST(request: NextRequest) {
     transactionOutcome = 'UNKNOWN';
     errorCategory = classifyErrorSafe(err);
     prismaCode = errorCategory.prismaCode;
-    // ST-62 review fix (M-4): a throw that escapes the service leaves the
-    // IdempotencyRecord stuck in PROCESSING (the result.ok branch above never
-    // ran). Transition it to FAILED so the key is reclaimable on retry.
-    // If the throw happened AFTER commit, checkStaleProcessing will recover
-    // via the StockTransfer.idempotencyKey correlation on the next request.
-    if (idempotencyKey) {
-      try {
-        await markFailed(db, idempotencyKey, err instanceof Error ? err.message : 'unexpected throw');
-      } catch {
-        // Non-fatal: stale PROCESSING recovery (TTL) will handle this.
-      }
-    }
+    // Do not mark an escaped throw FAILED: the transaction outcome is unknown.
+    // Keeping PROCESSING preserves the recovery path and prevents unsafe retry.
     const totalDurationMs = Math.round((performance.now() - requestStart) * 1000) / 1000;
     const transactionDurationMs = Math.round((performance.now() - serviceStart) * 1000) / 1000;
 

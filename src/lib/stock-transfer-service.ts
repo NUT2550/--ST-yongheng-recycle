@@ -618,6 +618,7 @@ async function createStockTransferInternal(
   if (!deps.isTransactionScoped) {
     let failed: Exclude<InternalServiceResult, { ok: true }> | null = null;
     let transactionCallbackStarted = false;
+    let transactionCallbackCompleted = false;
     const rollback = Symbol('stock-transfer-rollback');
     try {
       const committed = await deps.transaction(async tx => {
@@ -627,11 +628,17 @@ async function createStockTransferInternal(
           failed = result;
           throw rollback;
         }
+        transactionCallbackCompleted = true;
         return result;
       });
       return { ...committed, transactionOutcome: 'COMMIT' };
     } catch (error) {
-      const transactionOutcome: TransactionOutcome = transactionCallbackStarted ? 'ROLLBACK' : 'UNKNOWN';
+      // If the callback returned successfully but Prisma rejected the outer
+      // transaction promise, COMMIT may have reached PostgreSQL while its
+      // acknowledgement was lost. That outcome must remain UNKNOWN/recoverable.
+      const transactionOutcome: TransactionOutcome = transactionCallbackCompleted
+        ? 'UNKNOWN'
+        : transactionCallbackStarted ? 'ROLLBACK' : 'UNKNOWN';
       if (error === rollback && failed) {
         return { ...(failed as Exclude<InternalServiceResult, { ok: true }>), transactionOutcome };
       }

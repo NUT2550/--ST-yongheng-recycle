@@ -95,11 +95,29 @@ describe('ST-61 explicit transaction boundary outcome', () => {
     expect(result.transactionOutcome).toBe('UNKNOWN');
   });
 
+  test('rejection after callback completion is UNKNOWN because commit acknowledgement is ambiguous', async () => {
+    const { deps, state } = createMockDeps({ sourceLots: LOTS });
+    const executeTransaction = deps.transaction.bind(deps);
+    deps.transaction = async fn => {
+      await executeTransaction(fn);
+      throw prismaError('P2028', 'connection lost while acknowledging commit');
+    };
+
+    const result = await createStockTransfer(deps, INPUT, AUTH, REQUEST_ID, 'ambiguous-key');
+
+    expect(result.ok).toBe(false);
+    expect(result.transactionOutcome).toBe('UNKNOWN');
+    expect(state.createStockTransferCalls).toHaveLength(1);
+    expect(state.createStockTransferCalls[0].idempotencyKey).toBe('ambiguous-key');
+  });
+
   test('route consumes the explicit service outcome and keeps escaped errors UNKNOWN', () => {
     const route = readFileSync('src/app/api/stock-transfers/route.ts', 'utf8');
     expect(route).toContain('transactionOutcome = result.transactionOutcome');
     expect(route).not.toContain('result.status >= 500');
     expect(route).not.toContain("transactionOutcome = 'ROLLBACK'");
     expect(route).toContain("transactionOutcome = 'UNKNOWN';");
+    expect(route).toContain("result.transactionOutcome === 'ROLLBACK' || result.status < 500");
+    expect(route).toContain('Do not mark an escaped throw FAILED');
   });
 });

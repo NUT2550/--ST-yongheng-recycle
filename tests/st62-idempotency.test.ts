@@ -13,12 +13,14 @@
 
 import { describe, expect, test } from 'bun:test'
 import { computePayloadFingerprint, validateIdempotencyKey } from '../src/lib/idempotency-fingerprint'
+import { buildStockTransferCreateData } from '../src/lib/stock-transfer-service'
 
 // Shared base that includes ALL fingerprinted fields. Tests override individual
 // fields to prove each one affects the hash.
 const BASE = {
   sourceProductId: 'prod-1',
   sourceWeight: 100,
+  sourceWeightExpression: null,
   businessType: 'แกะของ',
   date: '2026-07-31',
   laborCost: 50,
@@ -27,6 +29,7 @@ const BASE = {
   note: null,
   sourcePricePerKg: null,
   weighedTotal: null,
+  weighedTotalExpression: null,
   items: [
     { productId: 'prod-2', weight: 60, isWaste: false, outputPricePerKg: 20 },
   ],
@@ -67,11 +70,11 @@ describe('ST-62 payload fingerprint', () => {
     )
   })
 
-  test('4. decimal normalization rounds to 2 places', () => {
+  test('4. persisted sourceWeight precision is not rounded away', () => {
     const items = [{ productId: 'p2', weight: 10, isWaste: false, outputPricePerKg: 5 }]
     const h1 = computePayloadFingerprint({ ...BASE, sourceWeight: 100.001, items })
     const h2 = computePayloadFingerprint({ ...BASE, sourceWeight: 100, items })
-    expect(h1).toBe(h2) // 100.001 rounds to 100.00
+    expect(h1).not.toBe(h2)
   })
 })
 
@@ -126,40 +129,156 @@ describe('ST-62 fingerprint covers business-meaningful fields (M-5 fix)', () => 
     const h2 = computePayloadFingerprint({ ...BASE, roomNumber: null })
     expect(h1).toBe(h2)
   })
+
+  test('13. all directly persisted numeric fields retain Float precision', () => {
+    const fields = ['sourceWeight', 'laborCost', 'sourcePricePerKg', 'weighedTotal'] as const
+    for (const field of fields) {
+      expect(computePayloadFingerprint({ ...BASE, [field]: 1.0001 })).not.toBe(
+        computePayloadFingerprint({ ...BASE, [field]: 1 }),
+      )
+    }
+
+    expect(computePayloadFingerprint({
+      ...BASE,
+      items: [{ productId: 'prod-2', weight: 1.0001, isWaste: false, outputPricePerKg: 20 }],
+    })).not.toBe(computePayloadFingerprint({
+      ...BASE,
+      items: [{ productId: 'prod-2', weight: 1, isWaste: false, outputPricePerKg: 20 }],
+    }))
+
+    expect(computePayloadFingerprint({
+      ...BASE,
+      items: [{ productId: 'prod-2', weight: 60, isWaste: false, outputPricePerKg: 1.0001 }],
+    })).not.toBe(computePayloadFingerprint({
+      ...BASE,
+      items: [{ productId: 'prod-2', weight: 60, isWaste: false, outputPricePerKg: 1 }],
+    }))
+  })
+
+  test('14. persisted formula expressions affect the fingerprint', () => {
+    expect(computePayloadFingerprint({ ...BASE, sourceWeightExpression: '100-0.1' })).not.toBe(
+      computePayloadFingerprint({ ...BASE, sourceWeightExpression: '100-0.2' }),
+    )
+    expect(computePayloadFingerprint({ ...BASE, weighedTotalExpression: '60+40' })).not.toBe(
+      computePayloadFingerprint({ ...BASE, weighedTotalExpression: '50+50' }),
+    )
+    expect(computePayloadFingerprint({
+      ...BASE,
+      items: [{ ...BASE.items[0], weightExpression: '30+30' }],
+    })).not.toBe(computePayloadFingerprint({
+      ...BASE,
+      items: [{ ...BASE.items[0], weightExpression: '20+40' }],
+    }))
+  })
+
+  test('15. presentation-only numeric expressions normalize to persisted null', () => {
+    expect(computePayloadFingerprint({ ...BASE, sourceWeightExpression: '100' })).toBe(
+      computePayloadFingerprint({ ...BASE, sourceWeightExpression: null }),
+    )
+  })
+
+  test('16. note whitespace and waste price follow the actual Prisma write normalization', () => {
+    expect(computePayloadFingerprint({ ...BASE, note: ' note ' })).not.toBe(
+      computePayloadFingerprint({ ...BASE, note: 'note' }),
+    )
+    expect(computePayloadFingerprint({
+      ...BASE,
+      items: [{ productId: 'waste', weight: 1, isWaste: true, outputPricePerKg: 99 }],
+    })).toBe(computePayloadFingerprint({
+      ...BASE,
+      items: [{ productId: 'waste', weight: 1, isWaste: true, outputPricePerKg: 0 }],
+    }))
+  })
+
+  test('17. duplicate output rows are canonicalized as a persisted multiset', () => {
+    const first = [
+      { productId: 'same', weight: 10, isWaste: false, outputPricePerKg: 1 },
+      { productId: 'same', weight: 20, isWaste: false, outputPricePerKg: 2 },
+    ]
+    expect(computePayloadFingerprint({ ...BASE, items: first })).toBe(
+      computePayloadFingerprint({ ...BASE, items: [...first].reverse() }),
+    )
+  })
+})
+
+describe('ST-62 Prisma write-path evidence', () => {
+  test('direct numeric and formula fields reach StockTransfer.create without lossy rounding', () => {
+    const data = buildStockTransferCreateData({
+      date: '2026-07-31',
+      sourceProductId: 'prod-1',
+      sourceWeight: 100.0001,
+      sourceWeightExpression: '100.5-0.4999',
+      sourcePricePerKg: 40.0001,
+      laborCost: 5.0001,
+      weighedTotal: 60.0001,
+      weighedTotalExpression: '60.5-0.4999',
+      items: [{
+        productId: 'prod-2',
+        weight: 60.0001,
+        weightExpression: '60.5-0.4999',
+        isWaste: false,
+        outputPricePerKg: 20.0001,
+      }],
+    }, {
+      billNumber: 'TRN-TEST',
+      sourceCostPerKg: 1,
+      sourceTotalCost: 100.0001,
+      lossWeight: 40,
+      lossCost: 40,
+      gainWeight: 0,
+      weightVariance: -40,
+      gainReason: null,
+      outputTotalValue: 1200,
+      profitLoss: 0,
+      allocatedItems: [{ costPerKg: 1, totalCost: 60 }],
+      storedBusinessDate: new Date('2026-07-30T17:00:00.000Z'),
+    })
+    const itemCreate = data.items as { create: Array<Record<string, unknown>> }
+
+    expect(data.sourceWeight).toBe(100.0001)
+    expect(data.sourcePricePerKg).toBe(40.0001)
+    expect(data.laborCost).toBe(5.0001)
+    expect(data.weighedTotal).toBe(60.0001)
+    expect(data.sourceWeightExpression).toBe('100.5-0.4999')
+    expect(data.weighedTotalExpression).toBe('60.5-0.4999')
+    expect(itemCreate.create[0].weight).toBe(60.0001)
+    expect(itemCreate.create[0].weightExpression).toBe('60.5-0.4999')
+    expect(itemCreate.create[0].outputPricePerKg).toBe(20.0001)
+  })
 })
 
 describe('ST-62 key validation', () => {
-  test('13. null key is valid (backward compatible)', () => {
+  test('18. null key is valid (backward compatible)', () => {
     expect(validateIdempotencyKey(null)).toBeNull()
   })
 
-  test('14. undefined key is valid', () => {
+  test('19. undefined key is valid', () => {
     expect(validateIdempotencyKey(undefined)).toBeNull()
   })
 
-  test('15. valid UUID-like key is accepted', () => {
+  test('20. valid UUID-like key is accepted', () => {
     expect(validateIdempotencyKey('idem-1234567890-abc-def')).toBeNull()
   })
 
-  test('16. empty string is rejected', () => {
+  test('21. empty string is rejected', () => {
     expect(validateIdempotencyKey('')).toBe('INVALID_IDEMPOTENCY_KEY')
   })
 
-  test('17. whitespace-only is rejected', () => {
+  test('22. whitespace-only is rejected', () => {
     expect(validateIdempotencyKey('   ')).toBe('INVALID_IDEMPOTENCY_KEY')
   })
 
-  test('18. key > 255 chars is rejected', () => {
+  test('23. key > 255 chars is rejected', () => {
     const longKey = 'a'.repeat(256)
     expect(validateIdempotencyKey(longKey)).toBe('IDEMPOTENCY_KEY_TOO_LONG')
   })
 
-  test('19. key with special characters is rejected', () => {
+  test('24. key with special characters is rejected', () => {
     expect(validateIdempotencyKey('key with spaces')).toBe('INVALID_IDEMPOTENCY_KEY')
     expect(validateIdempotencyKey('key!@#')).toBe('INVALID_IDEMPOTENCY_KEY')
   })
 
-  test('20. key of exactly 255 chars is accepted', () => {
+  test('25. key of exactly 255 chars is accepted', () => {
     const key255 = 'a'.repeat(255)
     expect(validateIdempotencyKey(key255)).toBeNull()
   })
