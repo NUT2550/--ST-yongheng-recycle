@@ -482,3 +482,164 @@ bun run dev
 - `FEATURE_INVENTORY.md` — ถ้าต้องการรู้สถานะ feature
 - `BUSINESS_RULES.md` — ถ้าต้องการรู้กฎธุรกิจ
 - `SAFETY_CHECKLIST.md` — ถ้าต้อง deploy/migrate
+
+---
+
+## 10. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
+
+> **Effective:** 2026-08-05
+> **Approved by:** Owner
+> **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
+
+### Principle
+
+Sandbox workspace is **ephemeral** — `/home/z/*`, `public/*`, local commits, and patch files can be lost without warning when the sandbox resets (observed 2026-08-05). All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation. GitHub remote branch is the persistent source of truth.
+
+### Logical checkpoints
+
+Break work into short, focused checkpoints. After each checkpoint passes minimum validation, commit + push immediately. Do **not** accumulate multiple checkpoints locally.
+
+### Branch workflow (before editing files)
+
+1. `git fetch origin`
+2. Verify exact current `origin/main` SHA
+3. Check for duplicate branch/PR
+4. Create feature branch from exact main:
+   - General work: `st-XX-short-description`
+   - Security work: `security/short-description`
+   - Policy/docs: `policy/short-description`
+5. Push empty branch as first remote checkpoint
+6. Then begin implementation
+
+### Minimum validation before normal checkpoint push
+
+Run the relevant subset:
+- Credential/secret scan (if scanner exists)
+- `git diff --check`
+- Lint for changed scope
+- TypeScript/typecheck for changed scope
+- Targeted tests for changed code
+- Verify staged diff has no `.env`, secret, database dump, or sensitive artifact
+
+Full build/full test is **not** required for every checkpoint, but **must** pass before requesting PR Ready.
+
+❌ Never report a check as PASS if it was not actually run.
+
+### Emergency WIP checkpoint (when reset risk is imminent)
+
+If sandbox reset is imminent and minimum validation is incomplete, an emergency WIP checkpoint is allowed **only if**:
+- ✅ Secret scan passes
+- ✅ Staged diff has no credential or sensitive data
+- ✅ `git diff --check` passes
+
+Commit format: `wip(st-XX): preserve validated partial progress`
+- Push to feature branch only
+- PR must remain Draft
+- Add a comment listing which validations are still pending
+- ❌ Never claim the checkpoint is complete
+- Must complete missing validation + fix WIP in next session
+
+**Never push** code that:
+- Contains a secret
+- Does not compile due to this change
+- Has destructive behavior without guards
+- Has unreviewed migration SQL
+
+### Autonomous actions (no Owner approval needed per task with clear scope)
+
+- Reload current context (fetch, read docs)
+- Fresh clone
+- Create feature branch from exact current main
+- Push initial remote branch checkpoint
+- Create focused commits
+- Push checkpoint fast-forward
+- Open Draft PR
+- Create GitHub issue (when no duplicate found)
+- Comment status in GitHub issue/PR
+- Check CI status
+- Fix failures caused by in-scope work
+- Push focused follow-up commits
+- Update PR body to match current exact head
+
+### Actions still requiring explicit Owner approval
+
+❌ Do **not** perform until Owner sends specific approval message:
+- Mark PR Ready
+- Merge
+- Deploy
+- Production connection/query/write
+- Credential validation
+- Database migration
+- Git history rewrite
+- Force-push
+- Direct main push
+- Close GitHub issue/PR
+- Close Linear issue
+- Change repository visibility
+- Change branch protection
+- Change repository settings
+- Rotate credentials
+- Expand scope to other issues
+
+### Files that must NEVER be pushed
+
+- `.env` or env file with real values
+- Passwords, tokens, API keys, connection strings
+- `db/custom.db`
+- Production database dumps
+- Customer data or raw sensitive rows
+- `node_modules/`
+- `.next/`, `dist/`, build output
+- Raw logs of significant size
+- Full chat transcript
+- Local credential files
+- GitHub auth token
+- Patch/ZIP containing repository or sensitive artifacts
+- Local progress diary duplicating GitHub content
+
+`.env.example` is allowed only with placeholders that cannot be used as real credentials.
+
+### Authentication rules
+
+If GitHub auth is missing or expired:
+- Stop before creating meaningful local work
+- Request Owner to perform GitHub device login
+- ❌ Never request PAT/token in chat
+- ❌ Never create patch/ZIP as primary workaround
+- After auth succeeds: create remote branch **before** starting implementation
+
+If `workflow` permission is missing:
+- Do not push changes to `.github/workflows/*`
+- Quarantine workflow changes separately
+- Other work can proceed when safe
+- Report to Owner to request permission
+
+### CI rules
+
+After every push:
+- Check CI on exact head
+- Failure from in-scope work → fix + push focused follow-up (autonomous)
+- Infrastructure failure → rerun once (autonomous)
+- Pre-existing unrelated failure → document evidence, do **not** fix out of scope
+- PR must remain Draft until full validation + independent review pass
+
+### Source-of-truth rules
+
+- **GitHub** = code, technical docs, exact commits, tests, CI, detailed evidence
+- **Linear** = task status, priority, blocker, acceptance criteria, branch/PR links, next gate
+- **Notion** = durable Owner decisions, policy, high-level project checkpoint
+
+❌ Never write raw logs, secrets, command transcripts, or duplicate progress diary into Notion/Linear.
+
+### Patch/ZIP is secondary only
+
+Patch/ZIP files may be created as a **backup copy** only **after** work is pushed to GitHub. They must never be the primary artifact. Do not rely on `public/` directory for delivery — Preview Panel access is not guaranteed.
+
+### Rollback
+
+- On branch (not main): `git revert <commit>` if a checkpoint introduces a problem
+- On main (after merge, requires Owner approval): `git revert` on main → Vercel auto-redeploy
+
+### No Production impact
+
+This policy does not authorize any Production access. Production connection, query, write, migration, deploy, and credential validation remain Owner-gated.
