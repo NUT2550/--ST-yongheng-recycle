@@ -1,7 +1,7 @@
 /**
  * ST-27 Security: Tests for the credential scanner + fail-closed loader + write guard.
  */
-import { describe, expect, test, afterEach } from 'bun:test'
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
 import { execSync } from 'child_process'
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs'
 import { join } from 'path'
@@ -62,9 +62,10 @@ describe('ST-27 scanner output safety', () => {
 })
 
 describe('ST-27 full scanner integration', () => {
-  let tempRepo
+  let tempRepo: string
+  beforeEach(() => { tempRepo = mkdtempSync(join(tmpdir(), 'st27-')) })
+  afterEach(() => { try { rmSync(tempRepo, { recursive: true, force: true }) } catch {} })
   test('12. scanner detects violation in tracked file', () => {
-    tempRepo = mkdtempSync(join(tmpdir(), 'st27-'))
     execSync('git init -q', { cwd: tempRepo })
     writeFileSync(join(tempRepo, 'evil.ts'), `const url = 'postgresql://postgres.real:hardcodedPass@prod.supabase.co:6543/db'`)
     execSync('git add -A && git commit -q -m test', { cwd: tempRepo })
@@ -93,7 +94,6 @@ describe('ST-27 full scanner integration', () => {
     catch (e) { exitCode = (e as { status?: number }).status ?? 1 }
     expect(exitCode).toBe(0)
   })
-  afterEach(() => { try { rmSync(tempRepo!, { recursive: true, force: true }) } catch {} })
 })
 
 describe('ST-27 fail-closed credential loader', () => {
