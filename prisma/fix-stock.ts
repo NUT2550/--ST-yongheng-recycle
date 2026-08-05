@@ -7,8 +7,8 @@
 import { PrismaClient } from '@prisma/client'
 
 // Use Supabase pooler URL directly
-const SUPABASE_POOLER_URL = 'postgresql://postgres.wefqhunzjvsxciiwdhjx:8sY.%23thcN%24Bk5%25G@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1'
-
+import { requireExplicitWriteApproval } from '../scripts/lib/require-db-url.mjs'
+const SUPABASE_POOLER_URL = requireExplicitWriteApproval('SUPABASE_POOLER_URL')
 const db = new PrismaClient({
   datasources: { db: { url: SUPABASE_POOLER_URL } },
 })

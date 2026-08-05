@@ -5,7 +5,8 @@ import { PrismaClient } from '@prisma/client'
 import fs from 'fs'
 import path from 'path'
 
-const SUPABASE_URL = 'postgresql://postgres.wefqhunzjvsxciiwdhjx:8sY.%23thcN%24Bk5%25G@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1'
+import { requireExplicitWriteApproval } from '../scripts/lib/require-db-url.mjs'
+const SUPABASE_URL = requireExplicitWriteApproval('SUPABASE_URL')
 const db = new PrismaClient({ datasources: { db: { url: SUPABASE_URL } } })
 
 const OUTPUT_DIR = '/home/z/my-project/debug/fix-sorting-transfer-card-style'
