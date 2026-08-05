@@ -106,7 +106,7 @@ Every task response must include:
 
 ## Push-Early Checkpoint Policy (Sandbox-Hosted Work)
 
-> **Effective:** 2026-08-05 — see `process/AGENT_HANDOFF.md` §10 and `process/SAFETY_CHECKLIST.md` §10 for full text.
+> **Effective:** Upon merge of PR #76 — see `process/AGENT_HANDOFF.md` §12 (canonical) and `process/SAFETY_CHECKLIST.md` §10 (summary) for full text.
 
 Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation (lint + tsc + `git diff --check` + credential scan + targeted tests for changed scope). GitHub remote branch is the persistent source of truth. Do not rely on local state (patches, ZIPs, local commits, `public/` files) as the primary artifact.
 

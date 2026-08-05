@@ -271,9 +271,10 @@ ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "weighedTotalExpression";
 
 ## 10. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
 
-> **Effective:** 2026-08-05
-> **Approved by:** Owner
+> **Effective:** Upon merge of PR #76
+> **Approved by:** Owner (pending merge)
 > **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
+> **Canonical text:** `process/AGENT_HANDOFF.md` §12. This is a summary — keep in sync.
 
 ### Principle
 
@@ -300,6 +301,8 @@ Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as 
 Full build/full test not required every checkpoint, but **must** pass before requesting PR Ready.
 
 ### Emergency WIP checkpoint (when reset risk is imminent)
+
+Emergency WIP requires concrete evidence of imminent reset (Owner warning, dev server termination, workspace files disappearing). State evidence in WIP commit comment.
 
 Allowed only if:
 - ✅ Secret scan passes

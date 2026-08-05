@@ -485,11 +485,12 @@ bun run dev
 
 ---
 
-## 10. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
+## 12. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
 
-> **Effective:** 2026-08-05
-> **Approved by:** Owner
+> **Effective:** Upon merge of PR #76
+> **Approved by:** Owner (pending merge)
 > **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
+> **Canonical location:** This section is the canonical full text. `process/SAFETY_CHECKLIST.md` §10 and `AGENTS.md` contain summaries that must be kept in sync with this section.
 
 ### Principle
 
@@ -526,6 +527,8 @@ Full build/full test is **not** required for every checkpoint, but **must** pass
 ❌ Never report a check as PASS if it was not actually run.
 
 ### Emergency WIP checkpoint (when reset risk is imminent)
+
+Emergency WIP is allowed **only** when there is concrete evidence that sandbox reset is imminent (e.g., explicit Owner warning, dev server process termination observed, or workspace files disappearing). The evidence must be stated in the WIP commit comment.
 
 If sandbox reset is imminent and minimum validation is incomplete, an emergency WIP checkpoint is allowed **only if**:
 - ✅ Secret scan passes
