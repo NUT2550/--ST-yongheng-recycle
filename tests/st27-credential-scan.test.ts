@@ -1,7 +1,7 @@
 /**
  * ST-27 Security: Tests for the credential scanner + fail-closed loader + write guard.
  */
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test, afterEach } from 'bun:test'
 import { execSync } from 'child_process'
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs'
 import { join } from 'path'
