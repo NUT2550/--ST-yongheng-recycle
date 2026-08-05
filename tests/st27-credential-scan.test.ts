@@ -63,10 +63,15 @@ describe('ST-27 scanner output safety', () => {
 
 describe('ST-27 full scanner integration', () => {
   let tempRepo: string
-  beforeEach(() => { tempRepo = mkdtempSync(join(tmpdir(), 'st27-')) })
+  beforeEach(() => {
+    tempRepo = mkdtempSync(join(tmpdir(), 'st27-'))
+    // CI runners may not have git user config — set it for the temp repo
+    execSync('git init -q', { cwd: tempRepo })
+    execSync('git config user.name test', { cwd: tempRepo })
+    execSync('git config user.email test@test.com', { cwd: tempRepo })
+  })
   afterEach(() => { try { rmSync(tempRepo, { recursive: true, force: true }) } catch {} })
   test('12. scanner detects violation in tracked file', () => {
-    execSync('git init -q', { cwd: tempRepo })
     writeFileSync(join(tempRepo, 'evil.ts'), `const url = 'postgresql://postgres.real:hardcodedPass@prod.supabase.co:6543/db'`)
     execSync('git add -A && git commit -q -m test', { cwd: tempRepo })
     let exitCode = 0
@@ -75,7 +80,6 @@ describe('ST-27 full scanner integration', () => {
     expect(exitCode).toBe(1)
   })
   test('13. scanner ignores untracked files', () => {
-    execSync('git init -q', { cwd: tempRepo })
     writeFileSync(join(tempRepo, 'untracked.ts'), `const url = 'postgresql://p:r@prod.supabase.co:6543/db'`)
     writeFileSync(join(tempRepo, 'clean.ts'), `const x = 1`)
     execSync('git add clean.ts && git commit -q -m t', { cwd: tempRepo })
@@ -85,7 +89,6 @@ describe('ST-27 full scanner integration', () => {
     expect(exitCode).toBe(0)
   })
   test('14. binary files do not break scanner', () => {
-    execSync('git init -q', { cwd: tempRepo })
     writeFileSync(join(tempRepo, 'binary.bin'), Buffer.from([0x00, 0x01, 0xff]))
     writeFileSync(join(tempRepo, 'clean.ts'), `const x = 1`)
     execSync('git add -A && git commit -q -m t', { cwd: tempRepo })
