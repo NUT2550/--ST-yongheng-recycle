@@ -410,6 +410,7 @@ export function SellPage() {
               <div className="mt-3">
                 <DetailedSellExcelImportDialog
                   products={availableProducts}
+                  onSessionExpired={() => { /* parent handles via page.tsx checkAuth */ }}
                   onImport={async (bills) => {
                     // ST-18: For each bill, add items to cart with stock validation
                     let totalAdded = 0;

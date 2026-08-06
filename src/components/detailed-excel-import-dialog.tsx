@@ -63,6 +63,8 @@ export interface PlannedBill {
 
 interface DetailedExcelImportDialogProps {
   products: Product[];
+  /** ST-75: Called when session expires (401) — parent clears token + user state. */
+  onSessionExpired?: () => void;
   /** Legacy callback — kept for backward compat. Called with empty array after apply. */
   onImport?: (bills: Array<{
     externalBillNumber: string;
@@ -74,7 +76,7 @@ interface DetailedExcelImportDialogProps {
   onApplied?: (summary: ImportSummary) => void;
 }
 
-export function DetailedExcelImportDialog({ products, onImport, onApplied }: DetailedExcelImportDialogProps) {
+export function DetailedExcelImportDialog({ products, onSessionExpired, onImport, onApplied }: DetailedExcelImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -356,9 +358,9 @@ export function DetailedExcelImportDialog({ products, onImport, onApplied }: Det
         return;
       }
       if (res.status === 403) {
-        // ST-75: Permission denied — close modal + show error
+        // ST-75: Permission denied — reset + close (do NOT clear token)
         toast.error('ไม่มีสิทธิ์ตรวจบิลซ้ำ — กรุณาแจ้งผู้ดูแล');
-        setOpen(false);
+        handlePermissionDenied();
         return;
       }
       if (res.ok) {
@@ -462,18 +464,15 @@ export function DetailedExcelImportDialog({ products, onImport, onApplied }: Det
       });
 
       if (res.status === 401) {
-        // ST-75: Session expired — clear token + close modal
-        setAuthToken(null);
+        // ST-75: Session expired — clear token + sync parent + reset + close
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
-        setImporting(false);
-        setOpen(false);
+        handleSessionExpired();
         return;
       }
       if (res.status === 403) {
-        // ST-75: Permission denied — close modal + stop flow
+        // ST-75: Permission denied — reset + close (do NOT clear token)
         toast.error('ไม่มีสิทธิ์นำเข้าบิลซื้อ — กรุณาแจ้งผู้ดูแล');
-        setImporting(false);
-        setOpen(false);
+        handlePermissionDenied();
         return;
       }
 
@@ -524,13 +523,37 @@ export function DetailedExcelImportDialog({ products, onImport, onApplied }: Det
   const handleOpenChange = (v: boolean) => {
     setOpen(v);
     if (!v) {
-      setPlannedBills([]);
-      setFileName('');
-      setApplyResult(null);
-      setExistingDuplicates(new Set());
-      // ST-15: Reset file input value on close so the same file can be re-selected
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      resetDialogState();
     }
+  };
+
+  // ST-75: Unified cleanup path — used by handleOpenChange, 401, 403, and success.
+  // Prevents stale planned bills, duplicates, and state from persisting across reopens.
+  const resetDialogState = () => {
+    setPlannedBills([]);
+    setFileName('');
+    setApplyResult(null);
+    setExistingDuplicates(new Set());
+    setImporting(false);
+    setLoading(false);
+    // ST-15: Reset file input value on close so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    // Reset duplicate check ref so re-opening re-checks
+    duplicateChecked.current = false;
+  };
+
+  // ST-75: Session expired — clear token via parent, reset dialog, close.
+  const handleSessionExpired = () => {
+    setAuthToken(null);
+    onSessionExpired?.();
+    resetDialogState();
+    setOpen(false);
+  };
+
+  // ST-75: Permission denied — reset dialog + close (do NOT clear token).
+  const handlePermissionDenied = () => {
+    resetDialogState();
+    setOpen(false);
   };
 
   // ST-15: Auto-check duplicates when planned bills change — moved to useEffect to avoid

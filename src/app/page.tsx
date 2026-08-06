@@ -176,16 +176,28 @@ export default function Home() {
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
-      } else {
-        // ST-75: Clear expired token on 401 from /auth/me
+      } else if (res.status === 401) {
+        // ST-75: Clear token only on 401 (expired/invalid token).
+        // Do NOT clear token on 403, 429, 5xx, or network error — those are
+        // transient or permission issues, not session expiry.
         setAuthToken(null);
         setUser(null);
+      } else {
+        // 403/429/5xx: keep token + user, don't force logout
+        // (user state will remain as-is from last successful check)
       }
     } catch {
-      setUser(null);
+      // Network error: don't clear token or user — transient failure
     } finally {
       setAuthLoading(false);
     }
+  }, []);
+
+  // ST-75: Shared session-expired handler — called by import dialogs on 401.
+  // Clears token + user state so the login screen shows immediately.
+  const handleSessionExpired = useCallback(() => {
+    setAuthToken(null);
+    setUser(null);
   }, []);
 
   useEffect(() => {

@@ -57,6 +57,8 @@ export interface PlannedSellBill {
 
 interface DetailedSellExcelImportDialogProps {
   products: Product[];
+  /** ST-75: Called when session expires (401). */
+  onSessionExpired?: () => void;
   /** Legacy callback — kept for backward compat. Called with empty array after apply. */
   onImport?: (bills: Array<{
     externalBillNumber: string;
@@ -69,7 +71,7 @@ interface DetailedSellExcelImportDialogProps {
   onApplied?: (summary: ImportSummary) => void;
 }
 
-export function DetailedSellExcelImportDialog({ products, onImport, onApplied }: DetailedSellExcelImportDialogProps) {
+export function DetailedSellExcelImportDialog({ products, onSessionExpired, onImport, onApplied }: DetailedSellExcelImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -335,16 +337,13 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
         body: JSON.stringify({ billNumbers, type: 'sales' }),
       });
       if (res.status === 401) {
-        // ST-75: Session expired — clear token + close modal
-        setAuthToken(null);
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
-        setOpen(false);
+        handleSessionExpired();
         return;
       }
       if (res.status === 403) {
-        // ST-75: Permission denied — close modal + show error
         toast.error('ไม่มีสิทธิ์ตรวจบิลซ้ำ — กรุณาแจ้งผู้ดูแล');
-        setOpen(false);
+        handlePermissionDenied();
         return;
       }
       if (res.ok) {
@@ -479,18 +478,13 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
       });
 
       if (res.status === 401) {
-        // ST-75: Session expired — clear token + close modal
-        setAuthToken(null);
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
-        setImporting(false);
-        setOpen(false);
+        handleSessionExpired();
         return;
       }
       if (res.status === 403) {
-        // ST-75: Permission denied — close modal + stop flow
         toast.error('ไม่มีสิทธิ์นำเข้าบิลขาย — กรุณาแจ้งผู้ดูแล');
-        setImporting(false);
-        setOpen(false);
+        handlePermissionDenied();
         return;
       }
 
@@ -531,13 +525,30 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
 
   const handleOpenChange = (v: boolean) => {
     setOpen(v);
-    if (!v) {
-      setPlannedBills([]);
-      setFileName('');
-      setApplyResult(null);
-      setExistingDuplicates(new Set());
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    if (!v) { resetDialogState(); }
+  };
+
+  const resetDialogState = () => {
+    setPlannedBills([]);
+    setFileName('');
+    setApplyResult(null);
+    setExistingDuplicates(new Set());
+    setImporting(false);
+    setLoading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    duplicateChecked.current = false;
+  };
+
+  const handleSessionExpired = () => {
+    setAuthToken(null);
+    onSessionExpired?.();
+    resetDialogState();
+    setOpen(false);
+  };
+
+  const handlePermissionDenied = () => {
+    resetDialogState();
+    setOpen(false);
   };
 
   const duplicateChecked = useRef(false);

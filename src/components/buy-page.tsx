@@ -305,6 +305,7 @@ export function BuyPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <DetailedExcelImportDialog
                   products={products}
+                  onSessionExpired={() => { /* parent handles via page.tsx checkAuth */ }}
                   onImport={async (bills) => {
                     setSubmitting(true);
                     let success = 0;
