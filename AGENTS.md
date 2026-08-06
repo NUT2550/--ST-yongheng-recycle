@@ -98,8 +98,19 @@ Every task response must include:
 
 ## Git Conventions
 
-- **Branch naming**: `st-XX-short-description` (e.g., `st-71-reliability-foundation`)
+- **Branch naming**: `st-XX-short-description` (e.g., `st-71-reliability-foundation`), `security/short-description` (security work), or `policy/short-description` (policy/docs)
 - **Commit message**: `type(scope): description` (e.g., `fix(st-71): enforce 401/403 separation`)
 - **PR**: Draft until review passes; squash merge with head guard
 - **Force-push**: prohibited
 - **Main push**: prohibited (merge via PR only)
+
+## Push-Early Checkpoint Policy (Sandbox-Hosted Work)
+
+> **Effective:** Upon merge of PR #76 — see `process/AGENT_HANDOFF.md` §12 (canonical) and `process/SAFETY_CHECKLIST.md` §10 (summary) for full text.
+
+Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation (lint + tsc + `git diff --check` + credential scan + targeted tests for changed scope). GitHub remote branch is the persistent source of truth. Do not rely on local state (patches, ZIPs, local commits, `public/` files) as the primary artifact.
+
+- **Autonomous**: branch creation, checkpoint push, Draft PR, CI repair, issue comment
+- **Owner-gated**: mark Ready, merge, deploy, Production access, history rewrite, force-push
+- **Emergency WIP** (`wip(st-XX): preserve validated partial progress`) allowed when sandbox reset is imminent and only secret scan + `git diff --check` pass
+- **Never push**: `.env`, secrets, `db/custom.db`, Production dumps, `node_modules/`, build output

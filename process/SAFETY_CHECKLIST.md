@@ -266,3 +266,103 @@ ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "weighedTotalExpression";
 - ❌ ห้าม push โดยมี secret ใน code
 - ❌ ห้าม skip smoke test หลัง deploy
 - ❌ ห้าม ignore error ใน Vercel/Supabase logs
+
+---
+
+## 10. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
+
+> **Effective:** Upon merge of PR #76
+> **Approved by:** Owner (pending merge)
+> **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
+> **Canonical text:** `process/AGENT_HANDOFF.md` §12. This is a summary — keep in sync.
+
+### Principle
+
+Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation. GitHub remote branch is the persistent source of truth. Do **not** rely on local state (patches, ZIPs, local commits, `public/` files) as the primary artifact.
+
+### Before editing files
+
+1. `git fetch origin`
+2. Verify exact current `origin/main` SHA
+3. Check for duplicate branch/PR
+4. Create feature branch from exact main (`st-XX-*` / `security/*` / `policy/*`)
+5. Push empty branch as first remote checkpoint
+6. Then begin implementation
+
+### Minimum validation before normal checkpoint push
+
+- Credential/secret scan (if scanner exists)
+- `git diff --check`
+- Lint for changed scope
+- TypeScript/typecheck for changed scope
+- Targeted tests for changed code
+- Verify staged diff has no `.env`, secret, database dump, or sensitive artifact
+
+Full build/full test not required every checkpoint, but **must** pass before requesting PR Ready.
+
+### Emergency WIP checkpoint (when reset risk is imminent)
+
+Emergency WIP requires concrete evidence of imminent reset (Owner warning, dev server termination, workspace files disappearing). State evidence in WIP commit comment.
+
+Allowed only if:
+- ✅ Secret scan passes
+- ✅ Staged diff has no credential/sensitive data
+- ✅ `git diff --check` passes
+
+Commit format: `wip(st-XX): preserve validated partial progress`
+- Push to feature branch only
+- PR remains Draft
+- Comment listing pending validations
+- Never claim checkpoint is complete
+
+### Never push
+
+- `.env`, secrets, tokens, connection strings
+- `db/custom.db`, Production dumps
+- `node_modules/`, build output
+- Patch/ZIP with sensitive artifacts
+- Local progress diary duplicating GitHub
+
+### Autonomous (no Owner approval)
+
+- Branch creation from exact main
+- Checkpoint push to feature branch
+- Draft PR creation
+- CI repair (fix + push follow-up)
+- GitHub issue comment
+- Update PR body to current head
+
+### Requires Owner approval
+
+- Mark PR Ready, merge, deploy
+- Production access, credential validation, migration
+- History rewrite, force-push, main push
+- Close issue/PR, change repo settings
+
+### Authentication
+
+If GitHub auth missing/expired:
+- Stop. Request device login. Never request token in chat.
+- Never create patch/ZIP as primary workaround.
+
+If `workflow` permission missing:
+- Do not push `.github/workflows/*` changes
+- Quarantine workflow changes separately
+- Report to Owner
+
+### CI
+
+- Check CI on exact head after every push
+- In-scope failure → fix + push follow-up (autonomous)
+- Infrastructure failure → rerun once
+- Pre-existing unrelated failure → document, do not fix out of scope
+
+### Source of truth
+
+- GitHub = code, technical docs, exact commits, tests, CI, detailed evidence
+- Linear = task status, priority, blocker, next gate
+- Notion = durable Owner decisions, policy, high-level checkpoint
+
+### No Production impact
+
+This policy does not authorize any Production access. Production connection, query, write, migration, deploy, and credential validation remain Owner-gated.
