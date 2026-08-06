@@ -177,6 +177,8 @@ export default function Home() {
         const data = await res.json();
         setUser(data.user);
       } else {
+        // ST-75: Clear expired token on 401 from /auth/me
+        setAuthToken(null);
         setUser(null);
       }
     } catch {

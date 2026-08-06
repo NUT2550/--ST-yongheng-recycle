@@ -18,7 +18,7 @@ import {
 import { FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
-import { getAuthToken } from '@/lib/api';
+import { getAuthToken, setAuthToken } from '@/lib/api';
 import * as XLSX from 'xlsx';
 import {
   normalizeBillNumber,
@@ -335,7 +335,16 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
         body: JSON.stringify({ billNumbers, type: 'sales' }),
       });
       if (res.status === 401) {
-        toast.warning('เซสชันหมดอายุ — กรุณา Login ใหม่เพื่อตรวจบิลซ้ำ');
+        // ST-75: Session expired — clear token + close modal
+        setAuthToken(null);
+        toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
+        setOpen(false);
+        return;
+      }
+      if (res.status === 403) {
+        // ST-75: Permission denied — close modal + show error
+        toast.error('ไม่มีสิทธิ์ตรวจบิลซ้ำ — กรุณาแจ้งผู้ดูแล');
+        setOpen(false);
         return;
       }
       if (res.ok) {
@@ -470,13 +479,18 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
       });
 
       if (res.status === 401) {
+        // ST-75: Session expired — clear token + close modal
+        setAuthToken(null);
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
         setImporting(false);
+        setOpen(false);
         return;
       }
       if (res.status === 403) {
-        toast.error('ไม่มีสิทธิ์นำเข้าบิลขาย');
+        // ST-75: Permission denied — close modal + stop flow
+        toast.error('ไม่มีสิทธิ์นำเข้าบิลขาย — กรุณาแจ้งผู้ดูแล');
         setImporting(false);
+        setOpen(false);
         return;
       }
 
