@@ -351,10 +351,9 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         body: JSON.stringify({ billNumbers, type: 'purchase' }),
       });
       if (res.status === 401) {
-        // ST-75: Session expired — clear token + close modal + redirect
-        setAuthToken(null);
+        // ST-75: Session expired — use shared cleanup path
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
-        setOpen(false);
+        handleSessionExpired();
         return;
       }
       if (res.status === 403) {

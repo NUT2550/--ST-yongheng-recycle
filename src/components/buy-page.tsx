@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 import { DetailedExcelImportDialog } from '@/components/detailed-excel-import-dialog';
 
-export function BuyPage() {
+export function BuyPage({ onSessionExpired }: { onSessionExpired?: () => void }) {
   const {
     buyCartItems,
     addBuyCartItem,
@@ -305,7 +305,7 @@ export function BuyPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 <DetailedExcelImportDialog
                   products={products}
-                  onSessionExpired={() => { /* parent handles via page.tsx checkAuth */ }}
+                  onSessionExpired={onSessionExpired}
                   onImport={async (bills) => {
                     setSubmitting(true);
                     let success = 0;

@@ -62,14 +62,14 @@ const navItems: Array<{
 ];
 
 // Page content renderer
-function PageContent({ activeTab }: { activeTab: PageTab }) {
+function PageContent({ activeTab, onSessionExpired }: { activeTab: PageTab; onSessionExpired?: () => void }) {
   switch (activeTab) {
     case 'dashboard':
       return <DashboardPage />;
     case 'buy':
-      return <BuyPage />;
+      return <BuyPage onSessionExpired={onSessionExpired} />;
     case 'sell':
-      return <SellPage />;
+      return <SellPage onSessionExpired={onSessionExpired} />;
     case 'sort':
       return <SortPage />;
     case 'transfer':
@@ -451,7 +451,7 @@ export default function Home() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 lg:p-6 max-w-7xl mx-auto">
-            <PageContent activeTab={activeTab} />
+            <PageContent onSessionExpired={handleSessionExpired} activeTab={activeTab} />
           </div>
         </main>
       </div>
