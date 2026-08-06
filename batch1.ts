@@ -1,7 +1,8 @@
 import fs from 'fs'
 import { PrismaClient } from '@prisma/client'
+import { requireExplicitWriteApproval } from './scripts/lib/require-db-url.mjs'
 
-const db = new PrismaClient({ datasources: { db: { url: 'postgresql://postgres.wefqhunzjvsxciiwdhjx:8sY.%23thcN%24Bk5%25G@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1' } } })
+const db = new PrismaClient({ datasources: { db: { url: requireExplicitWriteApproval('SUPABASE_POOLER_URL') } } })
 const bills = JSON.parse(fs.readFileSync('/tmp/fixed_bills.json', 'utf-8'))
 
 const PM: Record<string,string> = {

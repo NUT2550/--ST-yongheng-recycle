@@ -10,9 +10,8 @@
 import { PrismaClient } from '@prisma/client'
 import { ST47_OWNER_PRODUCT_BOUNDARIES, OWNER_ACCEPTED_VARIANCES, assertUniqueOwnerProductBoundaries } from '../src/lib/st47-owner-product-boundaries'
 
-const SUPABASE_POOLER_URL =
-  'postgresql://postgres.wefqhunzjvsxciiwdhjx:8sY.%23thcN%24Bk5%25G@aws-1-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=1'
-
+import { requireDbUrl } from './lib/require-db-url.mjs'
+const SUPABASE_POOLER_URL = requireDbUrl('SUPABASE_POOLER_URL')
 interface ProductRow {
   id: string
   name: string
