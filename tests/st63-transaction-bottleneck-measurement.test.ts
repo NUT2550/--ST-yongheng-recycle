@@ -79,7 +79,7 @@ function createMeasuredDeps(opts: { sourceLotCount?: number } = {}): StockTransf
     },
     async createStockTransfer(data: Record<string, unknown>) {
       queryLog.push({ method: 'createStockTransfer', stage: 'transfer_creation', timestamp: performance.now() })
-      return { id: 'transfer-test-1', ...data } as unknown as { id: string; billNumber: string }
+      return { id: 'transfer-test-1', billNumber: 'TRN-2569-00001', ...data } as any
     },
     async createOutputStockLot(data: Record<string, unknown>) {
       queryLog.push({ method: 'createOutputStockLot', stage: 'output_lot_creation', timestamp: performance.now() })
@@ -100,7 +100,7 @@ function createMeasuredDeps(opts: { sourceLotCount?: number } = {}): StockTransf
     async deletePartialOutputLots(transferId: string) {
       queryLog.push({ method: 'deletePartialOutputLots', stage: 'cleanup', timestamp: performance.now() })
     },
-    async transaction<T>(callback: (tx: unknown) => Promise<T>): Promise<T> {
+    async transaction<T>(callback: (tx: StockTransferDeps) => Promise<T>): Promise<T> {
       queryLog.push({ method: 'transaction.begin', stage: 'transaction', timestamp: performance.now() })
       try {
         const result = await callback({ ...deps, isTransactionScoped: true })
