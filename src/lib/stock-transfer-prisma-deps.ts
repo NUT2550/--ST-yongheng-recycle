@@ -323,6 +323,13 @@ export function createPrismaStockTransferDeps(
         data: data as Prisma.StockLotCreateInput,
       });
     },
+    // ST-63 Phase B1: batch output lot creation using createMany
+    async createOutputStockLots(data: Record<string, unknown>[]): Promise<void> {
+      if (data.length === 0) return;
+      await client.stockLot.createMany({
+        data: data as Prisma.StockLotCreateManyInput[],
+      });
+    },
 
     async createStockMovements(data): Promise<void> {
       await client.stockMovement.createMany({

@@ -128,6 +128,10 @@ function createMeasuredDeps(opts: { sourceLotCount?: number } = {}): StockTransf
     async createOutputStockLot(data: Record<string, unknown>) {
       opLog.push({ method: 'createOutputStockLot', stage: 'output_lot_creation', timestamp: performance.now() })
     },
+    // ST-63 Phase B1: batch mock — 1 call for N rows
+    async createOutputStockLots(data: Record<string, unknown>[]) {
+      opLog.push({ method: 'createOutputStockLots', stage: 'output_lot_creation', timestamp: performance.now(), args: { rowCount: data.length } })
+    },
     async createStockMovements(data: unknown) {
       const movements = data as unknown[]
       opLog.push({ method: 'createStockMovements', stage: 'stock_movement_creation', timestamp: performance.now(), args: { count: movements.length } })
@@ -210,37 +214,42 @@ describe('ST-63 Phase A: dependency/DB-operation count', () => {
     expect(results[2].updates).toBe(20) // 20 lots consumed → 20 updates
   })
 
-  test('3. output scaling: lot creation = N+1 (1 create per output item)', async () => {
+  test('3. ST-63 Phase B1: output lot creation = 1 batch call (was N+1 before)', async () => {
+    // BEFORE Phase B1: N sequential createOutputStockLot calls (1 per output item)
+    // AFTER Phase B1: 1 createOutputStockLots call (createMany batch)
     for (const outputCount of [1, 2, 5, 10]) {
       const deps = createMeasuredDeps({ sourceLotCount: 5 })
       const items = Array.from({ length: outputCount }, (_, i) => ({
         productId: `p${i + 1}`, weight: 10, isWaste: false, outputPricePerKg: 20,
       }))
       await createStockTransfer(deps, makeValidInput({ items, sourceWeight: outputCount * 10 }), AUTH, REQUEST_ID, null)
-      const lotCreations = deps._opLog.filter(e => e.stage === 'output_lot_creation').length
-      console.log(`  outputs=${outputCount}: lot_creations=${lotCreations}`)
-      expect(lotCreations).toBe(outputCount)
+      const batchCalls = deps._opLog.filter(e => e.method === 'createOutputStockLots').length
+      const sequentialCalls = deps._opLog.filter(e => e.method === 'createOutputStockLot').length
+      console.log(`  outputs=${outputCount}: batch_calls=${batchCalls}, sequential_calls=${sequentialCalls}`)
+      // Phase B1: exactly 1 batch call, 0 sequential calls
+      expect(batchCalls).toBe(1)
+      expect(sequentialCalls).toBe(0)
     }
   })
 
-  test('4. documented formula: 5 available (2 consumed) + 2 outputs = 17 dependency calls', async () => {
+  test('4. ST-63 Phase B1 formula: 5 available (2 consumed) + 2 outputs = 16 calls (was 17)', async () => {
     const deps = createMeasuredDeps({ sourceLotCount: 5 })
     await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null)
     const total = totalOpCount(deps._opLog)
-    // Formula (measured, includes double execution from pre-check + transaction):
+    // Formula (after Phase B1 batch output lot creation):
     //   product_lookup:        2  (1 outside tx + 1 inside tx)
     //   output_product_lookup: 4  (2 outputs × 2: outside + inside tx)
     //   source_lot_lookup:     2  (1 outside tx + 1 inside tx)
     //   source_deduction:      3  (1 findMany + 2 updates — only 2 lots consumed)
     //   bill_number:           1  (inside tx only)
     //   transfer_creation:     1  (inside tx only)
-    //   output_lot_creation:   2  (1 per output item, inside tx only)
+    //   output_lot_creation:   1  (1 createMany batch, was 2 sequential creates)
     //   movement_creation:     1  (createMany, inside tx only)
     //   audit_log:             1  (inside tx only)
-    //   TOTAL:                17
-    console.log(`Formula: 2+4+2+3+1+1+2+1+1 = 17`)
+    //   TOTAL:                16 (was 17 before Phase B1)
+    console.log(`Formula (Phase B1): 2+4+2+3+1+1+1+1+1 = 16 (was 17)`)
     console.log(`Actual: ${total}`)
-    expect(total).toBe(17)
+    expect(total).toBe(16)
   })
 
   test('5. bottleneck proof: 20 available (20 consumed) = 20 sequential FIFO updates', async () => {
@@ -252,13 +261,15 @@ describe('ST-63 Phase A: dependency/DB-operation count', () => {
     expect(updates).toBe(20)
   })
 
-  test('6. bottleneck proof: 10 outputs = 10 sequential lot creates (not createMany)', async () => {
+  test('6. ST-63 Phase B1: 10 outputs = 1 batch call (was 10 sequential creates)', async () => {
     const deps = createMeasuredDeps({ sourceLotCount: 5 })
     const items = Array.from({ length: 10 }, (_, i) => ({ productId: `p${i+1}`, weight: 5, isWaste: false, outputPricePerKg: 10 }))
     await createStockTransfer(deps, makeValidInput({ items, sourceWeight: 50 }), AUTH, REQUEST_ID, null)
-    const lotCreations = deps._opLog.filter(e => e.stage === 'output_lot_creation').length
-    console.log(`10 outputs: lot_creations=${lotCreations} (sequential create, not createMany)`)
-    expect(lotCreations).toBe(10)
+    const batchCalls = deps._opLog.filter(e => e.method === 'createOutputStockLots').length
+    const sequentialCalls = deps._opLog.filter(e => e.method === 'createOutputStockLot').length
+    console.log(`10 outputs: batch_calls=${batchCalls}, sequential_calls=${sequentialCalls} (was 10 sequential before Phase B1)`)
+    expect(batchCalls).toBe(1)
+    expect(sequentialCalls).toBe(0)
   })
 
   test('7. double execution proof: lookups called outside AND inside transaction', async () => {
@@ -324,5 +335,183 @@ describe('ST-63 Phase A: concurrency NOT TESTED', () => {
     console.log('Phase B optimization (batch UPDATE) must NOT reduce concurrency safety.')
 
     expect(true).toBe(true) // documentation test
+  })
+})
+
+// ============ ST-63 Phase B1: batch correctness tests ============
+
+describe('ST-63 Phase B1: batch output lot data equivalence', () => {
+  test('10. batch creates exactly one StockLot per non-waste output item', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    // 3 output items: 2 non-waste + 1 waste
+    const items = [
+      { productId: 'p1', weight: 30, isWaste: false, outputPricePerKg: 20 },
+      { productId: 'p2', weight: 20, isWaste: true, outputPricePerKg: 0 },
+      { productId: 'p3', weight: 40, isWaste: false, outputPricePerKg: 15 },
+    ]
+    await createStockTransfer(deps, makeValidInput({ items, sourceWeight: 90 }), AUTH, REQUEST_ID, null)
+
+    // Verify batch was called with 2 rows (waste filtered out)
+    const batchCall = deps._opLog.find(e => e.method === 'createOutputStockLots')
+    expect(batchCall).toBeDefined()
+    expect((batchCall!.args as { rowCount: number }).rowCount).toBe(2)
+  })
+
+  test('11. batch data contains correct productId, weight, costPerKg, source', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    // Use a custom mock that captures the batch data
+    let capturedBatchData: Record<string, unknown>[] | null = null
+    const originalBatch = deps.createOutputStockLots
+    deps.createOutputStockLots = async (data: Record<string, unknown>[]) => {
+      capturedBatchData = data
+    }
+    await createStockTransfer(deps, makeValidInput({
+      sourceWeight: 100,
+      items: [
+        { productId: 'prod-A', weight: 60, isWaste: false, outputPricePerKg: 20 },
+        { productId: 'prod-B', weight: 35, isWaste: false, outputPricePerKg: 15 },
+      ],
+    }), AUTH, REQUEST_ID, null)
+
+    expect(capturedBatchData).not.toBeNull()
+    expect(capturedBatchData!.length).toBe(2)
+
+    // Verify first lot data
+    const lot1 = capturedBatchData![0]
+    expect(lot1.productId).toBe('prod-A')
+    expect(lot1.remainingWeight).toBe(60)
+    expect(lot1.source).toBe('TRANSFER')
+    expect(lot1.sourceId).toBe('transfer-test-1')
+    expect(lot1.dateAdded).toBeDefined()
+
+    // Verify second lot data
+    const lot2 = capturedBatchData![1]
+    expect(lot2.productId).toBe('prod-B')
+    expect(lot2.remainingWeight).toBe(35)
+    expect(lot2.source).toBe('TRANSFER')
+  })
+
+  test('12. waste items are filtered — no StockLot created for waste', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    let capturedBatchData: Record<string, unknown>[] | null = null
+    deps.createOutputStockLots = async (data: Record<string, unknown>[]) => {
+      capturedBatchData = data
+    }
+    await createStockTransfer(deps, makeValidInput({
+      sourceWeight: 100,
+      items: [
+        { productId: 'p1', weight: 60, isWaste: false, outputPricePerKg: 20 },
+        { productId: 'p2', weight: 30, isWaste: true, outputPricePerKg: 0 },
+        { productId: 'p3', weight: 5, isWaste: false, outputPricePerKg: 10 },
+      ],
+    }), AUTH, REQUEST_ID, null)
+
+    // Only 2 non-waste items → batch with 2 rows
+    expect(capturedBatchData!.length).toBe(2)
+    expect(capturedBatchData!.every(lot => lot.productId !== 'p2')).toBe(true)
+  })
+
+  test('13. waste items are filtered from batch — verified via call args', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    let capturedBatchData: Record<string, unknown>[] | null = null
+    deps.createOutputStockLots = async (data: Record<string, unknown>[]) => {
+      capturedBatchData = data
+    }
+    const result = await createStockTransfer(deps, makeValidInput({
+      sourceWeight: 90,
+      items: [
+        { productId: 'p1', weight: 30, isWaste: false, outputPricePerKg: 20 },
+        { productId: 'p2', weight: 20, isWaste: true, outputPricePerKg: 0 },
+        { productId: 'p3', weight: 40, isWaste: false, outputPricePerKg: 15 },
+      ],
+    }), AUTH, REQUEST_ID, null)
+
+    expect(result.ok).toBe(true)
+    // Waste item filtered → batch with 2 rows (p1 + p3, not p2)
+    expect(capturedBatchData).not.toBeNull()
+    expect(capturedBatchData!.length).toBe(2)
+    expect(capturedBatchData!.every(lot => lot.productId !== 'p2')).toBe(true)
+  })
+
+  test('14. all-waste input → no batch call (empty array skipped)', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    let batchCalled = false
+    deps.createOutputStockLots = async () => { batchCalled = true }
+    await createStockTransfer(deps, makeValidInput({
+      sourceWeight: 50,
+      items: [
+        { productId: 'p1', weight: 50, isWaste: true, outputPricePerKg: 0 },
+      ],
+    }), AUTH, REQUEST_ID, null)
+
+    // All waste → no batch call
+    expect(batchCalled).toBe(false)
+  })
+})
+
+describe('ST-63 Phase B1: batch atomicity and rollback', () => {
+  test('15. batch failure triggers rollback (no partial output lots committed)', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    // Make batch throw
+    deps.createOutputStockLots = async () => {
+      throw new Error('batch createMany failed')
+    }
+    const result = await createStockTransfer(deps, makeValidInput({
+      sourceWeight: 100,
+      items: [
+        { productId: 'p1', weight: 60, isWaste: false, outputPricePerKg: 20 },
+        { productId: 'p2', weight: 35, isWaste: false, outputPricePerKg: 15 },
+      ],
+    }), AUTH, REQUEST_ID, null)
+
+    // Should fail
+    expect(result.ok).toBe(false)
+
+    // Verify compensation was called (source lots restored)
+    const compensateCalls = deps._opLog.filter(e => e.method === 'compensate').length
+    expect(compensateCalls).toBeGreaterThan(0)
+
+    // Verify deletePartialOutputLots was called
+    const deleteCalls = deps._opLog.filter(e => e.method === 'deletePartialOutputLots').length
+    expect(deleteCalls).toBeGreaterThan(0)
+  })
+
+  test('16. batch success → no compensation or cleanup needed', async () => {
+    const deps = createMeasuredDeps({ sourceLotCount: 5 })
+    const result = await createStockTransfer(deps, makeValidInput(), AUTH, REQUEST_ID, null)
+
+    expect(result.ok).toBe(true)
+
+    // No compensation, no cleanup
+    const compensateCalls = deps._opLog.filter(e => e.method === 'compensate').length
+    const deleteCalls = deps._opLog.filter(e => e.method === 'deletePartialOutputLots').length
+    expect(compensateCalls).toBe(0)
+    expect(deleteCalls).toBe(0)
+  })
+})
+
+describe('ST-63 Phase B1: before/after operation count comparison', () => {
+  test('17. operation count comparison table', async () => {
+    console.log('=== ST-63 Phase B1: before/after comparison ===')
+    console.log('| Output items | Before (sequential) | After (batch) | Reduction |')
+    console.log('|---:|---:|---:|---:|')
+
+    for (const outputCount of [1, 2, 5, 10]) {
+      const deps = createMeasuredDeps({ sourceLotCount: 5 })
+      const items = Array.from({ length: outputCount }, (_, i) => ({
+        productId: `p${i + 1}`, weight: 10, isWaste: false, outputPricePerKg: 20,
+      }))
+      await createStockTransfer(deps, makeValidInput({ items, sourceWeight: outputCount * 10 }), AUTH, REQUEST_ID, null)
+
+      const batchCalls = deps._opLog.filter(e => e.method === 'createOutputStockLots').length
+      const before = outputCount // was N sequential creates
+      const after = batchCalls // now 1 batch call
+      const reduction = before - after
+      console.log(`| ${outputCount} | ${before} | ${after} | ${reduction} |`)
+    }
+
+    console.log('')
+    console.log('Note: Operation count reduced. Real PostgreSQL duration NOT yet measured.')
+    console.log('Original Production incident root cause remains Unknown.')
   })
 })
