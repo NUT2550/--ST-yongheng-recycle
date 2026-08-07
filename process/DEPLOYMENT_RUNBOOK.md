@@ -129,7 +129,7 @@ Record as applicable:
 - observation status
 - next safe gate
 
-Update GitHub/Linear/Notion according to their source-of-truth roles.
+Write back only to the source systems whose canonical state changed: GitHub for technical evidence/policy, Linear for task state or gate, and Notion for durable Owner/business context.
 
 ## Key takeaway
 

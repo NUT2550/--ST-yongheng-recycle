@@ -222,7 +222,7 @@ A release/Production task is not complete until its applicable evidence is recor
 - remaining risks/unknowns
 - observation requirement/status
 - next safe gate
-- GitHub/Linear/Notion write-back where applicable
+- source-specific write-back only where canonical state changed (GitHub technical evidence, Linear task state/gate, Notion durable Owner/business context)
 
 ## Key takeaway
 

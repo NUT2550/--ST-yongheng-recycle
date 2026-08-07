@@ -43,10 +43,6 @@ Do not mark ST-75 complete from PR #79 alone.
 - Purpose: clean stale/conflicting GitHub + Notion operating instructions before introducing a new optimized/agentic rule set.
 - Documentation-only scope; no Production mutation, migration, deploy, or application-code change in this PR.
 
-### Other open PRs
-
-- PR **#73** is still open and appears to be a README revision without a verified current linked issue/gate in this cleanup. Treat as untriaged/secondary until separately reviewed; do not let it define current project state.
-
 ## Current governance baseline
 
 Until PR #80 is merged, the repository `main` still contains the previously merged Push-Early policy from PR #76. On the governance-cleanup branch, the intended reconciled hierarchy is:
