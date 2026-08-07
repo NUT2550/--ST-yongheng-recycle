@@ -12,15 +12,24 @@
 - **Production**: https://st-yongheng-recycle.vercel.app
 - **GitHub**: https://github.com/NUT2550/--ST-yongheng-recycle
 
+## Governance and Conflict Resolution
+
+- **`process/GOVERNANCE.md` is the canonical conflict-resolution and policy-precedence document.**
+- If an older handoff, runbook, template, worklog, or Notion page conflicts with `AGENTS.md` or `process/GOVERNANCE.md`, follow the higher-authority current policy and treat the older statement as superseded.
+- Current explicit Owner decisions still control task-specific business/risk gates.
+- Do not resolve conflicting instructions by timestamp alone or by guessing.
+
 ## Required Reading Order
 
 1. **`AGENTS.md`** (this file) — entry point, safety rules, working method
-2. **`process/CURRENT_STATE.md`** — current main SHA, Production SHA, active issues, verified/unverified behavior
-3. **`process/PROJECT_OPERATING_CONTEXT.md`** — project summary, tech stack, file structure
-4. **`process/BUSINESS_RULES.md`** — bill number format, cancel behavior, FIFO, permissions, stable error codes
-5. **`process/DATABASE_CONTEXT.md`** — Prisma schema, stock flow, forbidden operations
-6. **`knowledge/`** — durable technical knowledge (incidents, invariants, decisions)
-7. Task-specific code, tests, and docs
+2. **`process/GOVERNANCE.md`** — authority hierarchy, conflict resolution, current Git/approval policy
+3. **`process/CURRENT_STATE.md`** — current main SHA, Production SHA, active issues, verified/unverified behavior
+4. **`process/PROJECT_OPERATING_CONTEXT.md`** — project summary, tech stack, file structure
+5. **`process/BUSINESS_RULES.md`** — bill number format, cancel behavior, FIFO, permissions, stable error codes
+6. **`process/DATABASE_CONTEXT.md`** — Prisma schema, stock flow, forbidden operations
+7. **`knowledge/`** — durable technical knowledge (incidents, invariants, decisions)
+8. Task-specific code, tests, and docs
+9. Notion AI Read First / Owner decisions when Owner/business context is relevant
 
 ## Source-of-Truth Responsibilities
 
@@ -106,7 +115,7 @@ Every task response must include:
 
 ## Push-Early Checkpoint Policy (Sandbox-Hosted Work)
 
-> **Effective:** Upon merge of PR #76 — see `process/AGENT_HANDOFF.md` §12 (canonical) and `process/SAFETY_CHECKLIST.md` §10 (summary) for full text.
+> **Effective:** Upon merge of PR #76 — see `process/GOVERNANCE.md` for precedence and `process/AGENT_HANDOFF.md` §12 for the detailed checkpoint procedure. `process/SAFETY_CHECKLIST.md` §10 is a supporting summary.
 
 Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation (lint + tsc + `git diff --check` + credential scan + targeted tests for changed scope). GitHub remote branch is the persistent source of truth. Do not rely on local state (patches, ZIPs, local commits, `public/` files) as the primary artifact.
 
