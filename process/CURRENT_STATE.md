@@ -1,7 +1,7 @@
 # Current State — YH Stock System
 
 > Concise current technical state only. No progress diary. No historical issue list.
-> Last reconciled: 2026-08-07
+> Last updated: 2026-08-07
 
 ## Version identity
 
@@ -110,4 +110,4 @@ Do not infer any of these from code alone.
 
 ## Key takeaway
 
-**Current `main` is `9d6a416...`; ST-75 remains open beyond the merged auth-containment fix; governance cleanup is still Draft and must be rebased/synchronized before Ready. Production state beyond explicit evidence is not assumed.**
+**Current `main` is `9d6a416...`; ST-75 remains open beyond the merged auth-containment fix; governance cleanup is still Draft and must be synchronized before Ready. Production state beyond explicit evidence is not assumed.**
