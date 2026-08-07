@@ -1,368 +1,229 @@
-# Production Safety Checklist — ยงเฮง มหาชัย รีไซเคิล
+# Production Safety Checklist — YH Stock System
 
-> Checklist มาตรฐานสำหรับการ migration + deploy + smoke test
-> วันที่: 27/06/2569
+> Current checklist for migration, release, deploy, Production verification, and rollback.
+> Historical direct-main-push and ad-hoc Production instructions remain in Git history only.
+> Last reconciled: 2026-08-07
 
----
+## 1. Authority and gates
 
-## 1. ก่อน Migration (Pre-migration)
+Read first:
 
-### 1.1 Backup
-- [ ] สร้าง Supabase backup: https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/database/backups
-- [ ] ตั้งชื่อ `pre-<feature-name>-migration-<date>`
-- [ ] บันทึก backup ID ไว้ (ถ้าต้อง rollback)
+1. `AGENTS.md`
+2. `process/GOVERNANCE.md`
+3. `process/CURRENT_STATE.md`
+4. task-specific issue/PR and affected domain docs
 
-### 1.2 บันทึก Row Counts (ก่อน)
-- [ ] เปิด Supabase SQL Editor
-- [ ] รัน query:
-```sql
-SELECT 'BuyBill' AS t, COUNT(*) FROM "BuyBill"
-UNION ALL SELECT 'SellBill', COUNT(*) FROM "SellBill"
-UNION ALL SELECT 'SortingBill', COUNT(*) FROM "SortingBill"
-UNION ALL SELECT 'BuyBillItem', COUNT(*) FROM "BuyBillItem"
-UNION ALL SELECT 'SellBillItem', COUNT(*) FROM "SellBillItem"
-UNION ALL SELECT 'SortingBillItem', COUNT(*) FROM "SortingBillItem"
-UNION ALL SELECT 'Product', COUNT(*) FROM "Product"
-UNION ALL SELECT 'ProductCategory', COUNT(*) FROM "ProductCategory"
-UNION ALL SELECT 'User', COUNT(*) FROM "User"
-UNION ALL SELECT 'Customer', COUNT(*) FROM "Customer"
-UNION ALL SELECT 'Employee', COUNT(*) FROM "Employee"
-UNION ALL SELECT 'StockLot', COUNT(*) FROM "StockLot";
-```
-- [ ] บันทึกผลลัพธ์ไว้เปรียบเทียบหลัง migration
+The following require explicit Owner approval:
 
-### 1.3 ตรวจ Code State
-- [ ] `git status` — working tree clean (หรือมีเฉพาะ changes ที่ตั้งใจ)
-- [ ] `grep "provider" prisma/schema.prisma` → ต้องเป็น `postgresql`
-- [ ] ตรวจ diff ไม่มี `.env` หรือ `db/custom.db`
-- [ ] ตรวจ diff ไม่มี secret (password, key, token)
-- [ ] `bun run lint` → exit 0
+- Production connection/query/write
+- Production data correction
+- database migration
+- marking PR Ready
+- merge
+- deploy
+- rollback affecting `main` or Production
+- credential validation/rotation
+- direct main push
+- force-push/history rewrite
 
-### 1.4 ตรวจ Migration SQL
-- [ ] อ่าน SQL ทั้งหมด — ต้องเป็น additive only (ADD COLUMN, CREATE TABLE)
-- [ ] ไม่มี DROP, ALTER (ของเดิม), TRUNCATE, DELETE
-- [ ] ทุก column ใหม่ต้องเป็น nullable หรือมี default
-- [ ] มี BEGIN/COMMIT transaction
-- [ ] มี verification queries ด้านล่าง
+This checklist never grants approval by itself.
 
----
+## 2. Before any migration
 
-## 2. ระหว่าง Migration
+- [ ] Owner explicitly approved the migration for this task.
+- [ ] Exact PR/head SHA is recorded.
+- [ ] Migration purpose and affected tables/columns are documented.
+- [ ] Migration SQL has been independently reviewed.
+- [ ] Rollback/recovery plan is documented.
+- [ ] Backup/recovery capability is verified before mutation.
+- [ ] Relevant pre-migration counts/invariants are captured read-only.
+- [ ] `prisma/schema.prisma` provider is `postgresql`.
+- [ ] No `.env`, secrets, credentials, database dumps, or customer data are present in the diff.
+- [ ] Required CI/validation on the exact head passes.
 
-### 2.1 Run Migration
-- [ ] เปิด https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/sql/new
-- [ ] วาง SQL ทั้งหมด
-- [ ] กด Run
-- [ ] ตรวจผลลัพธ์ — ต้องไม่มี error
-- [ ] ถ้ามี error → หยุดทันที + rollback ด้วย rollback SQL
+### Migration design expectations
 
-### 2.2 Monitor
-- [ ] รอจน query เสร็จ (ปกติ < 5 วินาที)
-- [ ] ตรวจว่าไม่มี active sessions ที่ค้าง
-- [ ] ถ้าระหว่าง migration มี user ใช้งานอยู่ → migration อาจ lock → รอหรือ rollback
+Prefer safe, bounded, backward-compatible changes. Any destructive or non-additive operation requires explicit risk review and Owner approval specific to that operation.
 
----
+Never:
 
-## 3. หลัง Migration (Post-migration)
+- run `prisma migrate reset` against Production
+- seed Production as a shortcut
+- change Production stock/cost/history through ad-hoc SQL
+- infer that a migration succeeded without verification evidence
 
-### 3.1 Verify Columns
-- [ ] รัน verification query:
-```sql
-SELECT table_name, column_name, data_type, is_nullable
-FROM information_schema.columns
-WHERE table_schema = 'public'
-  AND column_name IN (/* columns ที่เพิ่ม */)
-ORDER BY table_name, column_name;
-```
-- [ ] ตรวจว่ามีจำนวน rows ถูกต้อง
-- [ ] ตรวจ `is_nullable = 'YES'` สำหรับทุก column ใหม่
+## 3. During migration
 
-### 3.2 Verify Row Counts (หลัง)
-- [ ] รัน row count query เดิม (จาก 1.2)
-- [ ] เปรียบเทียบกับก่อน migration — ต้องเท่ากันทุกตาราง
+- [ ] Confirm the approved environment and exact migration before execution.
+- [ ] Execute only the approved migration.
+- [ ] Stop on any unexpected error, row-count change, lock/problem, or schema mismatch.
+- [ ] Do not improvise a second mutation to “fix” an unexpected state.
+- [ ] Preserve error/evidence without copying credentials or sensitive Production data into docs/chat.
 
-### 3.3 Verify Backward Compat
-- [ ] รัน query ตรวจข้อมูลเดิม:
-```sql
--- ตัวอย่างสำหรับ weightExpression
-SELECT COUNT(*) FILTER (WHERE "weightExpression" IS NOT NULL) AS rows_with_formula,
-       COUNT(*) AS total
-FROM "BuyBillItem";
-```
-- [ ] `rows_with_formula` ต้องเป็น 0 (ข้อมูลเดิมยังเป็น NULL)
+If the result is partial, ambiguous, or inconsistent, classify it as a Production incident and stop for Owner decision.
 
----
+## 4. After migration
 
-## 4. ก่อน Deploy (Pre-deploy)
+- [ ] Verify expected schema changes read-only.
+- [ ] Compare pre/post counts and task-specific invariants.
+- [ ] Verify backward compatibility where applicable.
+- [ ] Confirm no unintended stock/cost/history mutation.
+- [ ] Record exact evidence in the task/PR.
+- [ ] Update affected canonical documentation.
 
-### 4.1 Code Review
-- [ ] `git diff origin/main..HEAD` — ตรวจทุกบรรทัด
-- [ ] ไม่มี hardcoded password/secret
-- [ ] ไม่มี `.env` ใน diff
-- [ ] ไม่มี `db/custom.db` ใน diff
-- [ ] ไม่มี temp files (_tmp_*, *.bak)
+Do not proceed to release merely because SQL returned success.
 
-### 4.2 Schema Check
-- [ ] `grep "provider" prisma/schema.prisma` → `postgresql`
-- [ ] schema ตรงกับ DB ที่ migrate แล้ว (column ใหม่ต้องมีใน schema)
+## 5. Before requesting PR Ready
 
-### 4.3 Type Check + Lint
-- [ ] `bun run lint` → exit 0
-- [ ] `npx tsc --noEmit` → ไม่มี error ใหม่ (error ใน `examples/` และ `skills/` เป็น pre-existing — ไม่เกี่ยว)
+- [ ] Root cause/business requirement is documented.
+- [ ] Scope is bounded to the issue.
+- [ ] Regression/feature tests cover required behavior and failure modes.
+- [ ] Targeted tests pass.
+- [ ] Full validation passes:
 
-### 4.4 Commit + Push
-- [ ] `git add <files>` — เฉพาะไฟล์ที่ตั้งใจ
-- [ ] `git commit -m "feat: <description>"`
-- [ ] `git push origin main`
-
----
-
-## 5. หลัง Deploy (Post-deploy)
-
-### 5.1 Vercel Deploy Status
-- [ ] เปิด https://vercel.com/dashboard
-- [ ] ดู deployment ล่าสุด — รอจน status = "Ready"
-- [ ] ถ้า status = "Error" → ดู build logs + rollback code
-
-### 5.2 Smoke Test พื้นฐาน
-- [ ] เปิด https://st-yongheng-recycle.vercel.app/
-- [ ] ตรวจ login page แสดงปกติ
-- [ ] Login ด้วย `01` / <password>
-- [ ] Dashboard โหลดสำเร็จ
-- [ ] ไม่มี error ใน browser console
-
-### 5.3 Smoke Test Buy Bill
-- [ ] ไปที่หน้า "รับซื้อ"
-- [ ] เลือกสินค้า (เช่น "หนาพิเศษ")
-- [ ] ใส่น้ำหนัก = `100` (หรือ `100-5` ถ้าทดสอบ formula)
-- [ ] ใส่ราคา = `10`
-- [ ] กด "เพิ่มรายการ"
-- [ ] ตรวจ cart แสดงรายการถูกต้อง
-- [ ] ใส่ note = `SMOKE_TEST_BUY_<date>`
-- [ ] กด "บันทึกใบรับซื้อ"
-- [ ] ตรวจ toast success + ยอดถูกต้อง (100 × 10 = 1000)
-- [ ] บันทึก bill ID (จาก URL หรือ history)
-
-### 5.4 Smoke Test Sell Bill
-- [ ] ไปที่หน้า "ขาย"
-- [ ] เลือกสินค้าที่มี stock (จาก buy ข้างบน)
-- [ ] ใส่น้ำหนัก = `50` (น้อยกว่า stock)
-- [ ] ใส่ราคาขาย = `15`
-- [ ] กด "เพิ่มรายการ"
-- [ ] ใส่ note = `SMOKE_TEST_SELL_<date>`
-- [ ] กด "บันทึกใบขาย"
-- [ ] ตรวจ toast success + ยอดขาย 750 + ต้นทุน FIFO
-
-### 5.5 Smoke Test Sorting Bill
-- [ ] ไปที่หน้า "คัดแยก"
-- [ ] เลือกสินค้าต้นทาง (steel)
-- [ ] ใส่ source weight = `30`
-- [ ] ใส่ source price = `5`
-- [ ] เพิ่ม sorted item: สินค้า + น้ำหนัก 20 + ราคา 8
-- [ ] ใส่ note = `SMOKE_TEST_SORT_<date>`
-- [ ] กด "บันทึกใบคัดแยก"
-- [ ] ตรวจ toast success + loss weight = 10
-
-### 5.6 Smoke Test Cancel (ถ้ามี feature)
-- [ ] ไปที่หน้า "ประวัติรายการ"
-- [ ] หา bill ที่สร้าง (note: SMOKE_TEST_*)
-- [ ] กดปุ่ม "ยกเลิก" (ถ้ามี)
-- [ ] ใส่เหตุผล: `cancel smoke test`
-- [ ] ยืนยัน
-- [ ] ตรวจ toast success
-
-### 5.7 Smoke Test History
-- [ ] ไปที่หน้า "ประวัติรายการ"
-- [ ] สลับ tab รับซื้อ/ขาย/คัดแยก
-- [ ] คลิก bill เพื่อขยาย
-- [ ] ตรวจรายการ items แสดงถูกต้อง
-- [ ] ตรวจยอดรวมตรงกับที่สร้าง
-
-### 5.8 Smoke Test AuditLog (ถ้ามี feature)
-- [ ] ใน Supabase SQL Editor:
-```sql
-SELECT action, "entityType", "userName", "createdAt"
-FROM "AuditLog"
-WHERE "createdAt" > NOW() - INTERVAL '1 hour'
-ORDER BY "createdAt" DESC
-LIMIT 20;
-```
-- [ ] ตรวจมี entries CREATE/CANCEL สำหรับ bills ที่สร้าง/ยกเลิก
-
-### 5.9 Smoke Test Stock Restore (ถ้า cancel)
-- [ ] ใน Supabase SQL Editor:
-```sql
-SELECT p.name, SUM(sl."remainingWeight") AS total
-FROM "StockLot" sl
-JOIN "Product" p ON p.id = sl."productId"
-WHERE p.name = '<product ที่ทดสอบ>'
-GROUP BY p.name;
-```
-- [ ] ตรวจ stock กลับเดิมหลัง cancel
-
----
-
-## 6. Cleanup
-
-### 6.1 Cleanup Test Bills
-- [ ] Cancel bill SMOKE_TEST_BUY_* (ถ้ามี cancel feature)
-- [ ] Cancel bill SMOKE_TEST_SELL_*
-- [ ] Cancel bill SMOKE_TEST_SORT_*
-- [ ] ห้าม hard delete — ใช้ cancel เท่านั้น
-
-### 6.2 Final Verification
-- [ ] ลองสร้าง bill จริง 1 รายการ (note: ไม่ใช่ SMOKE_TEST)
-- [ ] ตรวจ Vercel logs ไม่มี error 5xx: https://vercel.com/dashboard → project → Logs
-- [ ] ตรวจ Supabase logs ไม่มี error: https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/logs
-
----
-
-## 7. Rollback Plan
-
-### 7.1 ถ้า migration ล้มเหลว
-- [ ] รัน rollback SQL (มีในไฟล์ migration):
-```sql
--- ตัวอย่างสำหรับ weightExpression
-ALTER TABLE "BuyBillItem" DROP COLUMN IF EXISTS "weightExpression";
-ALTER TABLE "SellBillItem" DROP COLUMN IF EXISTS "weightExpression";
-ALTER TABLE "SortingBillItem" DROP COLUMN IF EXISTS "weightExpression";
-ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "sourceWeightExpression";
-ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "weighedTotalExpression";
+```bash
+bun run lint
+npx tsc --noEmit
+bun test
+bun run build
+bash scripts/validate-foundation.sh
 ```
 
-### 7.2 ถ้า code มี bug
-- [ ] `git revert <commit-hash>`
-- [ ] `git push origin main`
-- [ ] รอ Vercel redeploy
+- [ ] Credential scanner required by repository policy passes.
+- [ ] `git diff --check` passes.
+- [ ] Exact-head CI passes.
+- [ ] Fresh exact-head independent review is complete.
+- [ ] No unresolved P0/P1 finding remains.
+- [ ] Release and rollback impact is documented.
+- [ ] Production verification plan is explicit for critical workflows.
 
-### 7.3 ถ้า DB พัง
-- [ ] Restore จาก Supabase backup (จากขั้นตอน 1.1)
-- [ ] ติดต่อ Supabase support ถ้าจำเป็น
+PR stays Draft until the Owner approves Ready.
 
----
+## 6. Merge and deploy workflow
 
-## 8. อาการที่ต้องหยุดและ rollback (Red Flags)
+Direct push to `main` is prohibited.
 
-🚨 **หยุดทันที ถ้าเจอ**:
-- หน้า login ขาว / 500 error
-- API return 500 ทุก endpoint
-- Toast error "column does not exist" (DB migration ไม่ครบ)
-- Stock ผิดปกติหลัง cancel (เช่น ติดลบ, ไม่ restore)
-- AuditLog ไม่มี entry ใหม่
-- ผู้ใช้ login ไม่ได้ทั้งที่รหัสถูก
-- Vercel build fail ระหว่าง deploy
+Current flow:
 
----
+1. validated feature/policy branch
+2. Draft PR
+3. exact-head CI + independent review
+4. Owner approval to mark Ready / merge
+5. Owner-approved PR merge into `main`
+6. deploy only under the approved release path
+7. Production verification
+8. observation period when required
+9. task/knowledge write-back
 
-## 9. ห้าม (Absolute Prohibitions)
+Never use `git push origin main` as a normal release step.
 
-- ❌ ห้าม deploy code ก่อน DB migration (ถ้ามี schema changes)
-- ❌ ห้าม `prisma migrate reset` บน production
-- ❌ ห้าม `bun run prisma/seed.ts` บน production
-- ❌ ห้าม hard delete bill ใน DB
-- ❌ ห้ามแก้ stock ตรงๆ ใน DB
-- ❌ ห้าม push โดย schema.prisma provider != postgresql
-- ❌ ห้าม push โดยมี `.env` หรือ `db/custom.db` ใน diff
-- ❌ ห้าม push โดยมี secret ใน code
-- ❌ ห้าม skip smoke test หลัง deploy
-- ❌ ห้าม ignore error ใน Vercel/Supabase logs
+## 7. Production smoke/verification rules
 
----
+Production verification must be task-specific and minimize mutation.
 
-## 10. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
+### Read-only checks are preferred
 
-> **Effective:** Upon merge of PR #76
-> **Approved by:** Owner (pending merge)
-> **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
-> **Canonical text:** `process/AGENT_HANDOFF.md` §12. This is a summary — keep in sync.
+Examples:
 
-### Principle
+- deployment identity/version
+- login/auth behavior using approved test path
+- endpoint status/error contract
+- page/runtime health
+- read-only history/query verification
 
-Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation. GitHub remote branch is the persistent source of truth. Do **not** rely on local state (patches, ZIPs, local commits, `public/` files) as the primary artifact.
+### Mutating smoke tests
 
-### Before editing files
+Any test that creates, edits, cancels, transfers, sorts, adjusts, or otherwise changes Production data requires explicit Owner approval for that test.
 
-1. `git fetch origin`
-2. Verify exact current `origin/main` SHA
-3. Check for duplicate branch/PR
-4. Create feature branch from exact main (`st-XX-*` / `security/*` / `policy/*`)
-5. Push empty branch as first remote checkpoint
-6. Then begin implementation
+Do not create “test bills” or Production stock movements by default.
 
-### Minimum validation before normal checkpoint push
+For approved mutating verification:
 
-- Credential/secret scan (if scanner exists)
-- `git diff --check`
-- Lint for changed scope
-- TypeScript/typecheck for changed scope
-- Targeted tests for changed code
-- Verify staged diff has no `.env`, secret, database dump, or sensitive artifact
+- [ ] exact test inputs and cleanup/compensation plan are defined first
+- [ ] expected stock/cost/history effects are written down
+- [ ] one controlled execution only unless separately approved
+- [ ] stop on unexpected response/state
+- [ ] verify resulting ledger/history/audit evidence
+- [ ] do not hard-delete cleanup data
 
-Full build/full test not required every checkpoint, but **must** pass before requesting PR Ready.
+## 8. Red flags — stop immediately
 
-### Emergency WIP checkpoint (when reset risk is imminent)
+Stop and escalate on:
 
-Emergency WIP requires concrete evidence of imminent reset (Owner warning, dev server termination, workspace files disappearing). State evidence in WIP commit comment.
+- partial write
+- stock/cost/history mismatch
+- unexpected 2xx/4xx/5xx relative to contract
+- authentication/authorization behavior that differs from expectation
+- schema mismatch or missing column
+- duplicate mutation/retry
+- failed rollback/compensation
+- unknown Production deployment identity
+- audit evidence missing where required
+- any need to expand scope to another root cause
 
-Allowed only if:
-- ✅ Secret scan passes
-- ✅ Staged diff has no credential/sensitive data
-- ✅ `git diff --check` passes
+Do not continue experimenting in Production after a red flag.
 
-Commit format: `wip(st-XX): preserve validated partial progress`
-- Push to feature branch only
-- PR remains Draft
-- Comment listing pending validations
-- Never claim checkpoint is complete
+## 9. Rollback
 
-### Never push
+Rollback must be pre-planned and Owner-approved when it affects `main`, deployment, database, or Production state.
 
-- `.env`, secrets, tokens, connection strings
-- `db/custom.db`, Production dumps
-- `node_modules/`, build output
-- Patch/ZIP with sensitive artifacts
-- Local progress diary duplicating GitHub
+### Code rollback
 
-### Autonomous (no Owner approval)
+- Prefer a reviewed revert through the repository/PR workflow.
+- Do not force-push or rewrite history.
+- Do not directly push a revert to `main`.
 
-- Branch creation from exact main
-- Checkpoint push to feature branch
-- Draft PR creation
-- CI repair (fix + push follow-up)
-- GitHub issue comment
-- Update PR body to current head
+### Database rollback/recovery
 
-### Requires Owner approval
+- Use only the task-specific approved rollback or backup/recovery plan.
+- Never improvise destructive SQL.
+- Verify schema/data invariants after recovery.
 
-- Mark PR Ready, merge, deploy
-- Production access, credential validation, migration
-- History rewrite, force-push, main push
-- Close issue/PR, change repo settings
+If safe rollback is uncertain, stop and request Owner decision rather than guessing.
 
-### Authentication
+## 10. Sandbox checkpoint safety
 
-If GitHub auth missing/expired:
-- Stop. Request device login. Never request token in chat.
-- Never create patch/ZIP as primary workaround.
+For sandbox-hosted AI work, follow `process/AGENT_HANDOFF.md` §12 and `process/GOVERNANCE.md`:
 
-If `workflow` permission missing:
-- Do not push `.github/workflows/*` changes
-- Quarantine workflow changes separately
-- Report to Owner
+- branch + focused checkpoint pushes are autonomous within clear scope
+- Draft PR remains the working integration surface
+- GitHub remote branch is persistent technical state
+- merge/deploy/Production remain Owner-gated
 
-### CI
+Never push:
 
-- Check CI on exact head after every push
-- In-scope failure → fix + push follow-up (autonomous)
-- Infrastructure failure → rerun once
-- Pre-existing unrelated failure → document, do not fix out of scope
+- `.env` or real secret values
+- credentials/tokens/connection strings
+- `db/custom.db`
+- Production dumps or raw sensitive rows
+- build output or dependency directories
+- large raw logs/full chat transcripts
 
-### Source of truth
+## 11. Prisma provider rule
 
-- GitHub = code, technical docs, exact commits, tests, CI, detailed evidence
-- Linear = task status, priority, blocker, next gate
-- Notion = durable Owner decisions, policy, high-level checkpoint
+The tracked Production schema must remain PostgreSQL.
 
-### No Production impact
+- [ ] `prisma/schema.prisma` provider = `postgresql`
+- [ ] Local/test work does not edit the tracked Production provider to SQLite.
+- [ ] Alternate test databases use isolated test configuration/fixtures.
+- [ ] Any schema change is reconciled with the approved migration and docs.
 
-This policy does not authorize any Production access. Production connection, query, write, migration, deploy, and credential validation remain Owner-gated.
+Historical instructions to temporarily switch the tracked provider to SQLite are superseded.
+
+## 12. Completion evidence
+
+A release/Production task is not complete until its applicable evidence is recorded:
+
+- exact head/merge identity
+- CI/validation results actually run
+- migration status (if applicable)
+- deploy status (if applicable)
+- Production verification status: verified / not verified / not applicable
+- remaining risks/unknowns
+- observation requirement/status
+- next safe gate
+- GitHub/Linear/Notion write-back where applicable
+
+## Key takeaway
+
+**No direct main push, no implicit Production permission, no ad-hoc Production mutation, and no tracked Prisma-provider switch to SQLite. Every risky step is evidence-driven and Owner-gated.**
