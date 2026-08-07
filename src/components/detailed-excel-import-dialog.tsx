@@ -20,6 +20,7 @@ import { FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, Copy } from 'luc
 import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
 import { getAuthToken, setAuthToken } from '@/lib/api';
+import { classifyAuthResponse } from '@/lib/auth-response-classifier';
 import * as XLSX from 'xlsx';
 import {
   isValidExternalBillNumber,
@@ -350,16 +351,20 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         },
         body: JSON.stringify({ billNumbers, type: 'purchase' }),
       });
-      if (res.status === 401) {
-        // ST-75: Session expired — use shared cleanup path
+      // ST-75: Use tested classifier for auth response handling
+      const checkAction = classifyAuthResponse(res.status);
+      if (checkAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
         handleSessionExpired();
         return;
       }
-      if (res.status === 403) {
-        // ST-75: Permission denied — reset + close (do NOT clear token)
+      if (checkAction === 'PERMISSION_DENIED') {
         toast.error('ไม่มีสิทธิ์ตรวจบิลซ้ำ — กรุณาแจ้งผู้ดูแล');
         handlePermissionDenied();
+        return;
+      }
+      if (checkAction === 'TRANSIENT_ERROR') {
+        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
         return;
       }
       if (res.ok) {
@@ -462,16 +467,21 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         body: JSON.stringify({ type: 'purchase', bills: billsToApply }),
       });
 
-      if (res.status === 401) {
-        // ST-75: Session expired — clear token + sync parent + reset + close
+      // ST-75: Use tested classifier for auth response handling
+      const applyAction = classifyAuthResponse(res.status);
+      if (applyAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
         handleSessionExpired();
         return;
       }
-      if (res.status === 403) {
-        // ST-75: Permission denied — reset + close (do NOT clear token)
+      if (applyAction === 'PERMISSION_DENIED') {
         toast.error('ไม่มีสิทธิ์นำเข้าบิลซื้อ — กรุณาแจ้งผู้ดูแล');
         handlePermissionDenied();
+        return;
+      }
+      if (applyAction === 'TRANSIENT_ERROR') {
+        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
+        setImporting(false);
         return;
       }
 

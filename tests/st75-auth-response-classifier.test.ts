@@ -73,3 +73,107 @@ describe('ST-75: auth status semantics matrix', () => {
     expect(clearStatuses).toEqual([401])
   })
 })
+
+// ============ ST-75 Layer B: production-integration tests ============
+// Prove that production code imports and uses the tested classifier.
+
+import { readFileSync } from 'fs'
+import { join } from 'path'
+
+describe('ST-75: production classifier integration', () => {
+  test('12. page.tsx imports classifyAuthResponse', () => {
+    const src = readFileSync(join(process.cwd(), 'src/app/page.tsx'), 'utf8')
+    expect(src).toContain("import { classifyAuthResponse } from '@/lib/auth-response-classifier'")
+    expect(src).toContain('classifyAuthResponse(res.status)')
+  })
+
+  test('13. buy dialog imports classifyAuthResponse', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-excel-import-dialog.tsx'), 'utf8')
+    expect(src).toContain("import { classifyAuthResponse } from '@/lib/auth-response-classifier'")
+    expect(src).toContain('classifyAuthResponse(res.status)')
+  })
+
+  test('14. sell dialog imports classifyAuthResponse', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx'), 'utf8')
+    expect(src).toContain("import { classifyAuthResponse } from '@/lib/auth-response-classifier'")
+    expect(src).toContain('classifyAuthResponse(res.status)')
+  })
+
+  test('15. page.tsx uses classifier for SESSION_EXPIRED (401)', () => {
+    const src = readFileSync(join(process.cwd(), 'src/app/page.tsx'), 'utf8')
+    expect(src).toContain("authAction === 'SESSION_EXPIRED'")
+    expect(src).toContain('setAuthToken(null)')
+    expect(src).toContain('setUser(null)')
+  })
+
+  test('16. page.tsx does NOT use ad-hoc res.status === 401 check', () => {
+    const src = readFileSync(join(process.cwd(), 'src/app/page.tsx'), 'utf8')
+    // The classifier should be used, not direct status comparison
+    expect(src).not.toContain('res.status === 401')
+  })
+
+  test('17. buy dialog uses classifier for checkDuplicates', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-excel-import-dialog.tsx'), 'utf8')
+    expect(src).toContain("checkAction === 'SESSION_EXPIRED'")
+    expect(src).toContain("checkAction === 'PERMISSION_DENIED'")
+    expect(src).toContain("checkAction === 'TRANSIENT_ERROR'")
+  })
+
+  test('18. buy dialog uses classifier for apply', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-excel-import-dialog.tsx'), 'utf8')
+    expect(src).toContain("applyAction === 'SESSION_EXPIRED'")
+    expect(src).toContain("applyAction === 'PERMISSION_DENIED'")
+    expect(src).toContain("applyAction === 'TRANSIENT_ERROR'")
+  })
+
+  test('19. sell dialog uses classifier for checkDuplicates', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx'), 'utf8')
+    expect(src).toContain("checkAction === 'SESSION_EXPIRED'")
+    expect(src).toContain("checkAction === 'PERMISSION_DENIED'")
+    expect(src).toContain("checkAction === 'TRANSIENT_ERROR'")
+  })
+
+  test('20. sell dialog uses classifier for apply', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx'), 'utf8')
+    expect(src).toContain("applyAction === 'SESSION_EXPIRED'")
+    expect(src).toContain("applyAction === 'PERMISSION_DENIED'")
+    expect(src).toContain("applyAction === 'TRANSIENT_ERROR'")
+  })
+
+  test('21. buy dialog does NOT use ad-hoc res.status === 401 in checkDuplicates/apply', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-excel-import-dialog.tsx'), 'utf8')
+    // Should not have direct status checks for 401/403 in fetch handlers
+    // (handleSessionExpired/handlePermissionDenied are called via classifier)
+    const lines = src.split('\n')
+    const adHocLines = lines.filter(l =>
+      l.includes('res.status === 401') || l.includes('res.status === 403')
+    )
+    expect(adHocLines.length).toBe(0)
+  })
+
+  test('22. sell dialog does NOT use ad-hoc res.status === 401 in checkDuplicates/apply', () => {
+    const src = readFileSync(join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx'), 'utf8')
+    const lines = src.split('\n')
+    const adHocLines = lines.filter(l =>
+      l.includes('res.status === 401') || l.includes('res.status === 403')
+    )
+    expect(adHocLines.length).toBe(0)
+  })
+
+  test('23. purchase/sales parity — both use classifier for all 4 paths', () => {
+    const buySrc = readFileSync(join(process.cwd(), 'src/components/detailed-excel-import-dialog.tsx'), 'utf8')
+    const sellSrc = readFileSync(join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx'), 'utf8')
+    // Count actual classifier CALLS (not import line)
+    const buyCalls = (buySrc.match(/= classifyAuthResponse\(res\.status\)/g) || []).length
+    const sellCalls = (sellSrc.match(/= classifyAuthResponse\(res\.status\)/g) || []).length
+    expect(buyCalls).toBe(2) // checkDuplicates + apply
+    expect(sellCalls).toBe(2) // checkDuplicates + apply
+  })
+
+  test('24. no no-op onSessionExpired callbacks remain', () => {
+    const buySrc = readFileSync(join(process.cwd(), 'src/components/buy-page.tsx'), 'utf8')
+    const sellSrc = readFileSync(join(process.cwd(), 'src/components/sell-page.tsx'), 'utf8')
+    expect(buySrc).not.toContain('/* parent handles')
+    expect(sellSrc).not.toContain('/* parent handles')
+  })
+})

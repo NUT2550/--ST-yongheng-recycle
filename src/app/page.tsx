@@ -41,6 +41,7 @@ import DailyWeighingPage from '@/components/daily-weighing-page';
 import LoginPage from '@/components/login-page';
 import { toast } from 'sonner';
 import { getAuthToken, setAuthToken } from '@/lib/api';
+import { classifyAuthResponse } from '@/lib/auth-response-classifier';
 
 // Navigation items configuration
 const navItems: Array<{
@@ -173,19 +174,16 @@ export default function Home() {
       const res = await fetch('/api/auth/me', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (res.ok) {
+      // ST-75: Use tested classifier — production behavior bound to tests
+      const authAction = classifyAuthResponse(res.status);
+      if (authAction === 'AUTHENTICATED') {
         const data = await res.json();
         setUser(data.user);
-      } else if (res.status === 401) {
-        // ST-75: Clear token only on 401 (expired/invalid token).
-        // Do NOT clear token on 403, 429, 5xx, or network error — those are
-        // transient or permission issues, not session expiry.
+      } else if (authAction === 'SESSION_EXPIRED') {
         setAuthToken(null);
         setUser(null);
-      } else {
-        // 403/429/5xx: keep token + user, don't force logout
-        // (user state will remain as-is from last successful check)
       }
+      // PERMISSION_DENIED / TRANSIENT_ERROR / UNKNOWN: keep token + user
     } catch {
       // Network error: don't clear token or user — transient failure
     } finally {
