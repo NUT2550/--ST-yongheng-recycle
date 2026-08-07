@@ -18,7 +18,8 @@ import {
 import { FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
-import { getAuthToken } from '@/lib/api';
+import { getAuthToken, setAuthToken } from '@/lib/api';
+import { classifyAuthResponse } from '@/lib/auth-response-classifier';
 import * as XLSX from 'xlsx';
 import {
   normalizeBillNumber,
@@ -57,6 +58,8 @@ export interface PlannedSellBill {
 
 interface DetailedSellExcelImportDialogProps {
   products: Product[];
+  /** ST-75: Called when session expires (401). */
+  onSessionExpired?: () => void;
   /** Legacy callback — kept for backward compat. Called with empty array after apply. */
   onImport?: (bills: Array<{
     externalBillNumber: string;
@@ -69,7 +72,7 @@ interface DetailedSellExcelImportDialogProps {
   onApplied?: (summary: ImportSummary) => void;
 }
 
-export function DetailedSellExcelImportDialog({ products, onImport, onApplied }: DetailedSellExcelImportDialogProps) {
+export function DetailedSellExcelImportDialog({ products, onSessionExpired, onImport, onApplied }: DetailedSellExcelImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -334,8 +337,20 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
         },
         body: JSON.stringify({ billNumbers, type: 'sales' }),
       });
-      if (res.status === 401) {
-        toast.warning('เซสชันหมดอายุ — กรุณา Login ใหม่เพื่อตรวจบิลซ้ำ');
+      // ST-75: Use tested classifier for auth response handling
+      const checkAction = classifyAuthResponse(res.status);
+      if (checkAction === 'SESSION_EXPIRED') {
+        toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
+        handleSessionExpired();
+        return;
+      }
+      if (checkAction === 'PERMISSION_DENIED') {
+        toast.error('ไม่มีสิทธิ์ตรวจบิลซ้ำ — กรุณาแจ้งผู้ดูแล');
+        handlePermissionDenied();
+        return;
+      }
+      if (checkAction === 'TRANSIENT_ERROR') {
+        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
         return;
       }
       if (res.ok) {
@@ -469,13 +484,20 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
         body: JSON.stringify({ type: 'sales', bills: billsToApply }),
       });
 
-      if (res.status === 401) {
+      // ST-75: Use tested classifier for auth response handling
+      const applyAction = classifyAuthResponse(res.status);
+      if (applyAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
-        setImporting(false);
+        handleSessionExpired();
         return;
       }
-      if (res.status === 403) {
-        toast.error('ไม่มีสิทธิ์นำเข้าบิลขาย');
+      if (applyAction === 'PERMISSION_DENIED') {
+        toast.error('ไม่มีสิทธิ์นำเข้าบิลขาย — กรุณาแจ้งผู้ดูแล');
+        handlePermissionDenied();
+        return;
+      }
+      if (applyAction === 'TRANSIENT_ERROR') {
+        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
         setImporting(false);
         return;
       }
@@ -517,13 +539,30 @@ export function DetailedSellExcelImportDialog({ products, onImport, onApplied }:
 
   const handleOpenChange = (v: boolean) => {
     setOpen(v);
-    if (!v) {
-      setPlannedBills([]);
-      setFileName('');
-      setApplyResult(null);
-      setExistingDuplicates(new Set());
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+    if (!v) { resetDialogState(); }
+  };
+
+  const resetDialogState = () => {
+    setPlannedBills([]);
+    setFileName('');
+    setApplyResult(null);
+    setExistingDuplicates(new Set());
+    setImporting(false);
+    setLoading(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    duplicateChecked.current = false;
+  };
+
+  const handleSessionExpired = () => {
+    setAuthToken(null);
+    onSessionExpired?.();
+    resetDialogState();
+    setOpen(false);
+  };
+
+  const handlePermissionDenied = () => {
+    resetDialogState();
+    setOpen(false);
   };
 
   const duplicateChecked = useRef(false);

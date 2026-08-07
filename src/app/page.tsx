@@ -41,6 +41,7 @@ import DailyWeighingPage from '@/components/daily-weighing-page';
 import LoginPage from '@/components/login-page';
 import { toast } from 'sonner';
 import { getAuthToken, setAuthToken } from '@/lib/api';
+import { classifyAuthResponse } from '@/lib/auth-response-classifier';
 
 // Navigation items configuration
 const navItems: Array<{
@@ -62,14 +63,14 @@ const navItems: Array<{
 ];
 
 // Page content renderer
-function PageContent({ activeTab }: { activeTab: PageTab }) {
+function PageContent({ activeTab, onSessionExpired }: { activeTab: PageTab; onSessionExpired?: () => void }) {
   switch (activeTab) {
     case 'dashboard':
       return <DashboardPage />;
     case 'buy':
-      return <BuyPage />;
+      return <BuyPage onSessionExpired={onSessionExpired} />;
     case 'sell':
-      return <SellPage />;
+      return <SellPage onSessionExpired={onSessionExpired} />;
     case 'sort':
       return <SortPage />;
     case 'transfer':
@@ -173,17 +174,28 @@ export default function Home() {
       const res = await fetch('/api/auth/me', {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
-      if (res.ok) {
+      // ST-75: Use tested classifier — production behavior bound to tests
+      const authAction = classifyAuthResponse(res.status);
+      if (authAction === 'AUTHENTICATED') {
         const data = await res.json();
         setUser(data.user);
-      } else {
+      } else if (authAction === 'SESSION_EXPIRED') {
+        setAuthToken(null);
         setUser(null);
       }
+      // PERMISSION_DENIED / TRANSIENT_ERROR / UNKNOWN: keep token + user
     } catch {
-      setUser(null);
+      // Network error: don't clear token or user — transient failure
     } finally {
       setAuthLoading(false);
     }
+  }, []);
+
+  // ST-75: Shared session-expired handler — called by import dialogs on 401.
+  // Clears token + user state so the login screen shows immediately.
+  const handleSessionExpired = useCallback(() => {
+    setAuthToken(null);
+    setUser(null);
   }, []);
 
   useEffect(() => {
@@ -437,7 +449,7 @@ export default function Home() {
         {/* Main content */}
         <main className="flex-1 overflow-y-auto">
           <div className="p-4 lg:p-6 max-w-7xl mx-auto">
-            <PageContent activeTab={activeTab} />
+            <PageContent onSessionExpired={handleSessionExpired} activeTab={activeTab} />
           </div>
         </main>
       </div>

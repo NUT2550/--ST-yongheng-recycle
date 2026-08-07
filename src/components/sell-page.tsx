@@ -40,7 +40,7 @@ import { toast } from 'sonner';
 import { parseWeightExpression, previewWeightValue, formulaHint } from '@/lib/safe-math';
 import { DetailedSellExcelImportDialog } from '@/components/detailed-sell-excel-import-dialog';
 
-export function SellPage() {
+export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }) {
   const {
     sellCartItems,
     addSellCartItem,
@@ -410,6 +410,7 @@ export function SellPage() {
               <div className="mt-3">
                 <DetailedSellExcelImportDialog
                   products={availableProducts}
+                  onSessionExpired={onSessionExpired}
                   onImport={async (bills) => {
                     // ST-18: For each bill, add items to cart with stock validation
                     let totalAdded = 0;

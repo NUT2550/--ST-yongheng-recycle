@@ -19,7 +19,8 @@ import {
 import { FileSpreadsheet, Loader2, AlertTriangle, CheckCircle2, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
-import { getAuthToken } from '@/lib/api';
+import { getAuthToken, setAuthToken } from '@/lib/api';
+import { classifyAuthResponse } from '@/lib/auth-response-classifier';
 import * as XLSX from 'xlsx';
 import {
   isValidExternalBillNumber,
@@ -63,6 +64,8 @@ export interface PlannedBill {
 
 interface DetailedExcelImportDialogProps {
   products: Product[];
+  /** ST-75: Called when session expires (401) — parent clears token + user state. */
+  onSessionExpired?: () => void;
   /** Legacy callback — kept for backward compat. Called with empty array after apply. */
   onImport?: (bills: Array<{
     externalBillNumber: string;
@@ -74,7 +77,7 @@ interface DetailedExcelImportDialogProps {
   onApplied?: (summary: ImportSummary) => void;
 }
 
-export function DetailedExcelImportDialog({ products, onImport, onApplied }: DetailedExcelImportDialogProps) {
+export function DetailedExcelImportDialog({ products, onSessionExpired, onImport, onApplied }: DetailedExcelImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -348,8 +351,20 @@ export function DetailedExcelImportDialog({ products, onImport, onApplied }: Det
         },
         body: JSON.stringify({ billNumbers, type: 'purchase' }),
       });
-      if (res.status === 401) {
-        toast.warning('เซสชันหมดอายุ — กรุณา Login ใหม่เพื่อตรวจบิลซ้ำ');
+      // ST-75: Use tested classifier for auth response handling
+      const checkAction = classifyAuthResponse(res.status);
+      if (checkAction === 'SESSION_EXPIRED') {
+        toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
+        handleSessionExpired();
+        return;
+      }
+      if (checkAction === 'PERMISSION_DENIED') {
+        toast.error('ไม่มีสิทธิ์ตรวจบิลซ้ำ — กรุณาแจ้งผู้ดูแล');
+        handlePermissionDenied();
+        return;
+      }
+      if (checkAction === 'TRANSIENT_ERROR') {
+        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
         return;
       }
       if (res.ok) {
@@ -452,13 +467,20 @@ export function DetailedExcelImportDialog({ products, onImport, onApplied }: Det
         body: JSON.stringify({ type: 'purchase', bills: billsToApply }),
       });
 
-      if (res.status === 401) {
+      // ST-75: Use tested classifier for auth response handling
+      const applyAction = classifyAuthResponse(res.status);
+      if (applyAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
-        setImporting(false);
+        handleSessionExpired();
         return;
       }
-      if (res.status === 403) {
-        toast.error('ไม่มีสิทธิ์นำเข้าบิลซื้อ');
+      if (applyAction === 'PERMISSION_DENIED') {
+        toast.error('ไม่มีสิทธิ์นำเข้าบิลซื้อ — กรุณาแจ้งผู้ดูแล');
+        handlePermissionDenied();
+        return;
+      }
+      if (applyAction === 'TRANSIENT_ERROR') {
+        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
         setImporting(false);
         return;
       }
@@ -510,13 +532,37 @@ export function DetailedExcelImportDialog({ products, onImport, onApplied }: Det
   const handleOpenChange = (v: boolean) => {
     setOpen(v);
     if (!v) {
-      setPlannedBills([]);
-      setFileName('');
-      setApplyResult(null);
-      setExistingDuplicates(new Set());
-      // ST-15: Reset file input value on close so the same file can be re-selected
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      resetDialogState();
     }
+  };
+
+  // ST-75: Unified cleanup path — used by handleOpenChange, 401, 403, and success.
+  // Prevents stale planned bills, duplicates, and state from persisting across reopens.
+  const resetDialogState = () => {
+    setPlannedBills([]);
+    setFileName('');
+    setApplyResult(null);
+    setExistingDuplicates(new Set());
+    setImporting(false);
+    setLoading(false);
+    // ST-15: Reset file input value on close so the same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    // Reset duplicate check ref so re-opening re-checks
+    duplicateChecked.current = false;
+  };
+
+  // ST-75: Session expired — clear token via parent, reset dialog, close.
+  const handleSessionExpired = () => {
+    setAuthToken(null);
+    onSessionExpired?.();
+    resetDialogState();
+    setOpen(false);
+  };
+
+  // ST-75: Permission denied — reset dialog + close (do NOT clear token).
+  const handlePermissionDenied = () => {
+    resetDialogState();
+    setOpen(false);
   };
 
   // ST-15: Auto-check duplicates when planned bills change — moved to useEffect to avoid
