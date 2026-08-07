@@ -21,7 +21,7 @@ When two instructions conflict, use this order:
    - `process/SAFETY_CHECKLIST.md` — migration/deploy/runtime safety procedures
 4. **`process/CURRENT_STATE.md` + current GitHub/CI/Production evidence** for current technical state. Runtime claims require runtime evidence.
 5. **Notion** for durable Owner/business context, cross-project decisions, policy summaries, and routing to canonical GitHub sources.
-6. **Handoff/runbooks/templates/worklogs/historical pages** as secondary guidance only. If they conflict with a higher source, the higher source wins and the older statement is superseded.
+6. **Runbooks/templates/worklogs/historical pages** as secondary guidance only. If they conflict with a higher source, the higher source wins and the older statement is superseded.
 
 A newer timestamp alone does **not** override a higher-authority source unless it records a current explicit Owner decision or verified current state.
 
@@ -73,7 +73,7 @@ AI agents must stop before:
 
 ## 5. Superseded legacy instructions
 
-The following older instructions are **superseded** wherever they appear in handoff/runbook/Notion text:
+The following older instructions are **superseded** wherever they appear in historical pages, old PRs/issues, worklogs, or old revisions:
 
 1. **Blanket prohibition on commit/push without Owner approval.**
    - Replaced by the autonomous checkpoint + Draft PR policy above.
@@ -126,13 +126,16 @@ When an agent encounters conflicting or stale guidance:
 
 Notion remains required context, but it must not override current canonical GitHub technical policy unless it records a newer explicit Owner decision.
 
-## 9. Cleanup rule for legacy documents
+## 9. Legacy cleanup status
 
-`process/AGENT_HANDOFF.md`, `process/SAFETY_CHECKLIST.md`, old Notion project checkpoints, and historical worklogs may contain valid history mixed with stale instructions. Until fully reconciled:
+Reconciled on 2026-08-07 in the governance-cleanup branch:
 
-- use them as supporting references, not policy authority;
-- any conflict with `AGENTS.md` or this file is automatically superseded;
-- update/remove stale current-operation instructions when those files are next edited.
+- `process/AGENT_HANDOFF.md` — rewritten to current policy; old mixed no-push/push-early wording removed from current revision.
+- `process/SAFETY_CHECKLIST.md` — rewritten to remove direct-main-push workflow, ad-hoc mutating smoke tests, and tracked-schema SQLite-switch guidance.
+- Notion `AI Read First — YH Stock System` — updated to defer Git/technical policy to current GitHub canonical sources.
+- Old Notion task-specific checkpoints are being retained only as historical evidence and must be labeled/treated as historical when they contain superseded global instructions.
+
+Remaining cleanup should focus on other stale/historical pages or runbooks that still present old state as current truth. Do not invent replacement rules during cleanup; first remove ambiguity and establish a clean baseline.
 
 ## Key takeaway
 
