@@ -50,7 +50,11 @@ function prisma(): PrismaClient {
 }
 
 const ACTOR: ImportActor = { userId: 'perf-admin', username: 'perf', name: 'Perf', role: 'admin' }
-const SALT = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+let SALT_COUNTER = 0
+function getSalt() {
+  SALT_COUNTER++
+  return `${Date.now().toString(36)}-${SALT_COUNTER}-${Math.random().toString(36).slice(2, 6)}`
+}
 
 // ============ Production deps with test PrismaClient ============
 
@@ -164,12 +168,12 @@ function makeTestImportDeps(db: PrismaClient): ImportApplyDeps {
 async function setupSyntheticData(db: PrismaClient) {
   // Create category + products
   const cat = await db.productCategory.create({
-    data: { name: `ST75-Perf-${SALT}`, type: 'METAL', sortOrder: 0 },
+    data: { name: `ST75-Perf-${getSalt()}`, type: 'METAL', sortOrder: 0 },
   });
   const products: string[] = [];
   for (let i = 1; i <= 5; i++) {
     const p = await db.product.create({
-      data: { name: `Perf Product ${i} ${SALT}`, categoryId: cat.id },
+      data: { name: `Perf Product ${i} ${getSalt()}`, categoryId: cat.id },
     });
     products.push(p.id);
   }
@@ -188,18 +192,18 @@ async function cleanupSyntheticData(db: PrismaClient, categoryId: string, produc
   // Clean in dependency order
   await db.stockMovement.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
   await db.stockLot.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
-  await db.auditLog.deleteMany({ where: { entityId: { contains: SALT } } }).catch(() => {});
+  await db.auditLog.deleteMany({ where: { entityId: { contains: 'ST75' } } }).catch(() => {});
   await db.buyBillItem.deleteMany({ where: { product: { categoryId } } }).catch(() => {});
-  await db.buyBill.deleteMany({ where: { externalBillNumber: { contains: SALT } } }).catch(() => {});
+  await db.buyBill.deleteMany({ where: { externalBillNumber: { contains: 'ST75-Perf' } } }).catch(() => {});
   await db.sellBillItem.deleteMany({ where: { product: { categoryId } } }).catch(() => {});
-  await db.sellBill.deleteMany({ where: { externalBillNumber: { contains: SALT } } }).catch(() => {});
+  await db.sellBill.deleteMany({ where: { externalBillNumber: { contains: 'ST75-Perf' } } }).catch(() => {});
   await db.product.deleteMany({ where: { categoryId } }).catch(() => {});
   await db.productCategory.deleteMany({ where: { id: categoryId } }).catch(() => {});
 }
 
 function makeBills(count: number, productIds: string[], prefix: string): ParsedBill[] {
   return Array.from({ length: count }, (_, i) => ({
-    externalBillNumber: `${prefix}-${SALT}-${String(i + 1).padStart(4, '0')}`,
+    externalBillNumber: `${prefix}-${getSalt()}-${String(i + 1).padStart(4, '0')}`,
     date: '2026-08-08',
     note: `perf test ${prefix} ${i + 1}`,
     items: Array.from({ length: 3 }, (_, j) => ({
