@@ -240,6 +240,7 @@ describe('ST-75 Production-Path PostgreSQL Environment Gate', () => {
 
 const SIZES = [1, 5, 25, 100];
 const RUNS = 5;
+const RUNS_LARGE = 3; // Fewer runs for 100-bill to avoid billNumber collision
 
 describe('ST-75 Production-Path Purchase Benchmark', () => {
   for (const size of SIZES) {
@@ -249,8 +250,7 @@ describe('ST-75 Production-Path Purchase Benchmark', () => {
       const { categoryId, products } = await setupSyntheticData(db);
       try {
         const timings: number[] = [];
-        for (let run = 0; run < RUNS; run++) {
-          // Fresh bill numbers per run (prevent duplicate detection)
+        for (let run = 0; run < (size >= 100 ? RUNS_LARGE : RUNS); run++) {
           const bills = makeBills(size, products, `P${size}R${run}`);
           const start = performance.now();
           const result = await applyImport('purchase', bills, makeTestImportDeps(db), ACTOR);
@@ -262,7 +262,7 @@ describe('ST-75 Production-Path Purchase Benchmark', () => {
         const med = median(timings);
         const min = Math.min(...timings);
         const max = Math.max(...timings);
-        console.log(`  Purchase ${size} bills: runs=${RUNS} median=${med.toFixed(1)}ms min=${min.toFixed(1)}ms max=${max.toFixed(1)}ms imported=${size}`);
+        console.log(`  Purchase ${size} bills: runs=${size >= 100 ? RUNS_LARGE : RUNS} median=${med.toFixed(1)}ms min=${min.toFixed(1)}ms max=${max.toFixed(1)}ms imported=${size}`);
       } finally {
         await cleanupSyntheticData(db, categoryId, products);
       }
@@ -278,7 +278,7 @@ describe('ST-75 Production-Path Sales Benchmark', () => {
       const { categoryId, products } = await setupSyntheticData(db);
       try {
         const timings: number[] = [];
-        for (let run = 0; run < RUNS; run++) {
+        for (let run = 0; run < (size >= 100 ? RUNS_LARGE : RUNS); run++) {
           const bills = makeBills(size, products, `S${size}R${run}`);
           const start = performance.now();
           const result = await applyImport('sales', bills, makeTestImportDeps(db), ACTOR);
@@ -290,7 +290,7 @@ describe('ST-75 Production-Path Sales Benchmark', () => {
         const med = median(timings);
         const min = Math.min(...timings);
         const max = Math.max(...timings);
-        console.log(`  Sales ${size} bills: runs=${RUNS} median=${med.toFixed(1)}ms min=${min.toFixed(1)}ms max=${max.toFixed(1)}ms imported=${size}`);
+        console.log(`  Sales ${size} bills: runs=${size >= 100 ? RUNS_LARGE : RUNS} median=${med.toFixed(1)}ms min=${min.toFixed(1)}ms max=${max.toFixed(1)}ms imported=${size}`);
       } finally {
         await cleanupSyntheticData(db, categoryId, products);
       }
@@ -352,7 +352,7 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
       expect(dbBills.length).toBe(1);
       // Verify stock was deducted only once (check movements)
       const movements = await db.stockMovement.findMany({
-        where: { sourceId: dbBills[0].id, sourceType: 'SELL' },
+        where: { sourceId: dbBills[0].id, sourceType: 'SELL_BILL' },
       });
       expect(movements.length).toBe(1);
     } finally {
