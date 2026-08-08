@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
 import { getAuthToken, setAuthToken } from '@/lib/api';
 import { classifyAuthResponse } from '@/lib/auth-response-classifier';
+import { classifyImportOutcome, shouldBlockClose, shouldRefreshHistory, getOutcomeMessage, type ImportOutcomeState } from '@/lib/import-state-helper';
 import * as XLSX from 'xlsx';
 import {
   isValidExternalBillNumber,
@@ -87,6 +88,8 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   const [existingDuplicates, setExistingDuplicates] = useState<Set<string>>(new Set());
   // ST-8: Structured apply result (shown after apply completes)
   const [applyResult, setApplyResult] = useState<ImportSummary | null>(null);
+  const [importOutcome, setImportOutcome] = useState<ImportOutcomeState>('IDLE');
+  const importInFlightRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Build product lookup map: normalized exact name → product
@@ -416,7 +419,11 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
 
   const handleImport = async () => {
     if (!canImport) return;
+    // ST-75: Double-submit guard — synchronous ref check
+    if (importInFlightRef.current) return;
+    importInFlightRef.current = true;
     setImporting(true);
+    setImportOutcome('IMPORTING');
     setApplyResult(null);
     try {
       const token = getAuthToken();
@@ -495,6 +502,10 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
       const summary = (await res.json()) as ImportSummary;
       setApplyResult(summary);
 
+      // ST-75: Classify outcome using tested helper
+      const outcome = classifyImportOutcome(res.status, summary, false);
+      setImportOutcome(outcome);
+
       // ST-8: Structured result toast
       const parts: string[] = [`นำเข้าสำเร็จ ${summary.importedCount} บิล`];
       if (summary.duplicateExistingCount > 0) {
@@ -506,15 +517,21 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
       if (summary.failedCount > 0) {
         parts.push(`ล้มเหลว ${summary.failedCount}`);
       }
-      if (summary.importedCount > 0) {
+      if (outcome === 'SUCCESS') {
         toast.success(parts.join(' · '));
-      } else {
+      } else if (outcome === 'PARTIAL_SUCCESS') {
         toast.warning(parts.join(' · '));
+      } else if (outcome === 'AMBIGUOUS_RESULT') {
+        toast.error(getOutcomeMessage(outcome));
+      } else {
+        toast.error(parts.join(' · ') || 'นำเข้าไม่สำเร็จ');
       }
 
-      // Notify parent (legacy + new callback)
-      onImport?.([]);
-      onApplied?.(summary);
+      // ST-75: Refresh history only when bills may have committed
+      if (shouldRefreshHistory(outcome)) {
+        onImport?.([]);
+        onApplied?.(summary);
+      }
 
       // ST-8: Re-check duplicates after apply so the preview reflects reality
       // (imported bills now show as duplicate-existing if user re-opens the same file)
@@ -522,10 +539,13 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         checkDuplicatesBatch();
       }, 100);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
-      toast.error(`นำเข้าไม่สำเร็จ: ${message}`);
+      // ST-75: Network error after request sent → AMBIGUOUS_RESULT
+      const outcome = classifyImportOutcome(null, null, true);
+      setImportOutcome(outcome);
+      toast.error(getOutcomeMessage(outcome));
     } finally {
       setImporting(false);
+      importInFlightRef.current = false;
     }
   };
 
@@ -539,6 +559,8 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   // ST-75: Unified cleanup path — used by handleOpenChange, 401, 403, and success.
   // Prevents stale planned bills, duplicates, and state from persisting across reopens.
   const resetDialogState = () => {
+    setImportOutcome('IDLE');
+    importInFlightRef.current = false;
     setPlannedBills([]);
     setFileName('');
     setApplyResult(null);
@@ -615,7 +637,11 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         <FileSpreadsheet className="h-4 w-4 mr-1" />
         นำเข้าแบบละเอียด (แยกบิล)
       </Button>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => { if (shouldBlockClose(importOutcome)) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (shouldBlockClose(importOutcome)) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-green-600" />

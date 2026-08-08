@@ -20,6 +20,7 @@ import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
 import { getAuthToken, setAuthToken } from '@/lib/api';
 import { classifyAuthResponse } from '@/lib/auth-response-classifier';
+import { classifyImportOutcome, shouldBlockClose, shouldRefreshHistory, getOutcomeMessage, type ImportOutcomeState } from '@/lib/import-state-helper';
 import * as XLSX from 'xlsx';
 import {
   normalizeBillNumber,
@@ -80,6 +81,8 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   const [fileName, setFileName] = useState('');
   const [existingDuplicates, setExistingDuplicates] = useState<Set<string>>(new Set());
   const [applyResult, setApplyResult] = useState<ImportSummary | null>(null);
+  const [importOutcome, setImportOutcome] = useState<ImportOutcomeState>('IDLE');
+  const importInFlightRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const productMap = useMemo(() => {
@@ -433,7 +436,10 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
 
   const handleImport = async () => {
     if (!canImport) return;
+    if (importInFlightRef.current) return;
+    importInFlightRef.current = true;
     setImporting(true);
+    setImportOutcome('IMPORTING');
     setApplyResult(null);
     try {
       const token = getAuthToken();
@@ -530,19 +536,27 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         checkDuplicatesBatch();
       }, 100);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
-      toast.error(`นำเข้าไม่สำเร็จ: ${message}`);
+      const outcome = classifyImportOutcome(null, null, true);
+      setImportOutcome(outcome);
+      toast.error(getOutcomeMessage(outcome));
     } finally {
       setImporting(false);
+      importInFlightRef.current = false;
     }
   };
 
   const handleOpenChange = (v: boolean) => {
+    if (!v && shouldBlockClose(importOutcome)) {
+      toast.warning('กำลังนำเข้า กรุณารอผลลัพธ์ก่อน เพื่อป้องกันสถานะบิลไม่ชัดเจน');
+      return;
+    }
     setOpen(v);
     if (!v) { resetDialogState(); }
   };
 
   const resetDialogState = () => {
+    setImportOutcome('IDLE');
+    importInFlightRef.current = false;
     setPlannedBills([]);
     setFileName('');
     setApplyResult(null);
@@ -610,7 +624,11 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         <FileSpreadsheet className="h-4 w-4 mr-1" />
         นำเข้าแบบละเอียด (แยกบิล)
       </Button>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => { if (shouldBlockClose(importOutcome)) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (shouldBlockClose(importOutcome)) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-green-600" />
