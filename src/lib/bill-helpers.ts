@@ -26,29 +26,34 @@ export async function generateBillNumber(
   // with cancelled or gap bills. Falls back to 0 if none exist.
   let maxSeq = 0
   if (billType === 'BUY') {
-    const rows = await tx.buyBill.findMany({
+    // ST-75: Use findFirst desc instead of findMany ALL — reduces O(N) to O(1)
+    const row = await tx.buyBill.findFirst({
       where: { billNumber: { startsWith: yearPrefix } },
       select: { billNumber: true },
+      orderBy: { billNumber: 'desc' },
     })
-    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
+    maxSeq = row?.billNumber ? parseBillNumberSeq(row.billNumber, yearPrefix) : 0
   } else if (billType === 'SELL') {
-    const rows = await tx.sellBill.findMany({
+    const row = await tx.sellBill.findFirst({
       where: { billNumber: { startsWith: yearPrefix } },
       select: { billNumber: true },
+      orderBy: { billNumber: 'desc' },
     })
-    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
+    maxSeq = row?.billNumber ? parseBillNumberSeq(row.billNumber, yearPrefix) : 0
   } else if (billType === 'SORT') {
-    const rows = await tx.sortingBill.findMany({
+    const row = await tx.sortingBill.findFirst({
       where: { billNumber: { startsWith: yearPrefix } },
       select: { billNumber: true },
+      orderBy: { billNumber: 'desc' },
     })
-    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
+    maxSeq = row?.billNumber ? parseBillNumberSeq(row.billNumber, yearPrefix) : 0
   } else {
-    const rows = await tx.stockTransfer.findMany({
+    const row = await tx.stockTransfer.findFirst({
       where: { billNumber: { startsWith: yearPrefix } },
       select: { billNumber: true },
+      orderBy: { billNumber: 'desc' },
     })
-    maxSeq = computeMaxSeq(rows.map((r) => r.billNumber), yearPrefix)
+    maxSeq = row?.billNumber ? parseBillNumberSeq(row.billNumber, yearPrefix) : 0
   }
 
   const sequence = maxSeq + 1
@@ -66,6 +71,17 @@ function computeMaxSeq(billNumbers: (string | null)[], yearPrefix: string): numb
     if (!isNaN(n) && n > max) max = n
   }
   return max
+}
+
+/**
+ * ST-75: Parse the sequence number from a single bill number.
+ * Same logic as computeMaxSeq but for a single value (findFirst desc result).
+ */
+function parseBillNumberSeq(billNumber: string, yearPrefix: string): number {
+  if (!billNumber.startsWith(yearPrefix)) return 0
+  const suffix = billNumber.slice(yearPrefix.length)
+  const n = parseInt(suffix, 10)
+  return isNaN(n) ? 0 : n
 }
 
 /**
