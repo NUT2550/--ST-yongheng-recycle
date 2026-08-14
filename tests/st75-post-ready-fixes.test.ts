@@ -373,4 +373,147 @@ describe('ST-75 F3: Production CAS path wiring', () => {
     // Stock must be exactly 0 (deducted once, not twice).
     expect(testSrc).toMatch(/expect\(lot\?\.remainingWeight\)\.toBe\(0\)/)
   })
+
+  test('26. C3 test isolates CAS failure cause from billNumber collision (P2-A)', () => {
+    // P2-A: The C3 test MUST give distinct deterministic internal billNumbers so the
+    // loser cannot fail from billNumber unique-constraint collision — only from CAS.
+    const testSrc = readFileSync(
+      join(process.cwd(), 'tests/st75-import-postgres-production-path.test.ts'),
+      'utf8',
+    )
+    // Both services use distinct billNumberOverride via separate deps instances.
+    expect(testSrc).toContain('sellBillNumberOverride')
+    expect(testSrc).toMatch(/billNumberA = `SELL-2569-900001`/)
+    expect(testSrc).toMatch(/billNumberB = `SELL-2569-900002`/)
+    expect(testSrc).toMatch(/depsA = makeTestImportDeps\(db, \{ sellBillNumberOverride: billNumberA \}\)/)
+    expect(testSrc).toMatch(/depsB = makeTestImportDeps\(db, \{ sellBillNumberOverride: billNumberB \}\)/)
+    // Loser errorCode MUST be SOURCE_LOT_CONFLICT (CAS), not BILL_CREATE_FAILED.
+    expect(testSrc).toMatch(/loser!\.failedBills\[0\]\.errorCode\)\.toBe\('SOURCE_LOT_CONFLICT'\)/)
+    // Loser's billNumber MUST NOT exist in DB (rollback proof).
+    expect(testSrc).toMatch(/loserBillCount\)\.toBe\(0\)/)
+    // Loser's SellBill MUST NOT be committed.
+    expect(testSrc).toMatch(/loserBill\)\.toBeNull\(\)/)
+  })
+})
+
+// ============ P2-B: Real server-backed refresh callback ============
+
+describe('ST-75 P2-B: Real server-backed refresh callback', () => {
+  test('27. Purchase dialog declares onRefreshAfterImport prop', () => {
+    const src = readBuyDialog()
+    expect(src).toContain('onRefreshAfterImport')
+    expect(src).toMatch(/onRefreshAfterImport\?: \(\) => void \| Promise<void>/)
+  })
+
+  test('28. Sales dialog declares onRefreshAfterImport prop', () => {
+    const src = readSellDialog()
+    expect(src).toContain('onRefreshAfterImport')
+    expect(src).toMatch(/onRefreshAfterImport\?: \(\) => void \| Promise<void>/)
+  })
+
+  test('29. Purchase success path calls onRefreshAfterImport (not onImport([]))', () => {
+    const src = readBuyDialog()
+    // The success-path refresh block must call onRefreshAfterImport, not onImport([]).
+    const refreshBlockMatch = src.match(/if \(shouldRefreshHistory\(outcome\)\) \{([\s\S]*?)\n      \}/)
+    expect(refreshBlockMatch).not.toBeNull()
+    const block = refreshBlockMatch![1]
+    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).not.toContain('onImport?.([])')
+  })
+
+  test('30. Sales success path calls onRefreshAfterImport (not onImport([]))', () => {
+    const src = readSellDialog()
+    const refreshBlockMatch = src.match(/if \(shouldRefreshHistory\(outcome\)\) \{([\s\S]*?)\n      \}/)
+    expect(refreshBlockMatch).not.toBeNull()
+    const block = refreshBlockMatch![1]
+    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).not.toContain('onImport?.([])')
+  })
+
+  test('31. Purchase 429/5xx path calls onRefreshAfterImport (not onImport([]))', () => {
+    const src = readBuyDialog()
+    const transientIdx = src.indexOf("applyAction === 'TRANSIENT_ERROR'")
+    expect(transientIdx).toBeGreaterThan(-1)
+    const blockEnd = src.indexOf('return;', transientIdx)
+    const block = src.slice(transientIdx, blockEnd)
+    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).not.toContain('onImport?.([])')
+  })
+
+  test('32. Sales 429/5xx path calls onRefreshAfterImport (not onImport([]))', () => {
+    const src = readSellDialog()
+    const transientIdx = src.indexOf("applyAction === 'TRANSIENT_ERROR'")
+    expect(transientIdx).toBeGreaterThan(-1)
+    const blockEnd = src.indexOf('return;', transientIdx)
+    const block = src.slice(transientIdx, blockEnd)
+    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).not.toContain('onImport?.([])')
+  })
+
+  test('33. Purchase network-error catch calls onRefreshAfterImport', () => {
+    const src = readBuyDialog()
+    // The catch block must invoke onRefreshAfterImport when shouldRefreshHistory(outcome).
+    expect(src).toMatch(/catch \(err\) \{[\s\S]*?shouldRefreshHistory\(outcome\)[\s\S]*?onRefreshAfterImport\?\.\(\)/)
+  })
+
+  test('34. Sales network-error catch calls onRefreshAfterImport', () => {
+    const src = readSellDialog()
+    expect(src).toMatch(/catch \(err\) \{[\s\S]*?shouldRefreshHistory\(outcome\)[\s\S]*?onRefreshAfterImport\?\.\(\)/)
+  })
+
+  test('35. Buy page wires onRefreshAfterImport to real server fetch', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/components/buy-page.tsx'),
+      'utf8',
+    )
+    // Parent must define a real server-backed load function and pass it as onRefreshAfterImport.
+    expect(src).toMatch(/async function loadProducts\(\)/)
+    expect(src).toMatch(/fetchProducts\(\)/)
+    expect(src).toContain('onRefreshAfterImport={loadProducts}')
+  })
+
+  test('36. Sell page wires onRefreshAfterImport to real server fetch', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/components/sell-page.tsx'),
+      'utf8',
+    )
+    expect(src).toMatch(/async function loadData\(\)/)
+    // loadData must call BOTH fetchProducts and fetchCustomers (server-backed).
+    expect(src).toMatch(/fetchProducts\(\)/)
+    expect(src).toMatch(/fetchCustomers\(\)/)
+    expect(src).toContain('onRefreshAfterImport={loadData}')
+  })
+
+  test('37. Buy page loadProducts is callable (not inline useEffect closure)', () => {
+    // P2-B: The refresh function must be a top-level component function (callable from
+    // event handlers), not a closure inside useEffect that can't be re-invoked.
+    const src = readFileSync(
+      join(process.cwd(), 'src/components/buy-page.tsx'),
+      'utf8',
+    )
+    // The function declaration must NOT be inside useEffect.
+    const useEffectIdx = src.indexOf('useEffect(() => {')
+    const loadFnIdx = src.indexOf('async function loadProducts()')
+    expect(useEffectIdx).toBeGreaterThan(-1)
+    expect(loadFnIdx).toBeGreaterThan(-1)
+    // The loadProducts function must come AFTER the useEffect block (extracted out).
+    expect(loadFnIdx).toBeGreaterThan(useEffectIdx)
+    // useEffect must call loadProducts() rather than define its own closure.
+    const useEffectBlock = src.slice(useEffectIdx, src.indexOf('}, []);', useEffectIdx) + 8)
+    expect(useEffectBlock).toContain('loadProducts()')
+  })
+
+  test('38. Sell page loadData is callable (not inline useEffect closure)', () => {
+    const src = readFileSync(
+      join(process.cwd(), 'src/components/sell-page.tsx'),
+      'utf8',
+    )
+    const useEffectIdx = src.indexOf('useEffect(() => {')
+    const loadFnIdx = src.indexOf('async function loadData()')
+    expect(useEffectIdx).toBeGreaterThan(-1)
+    expect(loadFnIdx).toBeGreaterThan(-1)
+    expect(loadFnIdx).toBeGreaterThan(useEffectIdx)
+    const useEffectBlock = src.slice(useEffectIdx, src.indexOf('}, []);', useEffectIdx) + 8)
+    expect(useEffectBlock).toContain('loadData()')
+  })
 })

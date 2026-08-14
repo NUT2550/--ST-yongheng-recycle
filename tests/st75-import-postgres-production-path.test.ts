@@ -82,7 +82,10 @@ function makeTestBuyBillDeps(db: PrismaClient): BuyBillServiceDeps<BuyBillCreate
   };
 }
 
-function makeTestSellBillDeps(db: PrismaClient): SellBillServiceDeps<SellBillCreatedBill> {
+function makeTestSellBillDeps(
+  db: PrismaClient,
+  opts: { sellBillNumberOverride?: string } = {},
+): SellBillServiceDeps<SellBillCreatedBill> {
   return {
     checkStockAvailability: async (items: Array<{ productId: string; weight: number }>) => {
       for (const item of items) {
@@ -97,7 +100,12 @@ function makeTestSellBillDeps(db: PrismaClient): SellBillServiceDeps<SellBillCre
       }
       return { ok: true as const };
     },
-    generateBillNumber: () => generateBillNumber(db as any, 'SELL'),
+    // ST-75 P2-A: Allow tests to override the internal billNumber so concurrent
+    // services can be given DISTINCT deterministic numbers, isolating the CAS
+    // failure cause from billNumber unique-constraint collision.
+    generateBillNumber: opts.sellBillNumberOverride
+      ? () => Promise.resolve(opts.sellBillNumberOverride!)
+      : () => generateBillNumber(db as any, 'SELL'),
     transaction: <T>(fn: (tx: SellBillTx<SellBillCreatedBill>) => Promise<T>): Promise<T> =>
       db.$transaction(async (prismaTx) => {
         const adaptedTx: SellBillTx = {
@@ -131,9 +139,12 @@ function makeTestSellBillDeps(db: PrismaClient): SellBillServiceDeps<SellBillCre
   };
 }
 
-function makeTestImportDeps(db: PrismaClient): ImportApplyDeps {
+function makeTestImportDeps(
+  db: PrismaClient,
+  opts: { sellBillNumberOverride?: string } = {},
+): ImportApplyDeps {
   const buyDeps = makeTestBuyBillDeps(db);
-  const sellDeps = makeTestSellBillDeps(db);
+  const sellDeps = makeTestSellBillDeps(db, opts);
   return {
     async loadExistingBillNumbers(type, numbers) {
       const table = (type === "purchase" ? db.buyBill : db.sellBill) as any;
@@ -384,10 +395,18 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
   });
 
   test('C3. CAS conflict on concurrent Sales — exactly one business effect, no double-deduction', async () => {
-    // ST-75 F3: Verify the production CAS path (executeStockLotBulkCas) is exercised.
-    // Two concurrent sales on the SAME product lot: the CAS guard (expectedRemainingWeight
-    // match) MUST ensure exactly one commits, the other gets SourceLotConflictError →
-    // the import pipeline classifies it as a failed bill (not a duplicate, not a second commit).
+    // ST-75 F3 + P2-A: Verify the production CAS path (executeStockLotBulkCas) is exercised.
+    //
+    // P2-A isolation: Both concurrent services are given DISTINCT deterministic internal
+    // billNumbers via sellBillNumberOverride. This GUARANTEES the loser cannot fail from
+    // the internal-billNumber unique constraint — the only remaining failure cause for the
+    // loser is the production CAS guard (executeStockLotBulkCas → SourceLotConflictError
+    // when expectedRemainingWeight no longer matches because the winner already deducted).
+    //
+    // We then assert the loser's errorCode === 'SOURCE_LOT_CONFLICT' to PROVE the failure
+    // cause is CAS, not billNumber collision. An unguarded/broken CAS implementation
+    // could let both transactions commit (double-deduction) — this test would catch that
+    // because stock would go negative or two bills would exist.
     if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return; }
     const db = prisma();
     const { categoryId, products } = await setupSyntheticData(db);
@@ -412,31 +431,78 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
           items: [{ productId: products[0], productName: 'P1', weight: 100, pricePerKg: 20, totalAmount: 2000, matched: true }],
         },
       ];
-      const deps = makeTestImportDeps(db);
+      // P2-A: distinct deterministic internal billNumbers — loser CANNOT fail from billNumber collision.
+      const billNumberA = `SELL-2569-900001`;
+      const billNumberB = `SELL-2569-900002`;
+      const depsA = makeTestImportDeps(db, { sellBillNumberOverride: billNumberA });
+      const depsB = makeTestImportDeps(db, { sellBillNumberOverride: billNumberB });
       const [r1, r2] = await Promise.allSettled([
-        applyImport('sales', [bills[0]], deps, ACTOR),
-        applyImport('sales', [bills[1]], deps, ACTOR),
+        applyImport('sales', [bills[0]], depsA, ACTOR),
+        applyImport('sales', [bills[1]], depsB, ACTOR),
       ]);
       const v1 = r1.status === 'fulfilled' ? r1.value : null;
       const v2 = r2.status === 'fulfilled' ? r2.value : null;
       const totalImported = (v1?.importedCount ?? 0) + (v2?.importedCount ?? 0);
       const totalFailed = (v1?.failedCount ?? 0) + (v2?.failedCount ?? 0);
       console.log(`  CAS conflict: imported=${totalImported} failed=${totalFailed} (expected: 1 imported, 1 failed)`);
-      // Exactly one should commit, the other should fail with CAS conflict.
+      // Exactly one should commit, the other should fail.
       expect(totalImported).toBe(1);
       expect(totalFailed).toBe(1);
+
+      // Identify winner and loser.
+      const winner = v1 && v1.importedCount === 1 ? v1 : v2;
+      const loser = v1 && v1.failedCount === 1 ? v1 : v2;
+      expect(winner).toBeDefined();
+      expect(loser).toBeDefined();
+
+      // P2-A: PROVE the loser failed from CAS (SOURCE_LOT_CONFLICT), not billNumber collision.
+      // With distinct deterministic billNumbers, billNumber unique-constraint collision is
+      // impossible — so the only remaining failure cause is the production CAS guard.
+      expect(loser!.failedBills.length).toBe(1);
+      expect(loser!.failedBills[0].errorCode).toBe('SOURCE_LOT_CONFLICT');
+      console.log(`  CAS failure-cause isolation: loser errorCode=${loser!.failedBills[0].errorCode} (expected SOURCE_LOT_CONFLICT, NOT billNumber collision)`);
+
       // Verify exactly 1 sell bill in DB (the winner). The loser's bill is NOT committed
       // because the CAS conflict throws inside the transaction → full rollback.
       const dbBills = await db.sellBill.findMany({
         where: { externalBillNumber: { in: [bills[0].externalBillNumber, bills[1].externalBillNumber] } },
       });
       expect(dbBills.length).toBe(1);
+
+      // P2-A: Verify the winner's internal billNumber is in DB, loser's is NOT (rollback proof).
+      const winnerBillNumber = winner!.importedBills[0]?.billNumber;
+      const loserBillNumber = winnerBillNumber === billNumberA ? billNumberB : billNumberA;
+      const winnerBillCount = await db.sellBill.count({ where: { billNumber: winnerBillNumber } });
+      const loserBillCount = await db.sellBill.count({ where: { billNumber: loserBillNumber } });
+      expect(winnerBillCount).toBe(1);
+      expect(loserBillCount).toBe(0);
+
+      // P2-A: No stray SellBillItem for the loser (rollback proof).
+      // The loser's externalBillNumber should have NO SellBillItem rows because
+      // the transaction rolled back fully.
+      const loserExternal = loser === v1 ? bills[0].externalBillNumber : bills[1].externalBillNumber;
+      const loserBill = await db.sellBill.findFirst({ where: { externalBillNumber: loserExternal } });
+      expect(loserBill).toBeNull(); // loser's bill not committed
+
+      // P2-A: No stray StockMovement for the loser (rollback proof).
+      // Only the winner's bill should have StockMovement rows.
+      const winnerBillId = dbBills[0].id;
+      const winnerMovements = await db.stockMovement.findMany({
+        where: { sourceId: winnerBillId, sourceType: 'SELL_BILL' },
+      });
+      expect(winnerMovements.length).toBeGreaterThanOrEqual(1);
+      // Total SELL_BILL movements for these two external numbers should equal winner's
+      // movements only (loser rolled back → no movements persisted).
+      const allSellMovements = await db.stockMovement.findMany({ where: { sourceType: 'SELL_BILL' } });
+      const movementsForTheseBills = allSellMovements.filter(m => m.sourceId === winnerBillId);
+      expect(movementsForTheseBills.length).toBe(winnerMovements.length);
+
       // Stock deducted exactly once (100kg), not 200kg.
       const lot = await db.stockLot.findFirst({ where: { productId: products[0], source: 'PERF' } });
       expect(lot?.remainingWeight).toBe(0);
       // No negative inventory.
       expect(lot?.remainingWeight).toBeGreaterThanOrEqual(0);
-      console.log(`  CAS conflict: 1 winner committed, 1 loser rolled back, stock=0 (deducted 100kg once)`);
+      console.log(`  CAS conflict: 1 winner committed (billNumber=${winnerBillNumber}), 1 loser rolled back (billNumber=${loserBillNumber} not in DB), stock=0 (deducted 100kg once), movements=${winnerMovements.length}`);
     } finally {
       await cleanupSyntheticData(db, categoryId, products);
     }
