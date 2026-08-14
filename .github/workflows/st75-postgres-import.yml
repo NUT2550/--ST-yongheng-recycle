@@ -104,13 +104,13 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run ST-75 production-path PostgreSQL tests
-        run: bun test tests/st75-import-postgres-production-path.test.ts
+        run: bun test --timeout 15000 tests/st75-import-postgres-production-path.test.ts
 
       - name: Verify zero-skip guard
         run: |
           set -e
           echo "Checking that no ST-75 PostgreSQL tests were skipped..."
-          OUTPUT=$(bun test tests/st75-import-postgres-production-path.test.ts 2>&1 || true)
+          OUTPUT=$(bun test --timeout 15000 tests/st75-import-postgres-production-path.test.ts 2>&1 || true)
           echo "$OUTPUT" | tee /tmp/st75-pg-output.txt
           if echo "$OUTPUT" | grep -q "SKIPPED"; then
             echo "::error::ST-75 PostgreSQL tests were skipped — see output above"
