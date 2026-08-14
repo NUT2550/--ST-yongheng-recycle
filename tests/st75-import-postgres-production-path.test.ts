@@ -30,6 +30,7 @@ import { createBuyBillService } from '../src/lib/bill-services'
 import { createSellBillService } from '../src/lib/bill-services'
 import { generateBillNumber } from '../src/lib/bill-helpers'
 import { FIFO_ORDER_BY } from '../src/lib/fifo-validation'
+import { executeStockLotBulkCas } from '../src/lib/stock-lot-bulk-cas'
 import type { BuyBillServiceDeps, BuyBillTx, BuyBillCreatedBill, SellBillServiceDeps, SellBillTx, SellBillCreatedBill } from '../src/lib/bill-services'
 import type { ImportApplyDeps, ImportActor, ParsedBill } from '../src/lib/import-pipeline'
 import { performance } from 'perf_hooks'
@@ -110,14 +111,16 @@ function makeTestSellBillDeps(db: PrismaClient): SellBillServiceDeps<SellBillCre
               where: { productId, remainingWeight: { gt: 0 } },
               orderBy: FIFO_ORDER_BY,
             }) as Promise<any[]>,
-          bulkUpdateStockLotRemaining: async (updates) => {
-            for (const u of updates) {
-              await prismaTx.stockLot.update({
-                where: { id: u.id },
-                data: { remainingWeight: u.newRemainingWeight },
-              });
-            }
-          },
+          // ST-75 F3: Exercise the PRODUCTION CAS implementation, not a test-local
+          // reimplementation. This is the exact same executeStockLotBulkCas call that
+          // bill-service-prisma-adapters.ts makeSellBillServiceDeps uses at runtime —
+          // bound to the isolated CI Prisma transaction. A broken production CAS SQL
+          // or adapter wiring will now fail this test, not silently pass.
+          bulkUpdateStockLotRemaining: (updates) =>
+            executeStockLotBulkCas(
+              (query) => prismaTx.$queryRaw<Array<{ id: string }>>(query),
+              updates,
+            ),
           createAuditLog: (data) => prismaTx.auditLog.create({ data }),
           createStockMovements: (data) => prismaTx.stockMovement.createMany({
             data: data as Prisma.StockMovementCreateManyInput[],
@@ -336,6 +339,9 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
     const db = prisma();
     const { categoryId, products } = await setupSyntheticData(db);
     try {
+      // ST-75 F3: each bill sells 30kg (10+11+12 across 3 products → 10+11+12 = 33kg total,
+      // but per-product: product[0]=10kg, product[1]=11kg, product[2]=12kg).
+      // Setup seeds 100000kg per product, so a single import deducts 10/11/12 kg respectively.
       const bills = makeBills(1, products, 'CONC-S');
       const deps = makeTestImportDeps(db);
       const [result1, result2] = await Promise.allSettled([
@@ -350,11 +356,87 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
       // Verify DB has exactly 1 sell bill
       const dbBills = await db.sellBill.findMany({ where: { externalBillNumber: bills[0].externalBillNumber } });
       expect(dbBills.length).toBe(1);
-      // Verify stock was deducted only once (check movements)
+      // ST-75 F3: Verify stock was deducted ONLY ONCE per product.
+      // makeBills produces items: product[0]=10kg, product[1]=11kg, product[2]=12kg.
+      // If CAS path is broken and both imports committed, deduction would be 20/22/24 kg.
+      const lotsAfter = await db.stockLot.findMany({ where: { productId: { in: products }, source: 'PERF' } });
+      const remainingByProduct = new Map<string, number>();
+      for (const lot of lotsAfter) {
+        remainingByProduct.set(lot.productId, (remainingByProduct.get(lot.productId) ?? 0) + lot.remainingWeight);
+      }
+      // Expected: 100000 - (single deduction) for each of the 3 products.
+      // makeBills item weights: 10, 11, 12 → product[0] -= 10, product[1] -= 11, product[2] -= 12.
+      expect(remainingByProduct.get(products[0])).toBe(100000 - 10);
+      expect(remainingByProduct.get(products[1])).toBe(100000 - 11);
+      expect(remainingByProduct.get(products[2])).toBe(100000 - 12);
+      // No negative lots.
+      const negative = lotsAfter.filter(l => l.remainingWeight < 0);
+      expect(negative.length).toBe(0);
+      // Verify only one set of stock movements for the committed bill.
       const movements = await db.stockMovement.findMany({
         where: { sourceId: dbBills[0].id, sourceType: 'SELL_BILL' },
       });
       expect(movements.length).toBeGreaterThanOrEqual(1);
+      console.log(`  Concurrent Sales CAS: stock deducted once per product (10/11/12 kg), movements=${movements.length}`);
+    } finally {
+      await cleanupSyntheticData(db, categoryId, products);
+    }
+  });
+
+  test('C3. CAS conflict on concurrent Sales — exactly one business effect, no double-deduction', async () => {
+    // ST-75 F3: Verify the production CAS path (executeStockLotBulkCas) is exercised.
+    // Two concurrent sales on the SAME product lot: the CAS guard (expectedRemainingWeight
+    // match) MUST ensure exactly one commits, the other gets SourceLotConflictError →
+    // the import pipeline classifies it as a failed bill (not a duplicate, not a second commit).
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return; }
+    const db = prisma();
+    const { categoryId, products } = await setupSyntheticData(db);
+    try {
+      // Single lot with exactly 100kg — two concurrent sales each trying to deduct 100kg.
+      // Manually trim the seeded lot to 100kg for a deterministic CAS conflict.
+      await db.stockLot.updateMany({
+        where: { productId: products[0], source: 'PERF' },
+        data: { remainingWeight: 100 },
+      });
+      const bills = [
+        {
+          externalBillNumber: `C3-CAS-${getSalt()}-A`,
+          date: '2026-08-08',
+          note: 'CAS conflict A',
+          items: [{ productId: products[0], productName: 'P1', weight: 100, pricePerKg: 20, totalAmount: 2000, matched: true }],
+        },
+        {
+          externalBillNumber: `C3-CAS-${getSalt()}-B`,
+          date: '2026-08-08',
+          note: 'CAS conflict B',
+          items: [{ productId: products[0], productName: 'P1', weight: 100, pricePerKg: 20, totalAmount: 2000, matched: true }],
+        },
+      ];
+      const deps = makeTestImportDeps(db);
+      const [r1, r2] = await Promise.allSettled([
+        applyImport('sales', [bills[0]], deps, ACTOR),
+        applyImport('sales', [bills[1]], deps, ACTOR),
+      ]);
+      const v1 = r1.status === 'fulfilled' ? r1.value : null;
+      const v2 = r2.status === 'fulfilled' ? r2.value : null;
+      const totalImported = (v1?.importedCount ?? 0) + (v2?.importedCount ?? 0);
+      const totalFailed = (v1?.failedCount ?? 0) + (v2?.failedCount ?? 0);
+      console.log(`  CAS conflict: imported=${totalImported} failed=${totalFailed} (expected: 1 imported, 1 failed)`);
+      // Exactly one should commit, the other should fail with CAS conflict.
+      expect(totalImported).toBe(1);
+      expect(totalFailed).toBe(1);
+      // Verify exactly 1 sell bill in DB (the winner). The loser's bill is NOT committed
+      // because the CAS conflict throws inside the transaction → full rollback.
+      const dbBills = await db.sellBill.findMany({
+        where: { externalBillNumber: { in: [bills[0].externalBillNumber, bills[1].externalBillNumber] } },
+      });
+      expect(dbBills.length).toBe(1);
+      // Stock deducted exactly once (100kg), not 200kg.
+      const lot = await db.stockLot.findFirst({ where: { productId: products[0], source: 'PERF' } });
+      expect(lot?.remainingWeight).toBe(0);
+      // No negative inventory.
+      expect(lot?.remainingWeight).toBeGreaterThanOrEqual(0);
+      console.log(`  CAS conflict: 1 winner committed, 1 loser rolled back, stock=0 (deducted 100kg once)`);
     } finally {
       await cleanupSyntheticData(db, categoryId, products);
     }
