@@ -445,6 +445,8 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
       const token = getAuthToken();
       if (!token) {
         toast.error('ไม่ได้เข้าสู่ระบบ — กรุณา Login ใหม่');
+        // ST-75: pre-dispatch — no request sent, no backend writes possible.
+        setImportOutcome('IDLE');
         setImporting(false);
         return;
       }
@@ -477,6 +479,8 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
 
       if (billsToApply.length === 0) {
         toast.warning('ไม่มีบิลพร้อมนำเข้า');
+        // ST-75: pre-dispatch — no request sent, no backend writes possible.
+        setImportOutcome('IDLE');
         setImporting(false);
         return;
       }
@@ -490,7 +494,13 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         body: JSON.stringify({ type: 'sales', bills: billsToApply }),
       });
 
-      // ST-75: Use tested classifier for auth response handling
+      // ST-75: Use tested classifier for auth response handling.
+      // NOTE: /api/import/apply has already been dispatched at this point.
+      // For 401, the backend rejects before processing — session is expired, no writes.
+      // For 403, the backend denies permission — no writes, session preserved.
+      // For 429/5xx, the backend MAY have started or committed per-bill transactions.
+      //   A client receiving 429/5xx after dispatch CANNOT safely claim zero writes.
+      //   Therefore 429/5xx MUST be classified as AMBIGUOUS_RESULT, not a simple retry.
       const applyAction = classifyAuthResponse(res.status);
       if (applyAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
@@ -502,35 +512,58 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         handlePermissionDenied();
         return;
       }
+      // ST-75 F4: 429/5xx after apply dispatch → AMBIGUOUS_RESULT (backend may have committed).
       if (applyAction === 'TRANSIENT_ERROR') {
-        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
-        setImporting(false);
+        const ambiguousOutcome = classifyImportOutcome(res.status, null, false);
+        setImportOutcome(ambiguousOutcome); // AMBIGUOUS_RESULT for 429/5xx
+        toast.error(getOutcomeMessage(ambiguousOutcome));
+        // Trigger the may-have-committed history refresh path. No summary to pass
+        // (response body may be unparseable or absent), so only call onImport.
+        if (shouldRefreshHistory(ambiguousOutcome)) {
+          onImport?.([]);
+        }
         return;
       }
 
       if (!res.ok) {
+        // ST-75: other non-2xx (400/404 etc.) — confirmed client error, no commit.
+        const failedOutcome = classifyImportOutcome(res.status, null, false);
+        setImportOutcome(failedOutcome); // FAILED_CONFIRMED for 400/404
         const data = await res.json().catch(() => ({}));
         toast.error(`นำเข้าไม่สำเร็จ: ${data.error || res.statusText}`);
-        setImporting(false);
         return;
       }
 
       const summary = (await res.json()) as ImportSummary;
       setApplyResult(summary);
 
+      // ST-75 F1: Classify terminal outcome on success path.
+      // Previously this path never called setImportOutcome, leaving the modal stuck
+      // at IMPORTING and blocking all close paths after every successful sales import.
+      const outcome = classifyImportOutcome(res.status, summary, false);
+      setImportOutcome(outcome);
+
       const parts: string[] = [`นำเข้าสำเร็จ ${summary.importedCount} บิล`];
       if (summary.duplicateExistingCount > 0) parts.push(`ข้ามซ้ำ ${summary.duplicateExistingCount}`);
       if (summary.duplicateInFileCount > 0) parts.push(`ซ้ำในไฟล์ ${summary.duplicateInFileCount}`);
       if (summary.insufficientStockCount > 0) parts.push(`สต็อกไม่พอ ${summary.insufficientStockCount}`);
       if (summary.failedCount > 0) parts.push(`ล้มเหลว ${summary.failedCount}`);
-      if (summary.importedCount > 0) {
+
+      if (outcome === 'SUCCESS') {
         toast.success(parts.join(' · '));
-      } else {
+      } else if (outcome === 'PARTIAL_SUCCESS') {
         toast.warning(parts.join(' · '));
+      } else if (outcome === 'AMBIGUOUS_RESULT') {
+        toast.error(getOutcomeMessage(outcome));
+      } else {
+        toast.error(parts.join(' · ') || 'นำเข้าไม่สำเร็จ');
       }
 
-      onImport?.([]);
-      onApplied?.(summary);
+      // ST-75: Refresh history only when bills may have committed.
+      if (shouldRefreshHistory(outcome)) {
+        onImport?.([]);
+        onApplied?.(summary);
+      }
 
       setTimeout(() => {
         checkDuplicatesBatch();

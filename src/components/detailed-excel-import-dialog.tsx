@@ -429,6 +429,8 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
       const token = getAuthToken();
       if (!token) {
         toast.error('ไม่ได้เข้าสู่ระบบ — กรุณา Login ใหม่');
+        // ST-75: pre-dispatch — no request sent, no backend writes possible.
+        setImportOutcome('IDLE');
         setImporting(false);
         return;
       }
@@ -461,6 +463,8 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
 
       if (billsToApply.length === 0) {
         toast.warning('ไม่มีบิลพร้อมนำเข้า');
+        // ST-75: pre-dispatch — no request sent, no backend writes possible.
+        setImportOutcome('IDLE');
         setImporting(false);
         return;
       }
@@ -474,7 +478,13 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         body: JSON.stringify({ type: 'purchase', bills: billsToApply }),
       });
 
-      // ST-75: Use tested classifier for auth response handling
+      // ST-75: Use tested classifier for auth response handling.
+      // NOTE: /api/import/apply has already been dispatched at this point.
+      // For 401, the backend rejects before processing — session is expired, no writes.
+      // For 403, the backend denies permission — no writes, session preserved.
+      // For 429/5xx, the backend MAY have started or committed per-bill transactions.
+      //   A client receiving 429/5xx after dispatch CANNOT safely claim zero writes.
+      //   Therefore 429/5xx MUST be classified as AMBIGUOUS_RESULT, not a simple retry.
       const applyAction = classifyAuthResponse(res.status);
       if (applyAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
@@ -486,16 +496,25 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         handlePermissionDenied();
         return;
       }
+      // ST-75 F4: 429/5xx after apply dispatch → AMBIGUOUS_RESULT (backend may have committed).
       if (applyAction === 'TRANSIENT_ERROR') {
-        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
-        setImporting(false);
+        const ambiguousOutcome = classifyImportOutcome(res.status, null, false);
+        setImportOutcome(ambiguousOutcome); // AMBIGUOUS_RESULT for 429/5xx
+        toast.error(getOutcomeMessage(ambiguousOutcome));
+        // Trigger the may-have-committed history refresh path. No summary to pass
+        // (response body may be unparseable or absent), so only call onImport.
+        if (shouldRefreshHistory(ambiguousOutcome)) {
+          onImport?.([]);
+        }
         return;
       }
 
       if (!res.ok) {
+        // ST-75: other non-2xx (400/404 etc.) — confirmed client error, no commit.
+        const failedOutcome = classifyImportOutcome(res.status, null, false);
+        setImportOutcome(failedOutcome); // FAILED_CONFIRMED for 400/404
         const data = await res.json().catch(() => ({}));
         toast.error(`นำเข้าไม่สำเร็จ: ${data.error || res.statusText}`);
-        setImporting(false);
         return;
       }
 
@@ -550,6 +569,16 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   };
 
   const handleOpenChange = (v: boolean) => {
+    // ST-75 F2: Guard the authoritative close path.
+    // Previously, only onInteractOutside + onEscapeKeyDown checked shouldBlockClose,
+    // but the X button (DialogClose) and footer Cancel call onOpenChange(false) directly,
+    // bypassing those handlers. This guard ensures ALL close paths are blocked while
+    // importOutcome === 'IMPORTING', and resetDialogState() (which clears
+    // importInFlightRef) does NOT run while a fetch is genuinely active.
+    if (!v && shouldBlockClose(importOutcome)) {
+      toast.warning('กำลังนำเข้า กรุณารอผลลัพธ์ก่อน เพื่อป้องกันสถานะบิลไม่ชัดเจน');
+      return;
+    }
     setOpen(v);
     if (!v) {
       resetDialogState();
