@@ -70,24 +70,29 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
 
   // Fetch products and customers on mount
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [prodRes, custRes] = await Promise.all([
-          fetchProducts(),
-          fetchCustomers(),
-        ]);
-        const prodData = prodRes as unknown as { products: Product[] };
-        setProducts(prodData.products || (prodRes as unknown as Product[]));
-        const custData = custRes as unknown as { customers: Customer[] };
-        setCustomers(custData.customers || (custRes as unknown as Customer[]));
-      } catch {
-        toast.error('ไม่สามารถโหลดข้อมูลได้');
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, []);
+
+  // ST-75 P2-B: Real server-backed refresh — called by import dialog after apply
+  // (SUCCESS / PARTIAL_SUCCESS / AMBIGUOUS_RESULT) so the UI reflects any committed
+  // bills and updated stock. Replaces the legacy onImport([]) call which did not
+  // actually reload server state.
+  async function loadData() {
+    try {
+      const [prodRes, custRes] = await Promise.all([
+        fetchProducts(),
+        fetchCustomers(),
+      ]);
+      const prodData = prodRes as unknown as { products: Product[] };
+      setProducts(prodData.products || (prodRes as unknown as Product[]));
+      const custData = custRes as unknown as { customers: Customer[] };
+      setCustomers(custData.customers || (custRes as unknown as Customer[]));
+    } catch {
+      toast.error('ไม่สามารถโหลดข้อมูลได้');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // Filter products with stock > 0
   const availableProducts = useMemo(
@@ -411,6 +416,7 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
                 <DetailedSellExcelImportDialog
                   products={availableProducts}
                   onSessionExpired={onSessionExpired}
+                  onRefreshAfterImport={loadData}
                   onImport={async (bills) => {
                     // ST-18: For each bill, add items to cart with stock validation
                     let totalAdded = 0;

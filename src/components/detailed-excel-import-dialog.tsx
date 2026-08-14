@@ -76,9 +76,16 @@ interface DetailedExcelImportDialogProps {
   }>) => void;
   /** ST-8: New callback — fired after /api/import/apply completes (success or partial). */
   onApplied?: (summary: ImportSummary) => void;
+  /**
+   * ST-75 P2-B: Real server-backed refresh callback — invoked when bills may have
+   * committed (SUCCESS / PARTIAL_SUCCESS / AMBIGUOUS_RESULT). The parent MUST wire
+   * this to an actual server fetch (e.g., reload products/stock/bills from the API).
+   * Replaces the legacy onImport([]) call which did NOT actually refresh server state.
+   */
+  onRefreshAfterImport?: () => void | Promise<void>;
 }
 
-export function DetailedExcelImportDialog({ products, onSessionExpired, onImport, onApplied }: DetailedExcelImportDialogProps) {
+export function DetailedExcelImportDialog({ products, onSessionExpired, onImport, onApplied, onRefreshAfterImport }: DetailedExcelImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -501,10 +508,12 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         const ambiguousOutcome = classifyImportOutcome(res.status, null, false);
         setImportOutcome(ambiguousOutcome); // AMBIGUOUS_RESULT for 429/5xx
         toast.error(getOutcomeMessage(ambiguousOutcome));
-        // Trigger the may-have-committed history refresh path. No summary to pass
-        // (response body may be unparseable or absent), so only call onImport.
+        // ST-75 P2-B: Trigger the real server-backed refresh path (not legacy onImport([])).
+        // The backend may have committed bills before returning 429/5xx — the UI must
+        // reload authoritative page data so any committed bills and updated stock are visible.
+        // No summary to pass (response body may be unparseable or absent).
         if (shouldRefreshHistory(ambiguousOutcome)) {
-          onImport?.([]);
+          onRefreshAfterImport?.();
         }
         return;
       }
@@ -546,9 +555,11 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         toast.error(parts.join(' · ') || 'นำเข้าไม่สำเร็จ');
       }
 
-      // ST-75: Refresh history only when bills may have committed
+      // ST-75 P2-B: Refresh history only when bills may have committed.
+      // Use the real server-backed refresh callback instead of legacy onImport([])
+      // which did not actually reload server state.
       if (shouldRefreshHistory(outcome)) {
-        onImport?.([]);
+        onRefreshAfterImport?.();
         onApplied?.(summary);
       }
 
@@ -562,6 +573,10 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
       const outcome = classifyImportOutcome(null, null, true);
       setImportOutcome(outcome);
       toast.error(getOutcomeMessage(outcome));
+      // ST-75 P2-B: Real server-backed refresh — backend may have committed before network drop.
+      if (shouldRefreshHistory(outcome)) {
+        onRefreshAfterImport?.();
+      }
     } finally {
       setImporting(false);
       importInFlightRef.current = false;
