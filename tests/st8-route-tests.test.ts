@@ -15,9 +15,9 @@
  *     normal POST /api/buy-bills and /api/sell-bills routes, with NO
  *     second bill engine (no direct db.buyBill.create / db.sellBill.create /
  *     db.stockLot.create in the import route).
- *   - Duplicate/batch: prove loadExistingBillNumbers is called exactly
- *     ONCE per import request (not per bill), P2002 maps to
- *     DUPLICATE_EXISTING (not FAILED), and full re-upload is idempotent.
+ *   - Duplicate/batch: prove the normal successful path uses one initial
+ *     request-wide lookup, confirmed concurrent duplicate races map to
+ *     DUPLICATE_EXISTING, and full re-upload is idempotent.
  *
  * Run: bun test tests/st8-route-tests.test.ts
  */
@@ -129,7 +129,7 @@ interface MockApplyState {
   existingBillNumbers: Set<string>;
   insufficientStockProductIds: Set<string>;
   failOnBillNumbers: Set<string>;
-  duplicateOnBillNumbers: Set<string>; // createPurchase/SalesBill throws DuplicateExistingError
+  duplicateOnBillNumbers: Set<string>; // createPurchase/SalesBill simulates a concurrent winner + throws DuplicateExistingError
   loadExistingBillNumbersCalls: Array<{ type: 'purchase' | 'sales'; normalizedCandidates: string[] }>;
   checkStockAvailabilityCalls: Array<{ items: ParsedBillItem[] }>;
   createPurchaseBillCalls: Array<{ bill: ParsedBill; actor: ImportActor }>;
@@ -187,6 +187,9 @@ function makeMockApplyDeps(): { deps: ImportApplyDeps; state: MockApplyState; re
       state.createPurchaseBillCalls.push({ bill, actor });
       const norm = normalizeBillNumber(bill.externalBillNumber);
       if (state.duplicateOnBillNumbers.has(norm)) {
+        // Model the actual race: the initial lookup missed, then a concurrent
+        // winner committed this external number before our create collided.
+        state.existingBillNumbers.add(norm);
         throw new DuplicateExistingError('externalBillNumber');
       }
       if (state.failOnBillNumbers.has(norm)) {
@@ -203,6 +206,7 @@ function makeMockApplyDeps(): { deps: ImportApplyDeps; state: MockApplyState; re
       state.createSalesBillCalls.push({ bill, actor });
       const norm = normalizeBillNumber(bill.externalBillNumber);
       if (state.duplicateOnBillNumbers.has(norm)) {
+        state.existingBillNumbers.add(norm);
         throw new DuplicateExistingError('externalBillNumber');
       }
       if (state.failOnBillNumbers.has(norm)) {
@@ -292,17 +296,12 @@ describe('ST-8 rev 2: Authorization (real hasPermission + real route)', () => {
   });
 
   test('3. Purchase with only sell.create → 403', async () => {
-    // Real hasPermission: staff with sell.create but NOT buy.create.
     expect(hasPermission(STAFF_SELL_ONLY, 'buy.create')).toBe(false);
-    // Real route invocation: confirms the 403 path.
     const { POST } = await import('../src/app/api/import/apply/route');
     const token = await createToken(STAFF_SELL_ONLY);
     const request = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'purchase', bills: [] }),
     });
     const response = await POST(request as never);
@@ -312,17 +311,12 @@ describe('ST-8 rev 2: Authorization (real hasPermission + real route)', () => {
   });
 
   test('4. Purchase with buy.create → allowed', async () => {
-    // Real hasPermission: staff with buy.create.
     expect(hasPermission(STAFF_BUY_ONLY, 'buy.create')).toBe(true);
-    // Real route invocation: proceeds past auth (returns 200 with empty summary).
     const { POST } = await import('../src/app/api/import/apply/route');
     const token = await createToken(STAFF_BUY_ONLY);
     const request = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'purchase', bills: [] }),
     });
     const response = await POST(request as never);
@@ -332,17 +326,12 @@ describe('ST-8 rev 2: Authorization (real hasPermission + real route)', () => {
   });
 
   test('5. Sales with only buy.create → 403', async () => {
-    // Real hasPermission: staff with buy.create but NOT sell.create.
     expect(hasPermission(STAFF_BUY_ONLY, 'sell.create')).toBe(false);
-    // Real route invocation: confirms the 403 path.
     const { POST } = await import('../src/app/api/import/apply/route');
     const token = await createToken(STAFF_BUY_ONLY);
     const request = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'sales', bills: [] }),
     });
     const response = await POST(request as never);
@@ -352,17 +341,12 @@ describe('ST-8 rev 2: Authorization (real hasPermission + real route)', () => {
   });
 
   test('6. Sales with sell.create → allowed', async () => {
-    // Real hasPermission: staff with sell.create.
     expect(hasPermission(STAFF_SELL_ONLY, 'sell.create')).toBe(true);
-    // Real route invocation: proceeds past auth (returns 200 with empty summary).
     const { POST } = await import('../src/app/api/import/apply/route');
     const token = await createToken(STAFF_SELL_ONLY);
     const request = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'sales', bills: [] }),
     });
     const response = await POST(request as never);
@@ -372,28 +356,20 @@ describe('ST-8 rev 2: Authorization (real hasPermission + real route)', () => {
   });
 
   test('7. Admin → both purchase and sales allowed', async () => {
-    // Real hasPermission: admin has implicit all permissions.
     expect(hasPermission(ADMIN, 'buy.create')).toBe(true);
     expect(hasPermission(ADMIN, 'sell.create')).toBe(true);
-    // Real route invocation: both purchase and sales proceed past auth.
     const { POST } = await import('../src/app/api/import/apply/route');
     const token = await createToken(ADMIN);
     const reqPurchase = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'purchase', bills: [] }),
     });
     const resPurchase = await POST(reqPurchase as never);
     expect(resPurchase.status).toBe(200);
     const reqSales = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'sales', bills: [] }),
     });
     const resSales = await POST(reqSales as never);
@@ -407,17 +383,11 @@ describe('ST-8 rev 2: Authorization (real hasPermission + real route)', () => {
 
 describe('ST-8 rev 2: Input safety', () => {
   test('8. malformed JSON → 400', async () => {
-    // Real route invocation with valid token + malformed JSON body.
-    // The route wraps request.json() in try/catch and returns 400 on failure
-    // BEFORE any DB query, bill creation, or stock modification.
     const { POST } = await import('../src/app/api/import/apply/route');
     const token = await createToken(ADMIN);
     const request = new Request('http://x/api/import/apply', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: 'not valid json {{{',
     });
     const response = await POST(request as never);
@@ -427,9 +397,6 @@ describe('ST-8 rev 2: Input safety', () => {
   });
 
   test('9. missing date → INVALID, zero write', async () => {
-    // classifyBillStatus rejects missing/blank dates as INVALID.
-    // The route preserves missing date as '' (NOT new Date().toISOString()).
-    // applyImport skips INVALID bills — no createPurchaseBill call.
     const bill = makeBill({ date: '' });
     expect(classifyBillStatus(bill)).toBe('INVALID');
     const summary = await applyImport('purchase', [bill], mockApply.deps, ACTOR);
@@ -440,10 +407,8 @@ describe('ST-8 rev 2: Input safety', () => {
   });
 
   test('10. malformed date → INVALID, zero write', async () => {
-    // classifyBillStatus rejects dates that don't parse to a valid Date.
     const bill = makeBill({ date: 'not-a-date' });
     expect(classifyBillStatus(bill)).toBe('INVALID');
-    // Also verify validateBillDate (used by the shared service) rejects it.
     expect(validateBillDate('not-a-date')).not.toBeNull();
     const summary = await applyImport('purchase', [bill], mockApply.deps, ACTOR);
     expect(summary.invalidCount).toBe(1);
@@ -453,12 +418,7 @@ describe('ST-8 rev 2: Input safety', () => {
   });
 
   test('11. invalid product ID → UNMATCHED_PRODUCT, zero write', async () => {
-    // The route's server-side product validation sets matched=false for
-    // invalid productIds. applyImport then classifies as UNMATCHED_PRODUCT.
-    // Here we simulate the post-validation state directly.
-    const bill = makeBill({
-      items: [makeItem({ productId: 'invalid-id', matched: false })],
-    });
+    const bill = makeBill({ items: [makeItem({ productId: 'invalid-id', matched: false })] });
     expect(classifyBillStatus(bill)).toBe('UNMATCHED_PRODUCT');
     const summary = await applyImport('purchase', [bill], mockApply.deps, ACTOR);
     expect(summary.unmatchedCount).toBe(1);
@@ -468,22 +428,9 @@ describe('ST-8 rev 2: Input safety', () => {
   });
 
   test('12. forged matched=true → zero write (server overrides to false)', async () => {
-    // Client sends matched=true but productId is invalid. The route's
-    // overrideMatchedFlagFromServerValidation flips matched to false based
-    // on the server-side batch DB query. applyImport then classifies as
-    // UNMATCHED_PRODUCT (zero write).
-    const bills = [
-      makeBill({
-        externalBillNumber: 'FORGED-1',
-        items: [makeItem({ productId: 'invalid-id', matched: true })], // forged
-      }),
-    ];
-    // Simulate the route's server-side product validation: only 'prod-1' is valid.
-    const validProductIds = new Set<string>(['prod-1']);
-    overrideMatchedFlagFromServerValidation(bills, validProductIds);
-    // After override, matched must be false (the server truth, not the client lie).
+    const bills = [makeBill({ externalBillNumber: 'FORGED-1', items: [makeItem({ productId: 'invalid-id', matched: true })] })];
+    overrideMatchedFlagFromServerValidation(bills, new Set<string>(['prod-1']));
     expect(bills[0].items[0].matched).toBe(false);
-    // applyImport now classifies as UNMATCHED_PRODUCT.
     const summary = await applyImport('purchase', bills, mockApply.deps, ACTOR);
     expect(summary.unmatchedCount).toBe(1);
     expect(summary.importedCount).toBe(0);
@@ -494,7 +441,6 @@ describe('ST-8 rev 2: Input safety', () => {
   test('13. negative weight → INVALID', async () => {
     const bill = makeBill({ items: [makeItem({ weight: -5 })] });
     expect(classifyBillStatus(bill)).toBe('INVALID');
-    // Also verify validateBillItemNumeric rejects it (defense in depth).
     expect(validateBillItemNumeric({ weight: -5, pricePerKg: 100 })).not.toBeNull();
     const summary = await applyImport('purchase', [bill], mockApply.deps, ACTOR);
     expect(summary.invalidCount).toBe(1);
@@ -511,22 +457,12 @@ describe('ST-8 rev 2: Input safety', () => {
   });
 
   test('15. NaN/Infinity weight → INVALID', async () => {
-    // NaN: typeof === 'number' but NaN > 0 is false → INVALID.
     expect(classifyBillStatus(makeBill({ items: [makeItem({ weight: NaN })] }))).toBe('INVALID');
-    // Infinity: Number.isFinite(Infinity) is false → INVALID.
     expect(classifyBillStatus(makeBill({ items: [makeItem({ weight: Infinity })] }))).toBe('INVALID');
-    // -Infinity: same.
     expect(classifyBillStatus(makeBill({ items: [makeItem({ weight: -Infinity })] }))).toBe('INVALID');
-    // validateBillItemNumeric also rejects NaN/Infinity.
     expect(validateBillItemNumeric({ weight: NaN, pricePerKg: 100 })).not.toBeNull();
     expect(validateBillItemNumeric({ weight: Infinity, pricePerKg: 100 })).not.toBeNull();
-    // End-to-end via applyImport: NaN bill is INVALID, zero write.
-    const summary = await applyImport(
-      'purchase',
-      [makeBill({ items: [makeItem({ weight: NaN })] })],
-      mockApply.deps,
-      ACTOR
-    );
+    const summary = await applyImport('purchase', [makeBill({ items: [makeItem({ weight: NaN })] })], mockApply.deps, ACTOR);
     expect(summary.invalidCount).toBe(1);
     expect(mockApply.state.createPurchaseBillCalls).toHaveLength(0);
   });
@@ -541,10 +477,6 @@ describe('ST-8 rev 2: Input safety', () => {
   });
 
   test('17. client totalAmount ignored (server recomputes)', async () => {
-    // The shared createBuyBillService recomputes totalAmount = sum(weight * pricePerKg).
-    // The client-supplied item.totalAmount is NEVER written to the DB.
-    // We verify by calling the real service with mock deps that record the
-    // args passed to createBuyBill.
     let recordedArgs: { data: { totalAmount: number; items: { create: Array<{ totalAmount: number }> } } } | null = null;
     const mockDeps: BuyBillServiceDeps = {
       generateBillNumber: async () => 'BUY-TEST-001',
@@ -552,14 +484,7 @@ describe('ST-8 rev 2: Input safety', () => {
         const tx: BuyBillTx = {
           createBuyBill: async (args) => {
             recordedArgs = args as never;
-            return {
-              id: 'buy-1',
-              items: args.data.items.create.map((it) => ({
-                productId: it.productId,
-                weight: it.weight,
-                pricePerKg: it.pricePerKg,
-              })),
-            };
+            return { id: 'buy-1', items: args.data.items.create.map((it) => ({ productId: it.productId, weight: it.weight, pricePerKg: it.pricePerKg })) };
           },
           createStockLots: async () => undefined,
           createAuditLog: async () => undefined,
@@ -567,24 +492,13 @@ describe('ST-8 rev 2: Input safety', () => {
         return fn(tx);
       },
     };
-    // Client sends totalAmount: 99999 (forged) on the item.
-    const result = await createBuyBillService(
-      mockDeps,
-      {
-        date: '2026-01-01T03:00:00.000Z',
-        isCredit: false,
-        items: [
-          { productId: 'prod-1', weight: 10, pricePerKg: 100 }, // correct total = 1000
-          { productId: 'prod-2', weight: 5, pricePerKg: 200 }, // correct total = 1000
-        ],
-      },
-      ADMIN
-    );
-    // Server-recomputed total = 10*100 + 5*200 = 2000 (NOT 99999).
+    const result = await createBuyBillService(mockDeps, {
+      date: '2026-01-01T03:00:00.000Z', isCredit: false,
+      items: [{ productId: 'prod-1', weight: 10, pricePerKg: 100 }, { productId: 'prod-2', weight: 5, pricePerKg: 200 }],
+    }, ADMIN);
     expect(result.totalAmount).toBe(2000);
     expect(recordedArgs).not.toBeNull();
     expect(recordedArgs!.data.totalAmount).toBe(2000);
-    // Each item's totalAmount is also recomputed (not the client value).
     expect(recordedArgs!.data.items.create[0].totalAmount).toBe(1000);
     expect(recordedArgs!.data.items.create[1].totalAmount).toBe(1000);
   });
@@ -596,8 +510,6 @@ describe('ST-8 rev 2: Input safety', () => {
 
 describe('ST-8 rev 2: Shared production path (source inspection)', () => {
   test('18. normal Purchase route and import call createBuyBillService', () => {
-    // Both /api/buy-bills/route.ts and /api/import/apply/route.ts import
-    // createBuyBillService from @/lib/bill-services — SAME service.
     const buyBillsSrc = readSource(BUY_BILLS_ROUTE_PATH);
     const importApplySrc = readSource(IMPORT_APPLY_ROUTE_PATH);
     expect(buyBillsSrc).toContain('createBuyBillService');
@@ -616,55 +528,31 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
   });
 
   test('20. no direct BuyBill/SellBill/StockLot creation in import route', () => {
-    // The import apply route must NOT contain a second bill engine.
-    // It must NOT call db.buyBill.create, db.sellBill.create, or
-    // db.stockLot.create directly — all such writes go through the
-    // shared services inside their own atomic $transaction.
     const src = readSource(IMPORT_APPLY_ROUTE_PATH);
-    // These patterns would indicate a second bill engine in the route.
     expect(src).not.toMatch(/db\.buyBill\.create\s*\(/);
     expect(src).not.toMatch(/db\.sellBill\.create\s*\(/);
     expect(src).not.toMatch(/db\.stockLot\.create\s*\(/);
     expect(src).not.toMatch(/db\.stockLot\.createMany\s*\(/);
     expect(src).not.toMatch(/db\.stockLot\.update\s*\(/);
-    // The route should use createBuyBillService / createSellBillService.
     expect(src).toContain('createBuyBillService');
     expect(src).toContain('createSellBillService');
   });
 
   test('21. canonical deterministic FIFO (FIFO_ORDER_BY used)', () => {
-    // FIFO_ORDER_BY is the canonical ST-39 ordering (dateAdded ASC,
-    // createdAt ASC, id ASC). It's defined in fifo-validation.ts and
-    // re-exported from bill-services.ts.
     const billServicesSrc = readSource(BILL_SERVICES_PATH);
-    // The import is multi-line: `import { FIFO_ORDER_BY, ... } from './fifo-validation'`.
-    // Use a regex that allows newlines between `import` and `from`.
     expect(billServicesSrc).toMatch(/import\s+\{[^}]*FIFO_ORDER_BY[^}]*\}\s*from\s*['"]\.\/fifo-validation['"]/);
     expect(billServicesSrc).toMatch(/FIFO_ORDER_BY/);
-    // The import apply route also imports FIFO_ORDER_BY from bill-services.
     const importApplySrc = readSource(IMPORT_APPLY_ROUTE_PATH);
     expect(importApplySrc).toMatch(/FIFO_ORDER_BY/);
-    // Verify the canonical ordering spec.
-    expect(FIFO_ORDER_BY).toEqual([
-      { dateAdded: 'asc' },
-      { createdAt: 'asc' },
-      { id: 'asc' },
-    ]);
+    expect(FIFO_ORDER_BY).toEqual([{ dateAdded: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }]);
   });
 
   test('22. zero-cost source rejection (validateSourceLotCosts called in bill-services)', () => {
-    // createSellBillService calls validateSourceLotCosts BEFORE actual
-    // deduction. Zero-cost source lots are rejected (ST-20).
     const billServicesSrc = readSource(BILL_SERVICES_PATH);
-    // Multi-line import: `import { ..., validateSourceLotCosts, ... } from './fifo-validation'`.
     expect(billServicesSrc).toMatch(/import\s+\{[^}]*validateSourceLotCosts[^}]*\}\s*from\s*['"]\.\/fifo-validation['"]/);
     expect(billServicesSrc).toMatch(/validateSourceLotCosts\s*\(/);
-    // Verify validateSourceLotCosts is actually invoked inside createSellBillService.
-    // Find the createSellBillService function body.
     const sellServiceStart = billServicesSrc.indexOf('export async function createSellBillService');
     expect(sellServiceStart).toBeGreaterThan(-1);
-    // The function ends at the next `\n}\n` after the start. Use a more
-    // robust search: find the closing brace by scanning from the start.
     let braceDepth = 0;
     let sellServiceEnd = -1;
     for (let i = sellServiceStart; i < billServicesSrc.length; i++) {
@@ -672,10 +560,7 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
       if (ch === '{') braceDepth++;
       else if (ch === '}') {
         braceDepth--;
-        if (braceDepth === 0) {
-          sellServiceEnd = i + 1;
-          break;
-        }
+        if (braceDepth === 0) { sellServiceEnd = i + 1; break; }
       }
     }
     expect(sellServiceEnd).toBeGreaterThan(sellServiceStart);
@@ -683,20 +568,16 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
     expect(sellServiceBody).toMatch(/validateSourceLotCosts\s*\(/);
   });
 
-  test('23. P2002 maps to DUPLICATE_EXISTING (DuplicateExistingError handling)', () => {
-    // import-pipeline.ts catches DuplicateExistingError and classifies the
-    // bill as DUPLICATE_EXISTING (not FAILED).
+  test('23. P2002 duplicate signal requires post-failure row confirmation', () => {
     const src = readSource(IMPORT_PIPELINE_PATH);
     expect(src).toMatch(/import.*DuplicateExistingError.*from ['"]\.\/bill-errors['"]/);
-    expect(src).toMatch(/err instanceof DuplicateExistingError/);
+    expect(src).toContain('const afterFailureExisting = await deps.loadExistingBillNumbers(type, [norm])');
+    expect(src).toMatch(/duplicateAfterRace = afterFailureExisting\.has\(norm\)/);
+    expect(src).not.toMatch(/duplicateAfterRace\s*=\s*err instanceof DuplicateExistingError/);
     expect(src).toMatch(/status: 'DUPLICATE_EXISTING'/);
-    // Verify isPrismaP2002 maps P2002 to DuplicateExistingError in bill-services.
     const billServicesSrc = readSource(BILL_SERVICES_PATH);
     expect(billServicesSrc).toMatch(/isP2002OnField\s*\(/);
     expect(billServicesSrc).toMatch(/throw new DuplicateExistingError/);
-    // Real isPrismaP2002 behavior.
-    expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);
-    // New bill-errors.ts only checks code === 'P2002' (stricter than old version that also checked message)
     expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);
     expect(isPrismaP2002(new Error('random error'))).toBe(false);
   });
@@ -707,103 +588,60 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
 // ============================================================================
 
 describe('ST-8 rev 2: Duplicate / batch behavior', () => {
-  test('24. P2002 does not increment failedCount', async () => {
-    // When createPurchaseBill throws DuplicateExistingError (simulating
-    // a Prisma P2002), the apply controller classifies the bill as
-    // DUPLICATE_EXISTING — NOT FAILED. failedCount stays at 0.
+  test('24. confirmed P2002 race does not increment failedCount', async () => {
     mockApply.state.duplicateOnBillNumbers.add('A1051492');
     const bills = [makeBill({ externalBillNumber: 'A1051492' })];
     const summary = await applyImport('purchase', bills, mockApply.deps, ACTOR);
     expect(summary.duplicateExistingCount).toBe(1);
     expect(summary.failedCount).toBe(0);
     expect(summary.importedCount).toBe(0);
-    expect(mockApply.state.createPurchaseBillCalls).toHaveLength(1); // attempt was made
-    expect(mockApply.state.stockLotWrites).toBe(0); // no stock written (rolled back)
+    expect(mockApply.state.createPurchaseBillCalls).toHaveLength(1);
+    expect(mockApply.state.loadExistingBillNumbersCalls).toHaveLength(2); // initial + post-failure confirmation
+    expect(mockApply.state.stockLotWrites).toBe(0);
   });
 
   test('25. duplicate causes zero stock side effects', async () => {
-    // A bill that's already in existingBillNumbers is skipped BEFORE
-    // createPurchaseBill is called — zero stock writes.
     mockApply.state.existingBillNumbers.add('DUP-001');
-    const bills = [
-      makeBill({
-        externalBillNumber: 'DUP-001',
-        items: [
-          makeItem({ productId: 'prod-1', weight: 50 }),
-          makeItem({ productId: 'prod-2', weight: 30 }),
-        ],
-      }),
-    ];
+    const bills = [makeBill({ externalBillNumber: 'DUP-001', items: [makeItem({ productId: 'prod-1', weight: 50 }), makeItem({ productId: 'prod-2', weight: 30 })] })];
     const summary = await applyImport('purchase', bills, mockApply.deps, ACTOR);
     expect(summary.duplicateExistingCount).toBe(1);
     expect(summary.importedCount).toBe(0);
     expect(mockApply.state.createPurchaseBillCalls).toHaveLength(0);
     expect(mockApply.state.stockLotWrites).toBe(0);
-    // Compare to a non-duplicate bill: 2 items → 2 stock writes.
     mockApply.reset();
-    const nonDupBills = [
-      makeBill({
-        externalBillNumber: 'NEW-001',
-        items: [
-          makeItem({ productId: 'prod-1', weight: 50 }),
-          makeItem({ productId: 'prod-2', weight: 30 }),
-        ],
-      }),
-    ];
+    const nonDupBills = [makeBill({ externalBillNumber: 'NEW-001', items: [makeItem({ productId: 'prod-1', weight: 50 }), makeItem({ productId: 'prod-2', weight: 30 })] })];
     const summary2 = await applyImport('purchase', nonDupBills, mockApply.deps, ACTOR);
     expect(summary2.importedCount).toBe(1);
     expect(mockApply.state.stockLotWrites).toBe(2);
   });
 
-  test('26. one lookup for 100 bills (loadExistingBillNumbers called once)', async () => {
-    // The CRITICAL fix: loadExistingBillNumbers is called ONCE per import
-    // request, not per bill. Verify with 100 bills.
+  test('26. one lookup for 100 successful/non-racing bills', async () => {
     const bills: ParsedBill[] = [];
-    for (let i = 0; i < 100; i++) {
-      bills.push(
-        makeBill({ externalBillNumber: `B${String(i).padStart(5, '0')}` })
-      );
-    }
-    // Mark some as existing to verify the lookup actually runs.
+    for (let i = 0; i < 100; i++) bills.push(makeBill({ externalBillNumber: `B${String(i).padStart(5, '0')}` }));
     mockApply.state.existingBillNumbers.add('B00010');
     mockApply.state.existingBillNumbers.add('B00050');
     const summary = await applyImport('purchase', bills, mockApply.deps, ACTOR);
-    // Exactly ONE call to loadExistingBillNumbers, regardless of bill count.
     expect(mockApply.state.loadExistingBillNumbersCalls).toHaveLength(1);
-    // The single call received ALL 100 normalized bill numbers as candidates.
     expect(mockApply.state.loadExistingBillNumbersCalls[0].normalizedCandidates).toHaveLength(100);
-    // 98 imported, 2 duplicate-existing.
     expect(summary.importedCount).toBe(98);
     expect(summary.duplicateExistingCount).toBe(2);
   });
 
   test('27. full re-upload is idempotent', async () => {
-    // First upload: 3 bills → 3 imported.
-    const bills = [
-      makeBill({ externalBillNumber: 'IDEMP-1' }),
-      makeBill({ externalBillNumber: 'IDEMP-2' }),
-      makeBill({ externalBillNumber: 'IDEMP-3' }),
-    ];
+    const bills = [makeBill({ externalBillNumber: 'IDEMP-1' }), makeBill({ externalBillNumber: 'IDEMP-2' }), makeBill({ externalBillNumber: 'IDEMP-3' })];
     const first = await applyImport('purchase', bills, mockApply.deps, ACTOR);
     expect(first.importedCount).toBe(3);
     expect(first.duplicateExistingCount).toBe(0);
     expect(mockApply.state.createPurchaseBillCalls).toHaveLength(3);
-    // The first upload made exactly ONE loadExistingBillNumbers call.
     expect(mockApply.state.loadExistingBillNumbersCalls).toHaveLength(1);
-
-    // Reset call counters (but keep writtenPurchaseBills — simulates DB state).
     mockApply.state.createPurchaseBillCalls.length = 0;
     mockApply.state.loadExistingBillNumbersCalls.length = 0;
-
-    // Second upload: same 3 bills → all 3 DUPLICATE_EXISTING, 0 imported.
     const second = await applyImport('purchase', bills, mockApply.deps, ACTOR);
     expect(second.importedCount).toBe(0);
     expect(second.duplicateExistingCount).toBe(3);
     expect(mockApply.state.createPurchaseBillCalls).toHaveLength(0);
-    // The second upload also made exactly ONE loadExistingBillNumbers call.
     expect(mockApply.state.loadExistingBillNumbersCalls).toHaveLength(1);
-    // No additional stock writes on re-upload.
-    expect(mockApply.state.stockLotWrites).toBe(3); // unchanged from first upload
+    expect(mockApply.state.stockLotWrites).toBe(3);
   });
 });
 
@@ -813,12 +651,8 @@ describe('ST-8 rev 2: Duplicate / batch behavior', () => {
 
 describe('ST-8 rev 2: Transaction / rollback parity', () => {
   test('28. server total recomputed (not client)', async () => {
-    // createSellBillService recomputes totalAmount = sum(weight * pricePerKg).
-    // Client-supplied totalAmount is NEVER written.
     let recordedSellArgs: { data: { totalAmount: number; totalCost: number } } | null = null;
-    const sourceLots: SellSourceLot[] = [
-      { id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 50, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') },
-    ];
+    const sourceLots: SellSourceLot[] = [{ id: 'lot-1', productId: 'p1', remainingWeight: 100, costPerKg: 50, dateAdded: new Date('2026-01-01'), createdAt: new Date('2026-01-01') }];
     const mockDeps: SellBillServiceDeps = {
       checkStockAvailability: async () => ({ ok: true as const }),
       generateBillNumber: async () => 'SELL-TEST-001',
@@ -826,15 +660,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
         const tx: SellBillTx = {
           createSellBill: async (args) => {
             recordedSellArgs = args as never;
-            return {
-              id: 'sell-1',
-              externalBillNumber: args.data.externalBillNumber,
-              items: args.data.items.create.map((it) => ({
-                productId: it.productId,
-                weight: it.weight,
-                pricePerKg: it.pricePerKg,
-              })),
-            };
+            return { id: 'sell-1', externalBillNumber: args.data.externalBillNumber, items: args.data.items.create.map((it) => ({ productId: it.productId, weight: it.weight, pricePerKg: it.pricePerKg })) };
           },
           findSourceLots: async () => sourceLots,
           bulkUpdateStockLotRemaining: async () => undefined,
@@ -843,22 +669,11 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
         return fn(tx);
       },
     };
-    // Client sends NO totalAmount (the service doesn't even accept it).
-    const result = await createSellBillService(
-      mockDeps,
-      {
-        date: '2026-01-01T03:00:00.000Z',
-        isCredit: false,
-        items: [
-          { productId: 'prod-1', weight: 10, pricePerKg: 100 }, // 1000
-          { productId: 'prod-1', weight: 5, pricePerKg: 200 }, // 1000
-        ],
-      },
-      ADMIN
-    );
-    // Server-recomputed totalAmount = 10*100 + 5*200 = 2000.
+    const result = await createSellBillService(mockDeps, {
+      date: '2026-01-01T03:00:00.000Z', isCredit: false,
+      items: [{ productId: 'prod-1', weight: 10, pricePerKg: 100 }, { productId: 'prod-1', weight: 5, pricePerKg: 200 }],
+    }, ADMIN);
     expect(result.totalAmount).toBe(2000);
-    // totalCost = 15kg * 50/kg = 750.
     expect(result.totalCost).toBe(750);
     expect(recordedSellArgs).not.toBeNull();
     expect(recordedSellArgs!.data.totalAmount).toBe(2000);
@@ -866,15 +681,9 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
   });
 
   test('29. AuditLog failure rollback parity ($transaction in bill-services)', () => {
-    // createBuyBillService and createSellBillService run ALL writes
-    // (bill + items + stock + credit + audit) inside ONE deps.transaction.
-    // If createAuditLog throws, the entire transaction rolls back —
-    // no orphaned BuyBill/SellBill/StockLot rows.
     const billServicesSrc = readSource(BILL_SERVICES_PATH);
-    // Verify createAuditLog is called inside deps.transaction in createBuyBillService.
     const buyServiceStart = billServicesSrc.indexOf('export async function createBuyBillService');
     expect(buyServiceStart).toBeGreaterThan(-1);
-    // Find the closing brace of the function by tracking brace depth.
     let buyBraceDepth = 0;
     let buyServiceEnd = -1;
     for (let i = buyServiceStart; i < billServicesSrc.length; i++) {
@@ -882,10 +691,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
       if (ch === '{') buyBraceDepth++;
       else if (ch === '}') {
         buyBraceDepth--;
-        if (buyBraceDepth === 0) {
-          buyServiceEnd = i + 1;
-          break;
-        }
+        if (buyBraceDepth === 0) { buyServiceEnd = i + 1; break; }
       }
     }
     expect(buyServiceEnd).toBeGreaterThan(buyServiceStart);
@@ -894,7 +700,6 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     expect(buyServiceBody).toMatch(/tx\.createBuyBill\s*\(/);
     expect(buyServiceBody).toMatch(/tx\.createStockLots\s*\(/);
     expect(buyServiceBody).toMatch(/tx\.createAuditLog\s*\(/);
-    // All four calls are inside the same deps.transaction callback.
     const txStart = buyServiceBody.indexOf('deps.transaction(async (tx) => {');
     const txEnd = buyServiceBody.indexOf('return buyBill', txStart);
     const txBody = buyServiceBody.slice(txStart, txEnd);
@@ -902,7 +707,6 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     expect(txBody).toMatch(/createStockLots/);
     expect(txBody).toMatch(/createAuditLog/);
 
-    // Verify the same for createSellBillService.
     const sellServiceStart = billServicesSrc.indexOf('export async function createSellBillService');
     expect(sellServiceStart).toBeGreaterThan(-1);
     let sellBraceDepth = 0;
@@ -912,10 +716,7 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
       if (ch === '{') sellBraceDepth++;
       else if (ch === '}') {
         sellBraceDepth--;
-        if (sellBraceDepth === 0) {
-          sellServiceEnd = i + 1;
-          break;
-        }
+        if (sellBraceDepth === 0) { sellServiceEnd = i + 1; break; }
       }
     }
     expect(sellServiceEnd).toBeGreaterThan(sellServiceStart);
@@ -924,51 +725,26 @@ describe('ST-8 rev 2: Transaction / rollback parity', () => {
     expect(sellServiceBody).toMatch(/tx\.createSellBill\s*\(/);
     expect(sellServiceBody).toMatch(/tx\.bulkUpdateStockLotRemaining\s*\(/);
     expect(sellServiceBody).toMatch(/tx\.createAuditLog\s*\(/);
-
-    // Live test: if createAuditLog throws, the whole tx throws → caller sees the error.
-    // No partial writes leak.
   });
 
   test('30. bill creation failure rollback parity', async () => {
-    // If createBuyBill (the inner Prisma call) throws inside the
-    // transaction, deps.transaction propagates the error → NO subsequent
-    // createStockLots / createAuditLog calls fire. The whole tx is
-    // rolled back by Prisma's $transaction.
     let stockLotsCalled = false;
     let auditLogCalled = false;
     const mockDeps: BuyBillServiceDeps = {
       generateBillNumber: async () => 'BUY-TEST-FAIL',
       transaction: async (fn) => {
         const tx: BuyBillTx = {
-          createBuyBill: async () => {
-            throw new Error('Prisma createBuyBill failed (simulated)');
-          },
-          createStockLots: async () => {
-            stockLotsCalled = true;
-            return undefined;
-          },
-          createAuditLog: async () => {
-            auditLogCalled = true;
-            return undefined;
-          },
+          createBuyBill: async () => { throw new Error('Prisma createBuyBill failed (simulated)'); },
+          createStockLots: async () => { stockLotsCalled = true; return undefined; },
+          createAuditLog: async () => { auditLogCalled = true; return undefined; },
         };
-        // The transaction callback propagates the error.
         return fn(tx);
       },
     };
-    await expect(
-      createBuyBillService(
-        mockDeps,
-        {
-          date: '2026-01-01T03:00:00.000Z',
-          isCredit: false,
-          items: [{ productId: 'prod-1', weight: 10, pricePerKg: 100 }],
-        },
-        ADMIN
-      )
-    ).rejects.toThrow('Prisma createBuyBill failed');
-    // Because createBuyBill threw, the tx callback exited early —
-    // createStockLots and createAuditLog were NEVER called.
+    await expect(createBuyBillService(mockDeps, {
+      date: '2026-01-01T03:00:00.000Z', isCredit: false,
+      items: [{ productId: 'prod-1', weight: 10, pricePerKg: 100 }],
+    }, ADMIN)).rejects.toThrow('Prisma createBuyBill failed');
     expect(stockLotsCalled).toBe(false);
     expect(auditLogCalled).toBe(false);
   });
