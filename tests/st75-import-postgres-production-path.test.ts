@@ -177,6 +177,39 @@ function makeTestImportDeps(
   };
 }
 
+/**
+ * ST-75 P2-F: deterministically force two concurrent applyImport calls past
+ * their initial duplicate lookup before either can create a bill. The first
+ * `participants` lookups all wait at this barrier and return an empty Set.
+ * Any later lookup (including P2-E post-create-failure reconciliation) uses
+ * the real DB-backed dependency.
+ */
+function withInitialDuplicateLookupBarrier(
+  deps: ImportApplyDeps,
+  participants = 2,
+): ImportApplyDeps {
+  let initialLookups = 0;
+  let release!: () => void;
+  const allInitialLookupsArrived = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return {
+    ...deps,
+    async loadExistingBillNumbers(type, numbers) {
+      if (initialLookups < participants) {
+        initialLookups++;
+        if (initialLookups === participants) {
+          release();
+        }
+        await allInitialLookupsArrived;
+        return new Set<string>();
+      }
+      return deps.loadExistingBillNumbers(type, numbers);
+    },
+  };
+}
+
 // ============ Synthetic data ============
 
 async function setupSyntheticData(db: PrismaClient) {
@@ -321,8 +354,10 @@ describe('ST-75 Production-Path Concurrent Duplicate Purchase', () => {
     const { categoryId, products } = await setupSyntheticData(db);
     try {
       const bills = makeBills(1, products, 'CONC-P');
-      const deps = makeTestImportDeps(db);
-      // Launch BOTH concurrently (NOT sequential)
+      const deps = withInitialDuplicateLookupBarrier(makeTestImportDeps(db));
+      // Launch BOTH concurrently. The barrier guarantees both initial duplicate
+      // lookups return empty before either create proceeds, so one request must
+      // exercise the P2-E post-create-failure reconciliation path.
       const [result1, result2] = await Promise.allSettled([
         applyImport('purchase', bills, deps, ACTOR),
         applyImport('purchase', bills, deps, ACTOR),
@@ -355,7 +390,7 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
       // but per-product: product[0]=10kg, product[1]=11kg, product[2]=12kg).
       // Setup seeds 100000kg per product, so a single import deducts 10/11/12 kg respectively.
       const bills = makeBills(1, products, 'CONC-S');
-      const deps = makeTestImportDeps(db);
+      const deps = withInitialDuplicateLookupBarrier(makeTestImportDeps(db));
       const [result1, result2] = await Promise.allSettled([
         applyImport('sales', bills, deps, ACTOR),
         applyImport('sales', bills, deps, ACTOR),
