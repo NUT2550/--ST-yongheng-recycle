@@ -21,19 +21,20 @@
  * a second bill engine. Tests inject mock callbacks.
  *
  * ST-8 Blocker 7 (P2002 mapping): when the shared service hits a Prisma
- * P2002 on externalBillNumber, it throws `DuplicateExistingError`.
- * The apply controller catches that specific error class and classifies
- * the bill as DUPLICATE_EXISTING (not FAILED) so the rest of the batch
- * continues.
+ * P2002 on externalBillNumber, it throws `DuplicateExistingError`. That
+ * error is a duplicate signal, not proof by itself: after any create
+ * failure, the apply controller confirms the normalized external bill
+ * number exists before reporting DUPLICATE_EXISTING.
  *
  * ST-75 P2-E (concurrent duplicate reconciliation): two requests can both
  * pass the initial duplicate lookup before either commits. The losing create
- * may then fail for a different concurrency symptom (for example an internal
- * billNumber P2002 or SOURCE_LOT_CONFLICT) even though the concurrent winner
- * has committed the same external bill number. After a create failure, the
- * controller performs a bounded single-number recheck. If that normalized
- * external bill now exists, the loser is classified DUPLICATE_EXISTING;
- * otherwise the original error remains FAILED/INSUFFICIENT_STOCK as before.
+ * may then fail from external-number P2002, internal billNumber P2002,
+ * SOURCE_LOT_CONFLICT, or another concurrency symptom even though the
+ * concurrent winner has committed the same external bill number. After any
+ * create failure, the controller performs a bounded single-number recheck.
+ * If that normalized external bill now exists, the loser is classified
+ * DUPLICATE_EXISTING; if the recheck fails or finds no row, the original
+ * safe failure classification is preserved.
  *
  * ST-8 rev 2 (batch lookup): the original
  * `findExistingBillNumber(type, normalized)` was called PER BILL inside
@@ -171,6 +172,17 @@ export function classifyImportBillError(error: unknown): {
       status: 'FAILED',
       errorCode: 'FIFO_MISMATCH',
       safeMessage: 'สต็อกต้นทางมีการเปลี่ยนแปลงระหว่างนำเข้า ระบบยกเลิกรายการนี้แล้ว กรุณาโหลดข้อมูลใหม่และนำเข้าอีกครั้ง',
+    }
+  }
+
+  // A direct external-number P2002 is only a duplicate after the bounded
+  // post-failure lookup confirms that row exists. If reconciliation fails
+  // or finds nothing, preserve it as a generic safe create failure.
+  if (error instanceof DuplicateExistingError) {
+    return {
+      status: 'FAILED',
+      errorCode: 'BILL_CREATE_FAILED',
+      safeMessage: 'นำเข้าบิลไม่สำเร็จ กรุณาลองใหม่หรือแจ้งผู้ดูแล',
     }
   }
 
@@ -604,8 +616,7 @@ export interface ImportApplyDeps {
  *         If insufficient → INSUFFICIENT_STOCK, skip.
  *      c. Attempt to create the bill. Per-bill try/catch.
  *         If success → READY (imported); add norm to existingSet.
- *         If DuplicateExistingError → DUPLICATE_EXISTING; add norm to existingSet.
- *         For another create failure with a non-blank external bill number,
+ *         On any create failure with a non-blank external bill number,
  *         recheck that one normalized number. If a concurrent winner now
  *         exists → DUPLICATE_EXISTING; otherwise preserve the original error.
  *   5. Return ImportSummary.
@@ -777,21 +788,19 @@ export async function applyImport(
         billId: created.id,
       });
     } catch (err) {
-      // ST-8 Blocker 7 + ST-75 P2-E:
-      // - direct external-number P2002 arrives as DuplicateExistingError;
-      // - other concurrency symptoms (e.g. internal billNumber P2002 or
-      //   SOURCE_LOT_CONFLICT) may be the loser of an identical concurrent
-      //   import. Recheck only this normalized external bill number. If a
-      //   winner now exists, the safe terminal outcome is DUPLICATE_EXISTING.
-      let duplicateAfterRace = err instanceof DuplicateExistingError;
+      // ST-75 P2-E/P2-G: every create failure with a nonblank normalized
+      // external number goes through the same bounded reconciliation lookup,
+      // including direct external-number P2002 / DuplicateExistingError.
+      // Only confirmed post-failure DB state may produce DUPLICATE_EXISTING.
+      let duplicateAfterRace = false;
 
-      if (!duplicateAfterRace && norm !== '') {
+      if (norm !== '') {
         try {
           const afterFailureExisting = await deps.loadExistingBillNumbers(type, [norm]);
           duplicateAfterRace = afterFailureExisting.has(norm);
         } catch {
-          // Reconciliation is best-effort and fail-closed: if the recheck
-          // itself fails, do NOT hide the original create error.
+          // Fail closed: if reconciliation itself fails, do NOT hide or
+          // reinterpret the original create error as a duplicate.
           duplicateAfterRace = false;
         }
       }
