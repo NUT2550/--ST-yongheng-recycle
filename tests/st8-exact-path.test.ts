@@ -181,16 +181,22 @@ function makeInMemoryBuyDeps(state: MemState, opts: { p2002OnCreate?: boolean; p
 
 // ============ ImportApplyDeps that calls real shared services ============
 
-function makeImportDeps(state: MemState, opts: { p2002OnCreate?: boolean; p2002Target?: string[]; skipBatchLookup?: boolean } = {}): ImportApplyDeps {
+function makeImportDeps(state: MemState, opts: { p2002OnCreate?: boolean; p2002Target?: string[]; skipBatchLookup?: boolean; confirmedExistingAfterFailure?: string } = {}): ImportApplyDeps {
   let sellServiceCalls = 0;
   let buyServiceCalls = 0;
+  let lookupCalls = 0;
 
   const deps: ImportApplyDeps = {
     loadExistingBillNumbers: async (type, candidates) => {
+      lookupCalls++;
       const bills = type === 'sales' ? state.sellBills : state.buyBills;
       const existing = new Set<string>();
       for (const b of bills.values()) {
         if (b.externalBillNumber) existing.add(normalizeBillNumber(b.externalBillNumber));
+      }
+      if (opts.confirmedExistingAfterFailure && lookupCalls > 1) {
+        const confirmed = normalizeBillNumber(opts.confirmedExistingAfterFailure);
+        if (candidates.includes(confirmed)) existing.add(confirmed);
       }
       return existing;
     },
@@ -279,9 +285,13 @@ describe('ST-8 exact-path: Sales two-pass through createSellBillService', () => 
 });
 
 describe('ST-8 exact-path: Sales P2002 race through createSellBillService', () => {
-  test('3. P2002 externalBillNumber → DuplicateExistingError → rollback restores stock', async () => {
+  test('3. P2002 externalBillNumber + confirmed winner → duplicate; rollback restores stock', async () => {
     const state = makeState();
-    const deps = makeImportDeps(state, { p2002OnCreate: true, p2002Target: ['externalBillNumber'] });
+    const deps = makeImportDeps(state, {
+      p2002OnCreate: true,
+      p2002Target: ['externalBillNumber'],
+      confirmedExistingAfterFailure: 'A1051583',
+    });
     const stockBefore = state.stockLots.get('lot-1')!.remainingWeight; // 10.0
     const result = await applyImport('sales', [makeSalesBill('A1051583')], deps, ACTOR);
     expect(result.importedCount).toBe(0);
@@ -293,13 +303,20 @@ describe('ST-8 exact-path: Sales P2002 race through createSellBillService', () =
     expect(state.auditLogs.length).toBe(0);
   });
 
-  test('4. remaining bill continues after race', async () => {
+  test('4. remaining bill continues after confirmed duplicate race', async () => {
     const state = makeState();
-    // Bill A: will P2002; Bill B: will succeed
-    // Need different deps per bill — use a custom approach
+    // Bill A: external-number P2002; reconciliation confirms the concurrent winner.
+    // Bill B: succeeds and proves the batch continues.
     let callIdx = 0;
+    let lookupCalls = 0;
     const deps: ImportApplyDeps = {
-      loadExistingBillNumbers: async () => new Set(),
+      loadExistingBillNumbers: async (_type, candidates) => {
+        lookupCalls++;
+        if (lookupCalls > 1 && candidates.includes('A1051583')) {
+          return new Set(['A1051583']);
+        }
+        return new Set();
+      },
       checkStockAvailability: async () => ({ ok: true as const }),
       createSalesBill: async (bill, actor) => {
         callIdx++;
@@ -359,9 +376,13 @@ describe('ST-8 exact-path: Purchase two-pass through createBuyBillService', () =
     expect(state.auditLogs.length).toBe(auditsAfter1);
   });
 
-  test('7. Purchase P2002 race: rollback, no orphan', async () => {
+  test('7. Purchase P2002 race + confirmed winner: rollback, no orphan', async () => {
     const state = makeState();
-    const deps = makeImportDeps(state, { p2002OnCreate: true, p2002Target: ['externalBillNumber'] });
+    const deps = makeImportDeps(state, {
+      p2002OnCreate: true,
+      p2002Target: ['externalBillNumber'],
+      confirmedExistingAfterFailure: 'INV-001',
+    });
     const billsBefore = state.buyBills.size;
     const lotsBefore = state.stockLots.size;
     const auditsBefore = state.auditLogs.length;
@@ -376,9 +397,13 @@ describe('ST-8 exact-path: Purchase two-pass through createBuyBillService', () =
 });
 
 describe('ST-8 exact-path: P2002 target detection', () => {
-  test('8. P2002 target externalBillNumber → DUPLICATE_EXISTING', async () => {
+  test('8. P2002 target externalBillNumber + confirmed row → DUPLICATE_EXISTING', async () => {
     const state = makeState();
-    const deps = makeImportDeps(state, { p2002OnCreate: true, p2002Target: ['externalBillNumber'] });
+    const deps = makeImportDeps(state, {
+      p2002OnCreate: true,
+      p2002Target: ['externalBillNumber'],
+      confirmedExistingAfterFailure: 'A1051583',
+    });
     const result = await applyImport('sales', [makeSalesBill('A1051583')], deps, ACTOR);
     expect(result.duplicateExistingCount).toBe(1);
     expect(result.failedCount).toBe(0);
