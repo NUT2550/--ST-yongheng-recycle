@@ -110,11 +110,20 @@ jobs:
       - name: Verify zero-skip guard
         run: |
           set -e
+          echo "Resetting isolated CI PostgreSQL before the zero-skip rerun..."
+          bunx prisma db push --force-reset --skip-generate
           echo "Checking that no ST-75 PostgreSQL tests were skipped..."
-          OUTPUT=$(bun test --timeout 15000 tests/st75-import-postgres-production-path.test.ts 2>&1 || true)
+          set +e
+          OUTPUT=$(bun test --timeout 15000 tests/st75-import-postgres-production-path.test.ts 2>&1)
+          TEST_EXIT=$?
+          set -e
           echo "$OUTPUT" | tee /tmp/st75-pg-output.txt
           if echo "$OUTPUT" | grep -q "SKIPPED"; then
             echo "::error::ST-75 PostgreSQL tests were skipped — see output above"
             exit 1
+          fi
+          if [ "$TEST_EXIT" -ne 0 ]; then
+            echo "::error::ST-75 PostgreSQL zero-skip rerun failed with exit code $TEST_EXIT"
+            exit "$TEST_EXIT"
           fi
           echo "All ST-75 PostgreSQL tests executed (none skipped)"
