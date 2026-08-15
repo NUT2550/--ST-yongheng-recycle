@@ -130,6 +130,27 @@ function makeSalesBill(extBillNo: string): ParsedBill {
   };
 }
 
+/**
+ * ST-75 P2-G test helper: model a concurrent winner that commits after the
+ * request-wide lookup but before post-create-failure reconciliation.
+ * The first lookup intentionally misses; later reconciliation reads real state.
+ */
+function makeRaceLookup(state: InMemoryState): ImportApplyDeps['loadExistingBillNumbers'] {
+  let lookupCalls = 0;
+  return async (type, candidates) => {
+    lookupCalls++;
+    if (lookupCalls === 1) return new Set<string>();
+
+    const bills = type === 'sales' ? state.sellBills : state.buyBills;
+    const existing = new Set<string>();
+    for (const b of bills.values()) {
+      const norm = normalizeBillNumber(b.externalBillNumber);
+      if (norm !== '' && candidates.includes(norm)) existing.add(norm);
+    }
+    return existing;
+  };
+}
+
 // ============ Tests ============
 
 describe('ST-8 two-pass: Sales import idempotency', () => {
@@ -172,13 +193,10 @@ describe('ST-8 two-pass: Sales import idempotency', () => {
       id: 'sell-pre', externalBillNumber: 'A1051583', billNumber: 'SELL-PRE', items: []
     });
     const stockBefore = state.stockLots.get('lot-1')!.remainingWeight; // 10.0
-    // The applyImport batch lookup finds the pre-existing bill → classifies as DUPLICATE_EXISTING
-    // without calling createSalesBill at all. But let's also test the race where
-    // the batch lookup misses it (e.g. concurrent insert between lookup and create).
-    // We simulate this by having a custom deps that returns empty set from loadExistingBillNumbers
-    // but throws P2002 from createSalesBill.
+    // The first lookup intentionally misses the concurrent winner; after the
+    // create collision, reconciliation reads state and confirms the winner row.
     const raceDeps: ImportApplyDeps = {
-      loadExistingBillNumbers: async () => new Set(), // preview says not duplicate
+      loadExistingBillNumbers: makeRaceLookup(state),
       checkStockAvailability: async () => ({ ok: true as const }),
       createSalesBill: async (bill) => {
         // Simulate FIFO deduction (modifies state)
@@ -207,7 +225,7 @@ describe('ST-8 two-pass: Sales import idempotency', () => {
       id: 'sell-pre', externalBillNumber: 'A1051583', billNumber: 'SELL-PRE', items: []
     });
     const raceDeps: ImportApplyDeps = {
-      loadExistingBillNumbers: async () => new Set(), // race: preview misses A
+      loadExistingBillNumbers: makeRaceLookup(state),
       checkStockAvailability: async () => ({ ok: true as const }),
       createSalesBill: async (bill) => {
         const norm = normalizeBillNumber(bill.externalBillNumber);
@@ -270,8 +288,8 @@ describe('ST-8 two-pass: Purchase import idempotency', () => {
     const state = makeState();
     state.buyBills.set('buy-pre', { id: 'buy-pre', externalBillNumber: 'INV-001', billNumber: 'BUY-PRE', items: [] });
     const raceDeps: ImportApplyDeps = {
-      loadExistingBillNumbers: async () => new Set(),
-      createPurchaseBill: async (bill) => {
+      loadExistingBillNumbers: makeRaceLookup(state),
+      createPurchaseBill: async () => {
         throw new DuplicateExistingError('externalBillNumber');
       },
       createSalesBill: async () => { throw new Error('not used'); },
