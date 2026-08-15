@@ -15,6 +15,7 @@ on:
       - 'src/lib/import-pipeline.ts'
       - 'src/lib/bill-services.ts'
       - 'src/lib/bill-service-prisma-adapters.ts'
+      - 'src/lib/stock-lot-bulk-cas.ts'
       - 'src/lib/bill-errors.ts'
       - 'src/lib/bill-helpers.ts'
       - 'src/lib/fifo-validation.ts'
