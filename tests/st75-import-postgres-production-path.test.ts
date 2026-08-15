@@ -315,7 +315,7 @@ describe('ST-75 Production-Path Sales Benchmark', () => {
 // ============ Concurrency tests ============
 
 describe('ST-75 Production-Path Concurrent Duplicate Purchase', () => {
-  test('C1. Two concurrent identical Purchase imports — exactly 1 committed', async () => {
+  test('C1. Two concurrent identical Purchase imports — exactly 1 imported + 1 duplicate + 0 failed', async () => {
     if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return; }
     const db = prisma();
     const { categoryId, products } = await setupSyntheticData(db);
@@ -327,14 +327,15 @@ describe('ST-75 Production-Path Concurrent Duplicate Purchase', () => {
         applyImport('purchase', bills, deps, ACTOR),
         applyImport('purchase', bills, deps, ACTOR),
       ]);
-      // Exactly one should import, the other should get duplicate
       const r1 = result1.status === 'fulfilled' ? result1.value : null;
       const r2 = result2.status === 'fulfilled' ? result2.value : null;
       const totalImported = (r1?.importedCount ?? 0) + (r2?.importedCount ?? 0);
       const totalDuplicates = (r1?.duplicateExistingCount ?? 0) + (r2?.duplicateExistingCount ?? 0);
-      console.log(`  Concurrent Purchase: imported=${totalImported} duplicates=${totalDuplicates} (expected: 1 imported, 1 duplicate)`);
-      // At least one must be imported, total committed bills should be 1
-      expect(totalImported).toBeGreaterThanOrEqual(1);
+      const totalFailed = (r1?.failedCount ?? 0) + (r2?.failedCount ?? 0);
+      console.log(`  Concurrent Purchase: imported=${totalImported} duplicates=${totalDuplicates} failed=${totalFailed} (expected: 1/1/0)`);
+      expect(totalImported).toBe(1);
+      expect(totalDuplicates).toBe(1);
+      expect(totalFailed).toBe(0);
       // Verify DB has exactly 1 bill with this externalBillNumber
       const dbBills = await db.buyBill.findMany({ where: { externalBillNumber: bills[0].externalBillNumber } });
       expect(dbBills.length).toBe(1);
@@ -345,7 +346,7 @@ describe('ST-75 Production-Path Concurrent Duplicate Purchase', () => {
 });
 
 describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
-  test('C2. Two concurrent identical Sales imports — exactly 1 committed, stock deducted once', async () => {
+  test('C2. Two concurrent identical Sales imports — exactly 1 imported + 1 duplicate + 0 failed, stock deducted once', async () => {
     if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return; }
     const db = prisma();
     const { categoryId, products } = await setupSyntheticData(db);
@@ -362,8 +363,12 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
       const r1 = result1.status === 'fulfilled' ? result1.value : null;
       const r2 = result2.status === 'fulfilled' ? result2.value : null;
       const totalImported = (r1?.importedCount ?? 0) + (r2?.importedCount ?? 0);
-      console.log(`  Concurrent Sales: imported=${totalImported} (expected: 1)`);
-      expect(totalImported).toBeGreaterThanOrEqual(1);
+      const totalDuplicates = (r1?.duplicateExistingCount ?? 0) + (r2?.duplicateExistingCount ?? 0);
+      const totalFailed = (r1?.failedCount ?? 0) + (r2?.failedCount ?? 0);
+      console.log(`  Concurrent Sales: imported=${totalImported} duplicates=${totalDuplicates} failed=${totalFailed} (expected: 1/1/0)`);
+      expect(totalImported).toBe(1);
+      expect(totalDuplicates).toBe(1);
+      expect(totalFailed).toBe(0);
       // Verify DB has exactly 1 sell bill
       const dbBills = await db.sellBill.findMany({ where: { externalBillNumber: bills[0].externalBillNumber } });
       expect(dbBills.length).toBe(1);
