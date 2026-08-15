@@ -121,10 +121,18 @@ describe('ST-75 Phase 2: import atomicity', () => {
     expect(result.duplicateInFileCount).toBe(1)
   })
 
-  test('6. DuplicateExistingError from create → classified as DUPLICATE_EXISTING', async () => {
+  test('6. DuplicateExistingError + confirmed row after recheck → classified as DUPLICATE_EXISTING', async () => {
     const bills = [makeBill({ externalBillNumber: 'B1' })]
     const deps = makeMockDeps({ throwOnCreate: new DuplicateExistingError('externalBillNumber') })
+    let lookupCalls = 0
+    deps.loadExistingBillNumbers = async () => {
+      lookupCalls++
+      // Initial request-wide lookup sees no duplicate. After the create
+      // collision, the reconciliation lookup observes the concurrent winner.
+      return lookupCalls === 1 ? new Set<string>() : new Set<string>(['B1'])
+    }
     const result = await applyImport('purchase', bills, deps, ACTOR)
+    expect(lookupCalls).toBe(2)
     expect(result.duplicateExistingCount).toBe(1)
     expect(result.importedCount).toBe(0)
     expect(result.failedCount).toBe(0)
