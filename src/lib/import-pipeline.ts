@@ -21,24 +21,28 @@
  * a second bill engine. Tests inject mock callbacks.
  *
  * ST-8 Blocker 7 (P2002 mapping): when the shared service hits a Prisma
- * P2002 (unique constraint violation), it throws `DuplicateExistingError`.
+ * P2002 on externalBillNumber, it throws `DuplicateExistingError`.
  * The apply controller catches that specific error class and classifies
  * the bill as DUPLICATE_EXISTING (not FAILED) so the rest of the batch
- * continues. Other errors bubble up as FAILED.
+ * continues.
  *
- * ST-8 rev 2 (one lookup per request): the original
+ * ST-75 P2-E (concurrent duplicate reconciliation): two requests can both
+ * pass the initial duplicate lookup before either commits. The losing create
+ * may then fail for a different concurrency symptom (for example an internal
+ * billNumber P2002 or SOURCE_LOT_CONFLICT) even though the concurrent winner
+ * has committed the same external bill number. After a create failure, the
+ * controller performs a bounded single-number recheck. If that normalized
+ * external bill now exists, the loser is classified DUPLICATE_EXISTING;
+ * otherwise the original error remains FAILED/INSUFFICIENT_STOCK as before.
+ *
+ * ST-8 rev 2 (batch lookup): the original
  * `findExistingBillNumber(type, normalized)` was called PER BILL inside
  * `applyImport` — and each call loaded ALL historical bills from the DB
- * (O(N*M) where N = batch size, M = total existing bills). The new
- * `loadExistingBillNumbers(type, normalizedCandidates)` is called ONCE
- * per import request — it returns a Set<string> of all NORMALIZED bill
- * numbers that already exist in the DB. The apply controller then
- * performs an in-memory `existingSet.has(norm)` check per bill — O(1)
- * per bill. To detect in-file duplicates (bill A and bill B in the same
- * upload both claim number X), the controller adds each successfully
- * imported (or P2002-rejected) bill's normalized number to the
- * existingSet AFTER processing — so later bills in the same batch are
- * correctly classified as DUPLICATE_EXISTING.
+ * (O(N*M) where N = batch size, M = total existing bills). The normal path
+ * now calls `loadExistingBillNumbers(type, normalizedCandidates)` once for
+ * the whole request and then uses an in-memory Set. P2-E adds only a bounded
+ * single-number lookup after a create failure to reconcile a concurrent
+ * winner; successful/non-racing bills keep the one-batch-lookup path.
  */
 
 import { DuplicateExistingError } from './bill-errors'
@@ -536,15 +540,17 @@ export interface ImportActor {
  * Injectable dependencies for the apply controller.
  *
  * ST-8 rev 2: `loadExistingBillNumbers` replaces `findExistingBillNumber`.
- * The new function is called ONCE per import request (not per bill) and
- * returns a Set<string> of all NORMALIZED bill numbers that already exist
- * in the DB. The apply controller then performs an O(1) `set.has(norm)`
- * check per bill.
+ * The normal path calls it once for the initial request-wide batch and
+ * performs O(1) Set checks per bill. ST-75 P2-E permits an additional
+ * single-number lookup only after a create failure, to determine whether
+ * a concurrent winner has committed the same external bill number.
  */
 export interface ImportApplyDeps {
   /**
    * Batch-load all NORMALIZED bill numbers that already exist in the DB
-   * for the given type. Called ONCE per import request.
+   * for the given type. Called once for the initial request-wide batch;
+   * may be called again with one normalized number after a create failure
+   * for bounded concurrent-duplicate reconciliation (ST-75 P2-E).
    *
    * @param type                 — 'purchase' or 'sales'
    * @param normalizedCandidates — array of normalized bill numbers to check
@@ -589,8 +595,8 @@ export interface ImportApplyDeps {
  * Algorithm:
  *   1. Pre-classify all bills (INVALID, UNMATCHED_PRODUCT, READY).
  *   2. Detect in-file duplicates (later occurrences → DUPLICATE_IN_FILE).
- *   3. ONE batch DB query: load all existing normalized bill numbers for
- *      the candidates into a Set<string>.
+ *   3. One initial batch DB query loads all existing normalized bill numbers
+ *      for the candidates into a Set<string>.
  *   4. For each READY bill (in array order):
  *      a. In-memory check: `existingSet.has(norm)`.
  *         If duplicate → DUPLICATE_EXISTING, skip.
@@ -599,15 +605,17 @@ export interface ImportApplyDeps {
  *      c. Attempt to create the bill. Per-bill try/catch.
  *         If success → READY (imported); add norm to existingSet.
  *         If DuplicateExistingError → DUPLICATE_EXISTING; add norm to existingSet.
- *         Other errors → FAILED.
+ *         For another create failure with a non-blank external bill number,
+ *         recheck that one normalized number. If a concurrent winner now
+ *         exists → DUPLICATE_EXISTING; otherwise preserve the original error.
  *   5. Return ImportSummary.
  *
  * One bill's failure does NOT abort the batch.
  *
- * ST-8 rev 2: only ONE call to `deps.loadExistingBillNumbers` is made
- * per import request (not per bill). The Set is mutated in-memory as
- * bills are processed so that later bills in the same batch correctly
- * detect in-file duplicates of earlier successful imports.
+ * The common path still uses one request-wide duplicate lookup. The P2-E
+ * recheck is exceptional and bounded to a single normalized number after a
+ * create failure, preventing concurrent duplicate losers from being falsely
+ * reported FAILED while avoiding per-bill lookups on successful imports.
  *
  * NOTE: The actor is trusted (auth already verified by the route handler).
  */
@@ -620,7 +628,7 @@ export async function applyImport(
   const inFile = detectInFileDuplicates(bills);
   const results: BillImportResult[] = [];
 
-  // ST-8 rev 2: ONE batch DB query for the entire import request.
+  // ST-8 rev 2: one initial batch DB query for the entire import request.
   // Collect ALL normalized bill numbers from the batch (including
   // in-file duplicates and invalid ones — the DB query just ignores
   // empty strings). This replaces the O(N*M) per-bill lookup.
@@ -769,14 +777,26 @@ export async function applyImport(
         billId: created.id,
       });
     } catch (err) {
-      // ST-8 Blocker 7: DuplicateExistingError (thrown by the shared
-      // createBuyBillService / createSellBillService on Prisma P2002) is
-      // classified as DUPLICATE_EXISTING so the rest of the batch
-      // continues. All other errors → FAILED.
-      if (err instanceof DuplicateExistingError) {
-        // ST-8 rev 2: add the normalized number to the existingSet so
-        // that later bills in the same batch with the same number are
-        // classified as DUPLICATE_EXISTING (not re-attempted).
+      // ST-8 Blocker 7 + ST-75 P2-E:
+      // - direct external-number P2002 arrives as DuplicateExistingError;
+      // - other concurrency symptoms (e.g. internal billNumber P2002 or
+      //   SOURCE_LOT_CONFLICT) may be the loser of an identical concurrent
+      //   import. Recheck only this normalized external bill number. If a
+      //   winner now exists, the safe terminal outcome is DUPLICATE_EXISTING.
+      let duplicateAfterRace = err instanceof DuplicateExistingError;
+
+      if (!duplicateAfterRace && norm !== '') {
+        try {
+          const afterFailureExisting = await deps.loadExistingBillNumbers(type, [norm]);
+          duplicateAfterRace = afterFailureExisting.has(norm);
+        } catch {
+          // Reconciliation is best-effort and fail-closed: if the recheck
+          // itself fails, do NOT hide the original create error.
+          duplicateAfterRace = false;
+        }
+      }
+
+      if (duplicateAfterRace) {
         if (norm !== '') {
           existingSet.add(norm);
         }
