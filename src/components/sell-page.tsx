@@ -78,20 +78,35 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
   // bills and updated stock. Replaces the legacy onImport([]) call which did not
   // actually reload server state.
   async function loadData() {
-    try {
-      const [prodRes, custRes] = await Promise.all([
-        fetchProducts(),
-        fetchCustomers(),
-      ]);
+    const [prodResult, custResult] = await Promise.allSettled([
+      fetchProducts(),
+      fetchCustomers(),
+    ]);
+
+    let hadError = false;
+
+    // Stock is authoritative after an import. Apply it independently so an
+    // unrelated customer-list failure cannot leave the sales UI stale.
+    if (prodResult.status === 'fulfilled') {
+      const prodRes = prodResult.value;
       const prodData = prodRes as unknown as { products: Product[] };
       setProducts(prodData.products || (prodRes as unknown as Product[]));
+    } else {
+      hadError = true;
+    }
+
+    if (custResult.status === 'fulfilled') {
+      const custRes = custResult.value;
       const custData = custRes as unknown as { customers: Customer[] };
       setCustomers(custData.customers || (custRes as unknown as Customer[]));
-    } catch {
-      toast.error('ไม่สามารถโหลดข้อมูลได้');
-    } finally {
-      setLoading(false);
+    } else {
+      hadError = true;
     }
+
+    if (hadError) {
+      toast.error('ไม่สามารถโหลดข้อมูลบางส่วนได้');
+    }
+    setLoading(false);
   }
 
   // Filter products with stock > 0
