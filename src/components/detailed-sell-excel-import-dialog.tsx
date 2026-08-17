@@ -21,6 +21,7 @@ import { formatBaht, formatWeight } from '@/lib/helpers';
 import { getAuthToken, setAuthToken } from '@/lib/api';
 import { classifyAuthResponse } from '@/lib/auth-response-classifier';
 import { classifyImportOutcome, shouldBlockClose, shouldRefreshHistory, getOutcomeMessage, type ImportOutcomeState } from '@/lib/import-state-helper';
+import { scheduleAmbiguousRefresh, type ScheduledRefreshHandle } from '@/lib/import-refresh-helper';
 import * as XLSX from 'xlsx';
 import {
   normalizeBillNumber,
@@ -91,6 +92,35 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   const [importOutcome, setImportOutcome] = useState<ImportOutcomeState>('IDLE');
   const importInFlightRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // ST-75 P2-A: Track scheduled ambiguous-refresh handles so they can be
+  // cancelled on unmount or dialog reset. Prevents stale-closure leaks and
+  // duplicate refresh side effects if the dialog closes during the delayed
+  // retry window.
+  const ambiguousRefreshHandlesRef = useRef<ScheduledRefreshHandle[]>([]);
+
+  // ST-75 P2-A: Cancel any pending delayed refreshes on unmount.
+  useEffect(() => {
+    return () => {
+      for (const handle of ambiguousRefreshHandlesRef.current) {
+        handle.cancel();
+      }
+      ambiguousRefreshHandlesRef.current = [];
+    };
+  }, []);
+
+  // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
+  // outcomes (429/5xx after apply dispatch, network error, or malformed 2xx
+  // summary classified as AMBIGUOUS_RESULT). The backend MAY still be
+  // committing bills when the immediate refresh fires — the delayed retries
+  // give the commit time to land so the UI eventually shows authoritative
+  // state. This is a GET/read refresh only; it NEVER re-issues the POST
+  // /api/import/apply mutation.
+  const scheduleAmbiguousImportRefresh = () => {
+    const handle = scheduleAmbiguousRefresh(() => {
+      onRefreshAfterImport?.();
+    });
+    ambiguousRefreshHandlesRef.current.push(handle);
+  };
 
   const productMap = useMemo(() => {
     const m = new Map<string, Product>();
@@ -524,11 +554,14 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         const ambiguousOutcome = classifyImportOutcome(res.status, null, false);
         setImportOutcome(ambiguousOutcome); // AMBIGUOUS_RESULT for 429/5xx
         toast.error(getOutcomeMessage(ambiguousOutcome));
-        // ST-75 P2-B: Trigger the real server-backed refresh path (not legacy onImport([])).
-        // The backend may have committed bills before returning 429/5xx — the UI must
-        // reload authoritative page data so any committed bills and updated stock are visible.
+        // ST-75 P2-A: Schedule a BOUNDED delayed reconciliation refresh instead of a
+        // single immediate call. The backend MAY still be committing per-bill
+        // transactions when this fires — the delayed retries (default 1.5s, 4s)
+        // give the commit time to land so the UI eventually shows authoritative
+        // state. This is a GET/read refresh only; it NEVER re-issues the POST
+        // /api/import/apply mutation.
         if (shouldRefreshHistory(ambiguousOutcome)) {
-          onRefreshAfterImport?.();
+          scheduleAmbiguousImportRefresh();
         }
         return;
       }
@@ -570,8 +603,17 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
       // ST-75 P2-B: Refresh history only when bills may have committed.
       // Use the real server-backed refresh callback instead of legacy onImport([])
       // which did not actually reload server state.
+      // ST-75 P2-A: If the outcome is AMBIGUOUS_RESULT (e.g., malformed 2xx summary
+      // that failed isValidImportSummary validation), schedule a BOUNDED delayed
+      // reconciliation refresh — the backend MAY still be committing. For
+      // SUCCESS/PARTIAL_SUCCESS, an immediate refresh is safe (backend has
+      // confirmed commit).
       if (shouldRefreshHistory(outcome)) {
-        onRefreshAfterImport?.();
+        if (outcome === 'AMBIGUOUS_RESULT') {
+          scheduleAmbiguousImportRefresh();
+        } else {
+          onRefreshAfterImport?.();
+        }
         onApplied?.(summary);
       }
 
@@ -582,9 +624,12 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
       const outcome = classifyImportOutcome(null, null, true);
       setImportOutcome(outcome);
       toast.error(getOutcomeMessage(outcome));
-      // ST-75 P2-B: Real server-backed refresh — backend may have committed before network drop.
+      // ST-75 P2-A: Schedule a BOUNDED delayed reconciliation refresh — the backend
+      // may have committed before the network dropped. The delayed retries give the
+      // commit time to land. This is a GET/read refresh only; it NEVER re-issues the
+      // POST /api/import/apply mutation.
       if (shouldRefreshHistory(outcome)) {
-        onRefreshAfterImport?.();
+        scheduleAmbiguousImportRefresh();
       }
     } finally {
       setImporting(false);
@@ -612,6 +657,13 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
     setLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     duplicateChecked.current = false;
+    // ST-75 P2-A: Cancel any pending delayed ambiguous-refresh timers so they
+    // don't fire after the dialog has closed and been reopened with a new file
+    // (which would cause a stale-closure refresh against the old state).
+    for (const handle of ambiguousRefreshHandlesRef.current) {
+      handle.cancel();
+    }
+    ambiguousRefreshHandlesRef.current = [];
   };
 
   const handleSessionExpired = () => {
