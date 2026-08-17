@@ -25,6 +25,38 @@ export interface ImportSummaryLike {
 }
 
 /**
+ * ST-75 P2-B: Runtime-validate an unknown parsed JSON value as a structurally
+ * valid ImportSummaryLike. Every required counter MUST be a finite, non-negative
+ * integer. A truthy-but-malformed 2xx summary (e.g., `importedCount: 5,
+ * failedCount: undefined`) previously produced NaN arithmetic that fell through
+ * to FAILED_CONFIRMED — wrongly claiming "nothing saved" even though the request
+ * may have committed bills. This validator blocks that fall-through: callers
+ * MUST treat an invalid 2xx summary as AMBIGUOUS_RESULT.
+ */
+export function isValidImportSummary(summary: unknown): summary is ImportSummaryLike {
+  if (typeof summary !== 'object' || summary === null) return false;
+  const s = summary as Record<string, unknown>;
+  const requiredCounters: Array<keyof ImportSummaryLike> = [
+    'importedCount',
+    'duplicateExistingCount',
+    'duplicateInFileCount',
+    'invalidCount',
+    'unmatchedCount',
+    'insufficientStockCount',
+    'failedCount',
+  ];
+  for (const key of requiredCounters) {
+    const v = s[key];
+    // Must be a number, finite (not NaN/Infinity), and non-negative integer.
+    if (typeof v !== 'number') return false;
+    if (!Number.isFinite(v)) return false;
+    if (!Number.isInteger(v)) return false;
+    if (v < 0) return false;
+  }
+  return true;
+}
+
+/**
  * Classify the outcome of an import apply request.
  *
  * @param httpStatus - HTTP status from /api/import/apply
@@ -45,8 +77,14 @@ export function classifyImportOutcome(
 
   // HTTP success — classify based on summary
   if (httpStatus >= 200 && httpStatus < 300) {
-    if (!summary) return 'AMBIGUOUS_RESULT'; // response OK but body unparseable
+    // ST-75 P2-B: A null OR structurally-invalid 2xx summary MUST be AMBIGUOUS_RESULT.
+    // The request returned 2xx, so the server MAY have committed bills — we cannot
+    // safely claim "nothing saved" (FAILED_CONFIRMED) from an unparseable/invalid body.
+    if (!summary || !isValidImportSummary(summary)) {
+      return 'AMBIGUOUS_RESULT';
+    }
 
+    // At this point, summary is validated — all counters are finite non-negative integers.
     const totalNonSuccess = summary.failedCount + summary.duplicateExistingCount +
       summary.duplicateInFileCount + summary.invalidCount + summary.unmatchedCount +
       summary.insufficientStockCount;
