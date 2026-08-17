@@ -430,35 +430,41 @@ describe('ST-75 P2-B: Real server-backed refresh callback', () => {
     expect(block).not.toContain('onImport?.([])')
   })
 
-  test('31. Purchase 429/5xx path calls onRefreshAfterImport (not onImport([]))', () => {
+  test('31. Purchase 429/5xx path calls scheduleAmbiguousImportRefresh (not onImport([]))', () => {
     const src = readBuyDialog()
     const transientIdx = src.indexOf("applyAction === 'TRANSIENT_ERROR'")
     expect(transientIdx).toBeGreaterThan(-1)
     const blockEnd = src.indexOf('return;', transientIdx)
     const block = src.slice(transientIdx, blockEnd)
-    expect(block).toContain('onRefreshAfterImport?.()')
+    // ST-75 P2-A: TRANSIENT_ERROR now uses bounded delayed reconciliation
+    // instead of a single immediate onRefreshAfterImport call.
+    expect(block).toContain('scheduleAmbiguousImportRefresh()')
     expect(block).not.toContain('onImport?.([])')
+    expect(block).not.toContain('onRefreshAfterImport?.()')
   })
 
-  test('32. Sales 429/5xx path calls onRefreshAfterImport (not onImport([]))', () => {
+  test('32. Sales 429/5xx path calls scheduleAmbiguousImportRefresh (not onImport([]))', () => {
     const src = readSellDialog()
     const transientIdx = src.indexOf("applyAction === 'TRANSIENT_ERROR'")
     expect(transientIdx).toBeGreaterThan(-1)
     const blockEnd = src.indexOf('return;', transientIdx)
     const block = src.slice(transientIdx, blockEnd)
-    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).toContain('scheduleAmbiguousImportRefresh()')
     expect(block).not.toContain('onImport?.([])')
+    expect(block).not.toContain('onRefreshAfterImport?.()')
   })
 
-  test('33. Purchase network-error catch calls onRefreshAfterImport', () => {
+  test('33. Purchase network-error catch calls scheduleAmbiguousImportRefresh', () => {
     const src = readBuyDialog()
-    // The catch block must invoke onRefreshAfterImport when shouldRefreshHistory(outcome).
-    expect(src).toMatch(/catch \(err\) \{[\s\S]*?shouldRefreshHistory\(outcome\)[\s\S]*?onRefreshAfterImport\?\.\(\)/)
+    // ST-75 P2-A: catch block now invokes scheduleAmbiguousImportRefresh
+    // (bounded delayed reconciliation) instead of a single immediate call.
+    expect(src).toMatch(/catch \(err\) \{[\s\S]*?shouldRefreshHistory\(outcome\)[\s\S]*?scheduleAmbiguousImportRefresh\(\)/)
   })
 
-  test('34. Sales network-error catch calls onRefreshAfterImport', () => {
+  test('34. Sales network-error catch calls scheduleAmbiguousImportRefresh', () => {
     const src = readSellDialog()
-    expect(src).toMatch(/catch \(err\) \{[\s\S]*?shouldRefreshHistory\(outcome\)[\s\S]*?onRefreshAfterImport\?\.\(\)/)
+    // ST-75 P2-A: catch block now invokes scheduleAmbiguousImportRefresh.
+    expect(src).toMatch(/catch \(err\) \{[\s\S]*?shouldRefreshHistory\(outcome\)[\s\S]*?scheduleAmbiguousImportRefresh\(\)/)
   })
 
   test('35. Buy page wires onRefreshAfterImport to real server fetch', () => {
