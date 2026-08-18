@@ -155,8 +155,11 @@ describe('ST-75 P2-H: sales stock refresh is independent from customer refresh',
     expect(errors).toEqual([])
   })
 
-  test('4. import dialog still uses loadData as the authoritative refresh callback', () => {
+  test('4. import dialog uses refreshProductsAfterImport as the authoritative refresh callback (P2-25)', () => {
     const src = readFileSync(SELL_PAGE_PATH, 'utf8')
-    expect(src).toContain('onRefreshAfterImport={loadData}')
+    // ST-75 P2-25: onRefreshAfterImport uses refreshProductsAfterImport,
+    // NOT loadData (which waits for customers too).
+    expect(src).toContain('onRefreshAfterImport={refreshProductsAfterImport}')
+    expect(src).not.toContain('onRefreshAfterImport={loadData}')
   })
 })

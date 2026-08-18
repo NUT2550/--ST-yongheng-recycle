@@ -103,6 +103,8 @@ export function isValidBillImportResult(element: unknown): boolean {
   if (e.billId !== undefined && typeof e.billId !== 'string') return false;
   if (e.error !== undefined && typeof e.error !== 'string') return false;
   if (e.errorCode !== undefined && typeof e.errorCode !== 'string') return false;
+  // ST-75 P2-26: reconciledAfterFailure is optional. If present, must be boolean.
+  if (e.reconciledAfterFailure !== undefined && typeof e.reconciledAfterFailure !== 'boolean') return false;
   return true;
 }
 
@@ -229,13 +231,18 @@ export function classifyImportOutcome(
     if (summary.importedCount > 0 && totalNonSuccess > 0) {
       return 'PARTIAL_SUCCESS';
     }
-    // ST-75 P2-21: importedCount === 0 but duplicateExistingCount > 0 means
-    // a concurrent import committed the bill and this batch's post-failure
-    // reconciliation found it. Stock WAS deducted by the concurrent winner,
-    // so the UI MUST refresh even though this batch imported nothing.
-    // Classify as PARTIAL_SUCCESS (not FAILED_CONFIRMED) so shouldRefreshHistory
-    // returns true and the authoritative refresh runs.
-    if (summary.importedCount === 0 && summary.duplicateExistingCount > 0) {
+    // ST-75 P2-26: importedCount === 0. Check if any duplicate was confirmed
+    // by post-failure reconciliation (reconciledAfterFailure: true). Only
+    // reconciled duplicates prove a concurrent winner may have committed and
+    // deducted stock. Ordinary pre-existing duplicates (found in initial lookup)
+    // do NOT prove a concurrent commit and should remain FAILED_CONFIRMED.
+    const skippedBills = summary.skippedDuplicateBills as unknown as Array<{
+      reconciledAfterFailure?: boolean;
+    }>;
+    const hasReconciledAfterFailure = skippedBills.some(
+      (b) => b.reconciledAfterFailure === true
+    );
+    if (summary.importedCount === 0 && hasReconciledAfterFailure) {
       return 'PARTIAL_SUCCESS';
     }
     // importedCount === 0 — all bills failed/skipped

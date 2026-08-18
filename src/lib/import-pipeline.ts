@@ -98,6 +98,12 @@ export interface BillImportResult {
   billId?: string; // db id (set on success)
   error?: string; // safe user-facing message (set on FAILED/INSUFFICIENT_STOCK)
   errorCode?: string; // structured error code for programmatic handling
+  // ST-75 P2-26: Provenance marker — set ONLY when a duplicate was confirmed
+  // by post-failure reconciliation (initial lookup missed it, create failed,
+  // bounded post-failure lookup found it). Ordinary pre-existing duplicates
+  // (found in initial lookup) do NOT receive this marker. This distinguishes
+  // concurrent-commit evidence from ordinary duplicate skips.
+  reconciledAfterFailure?: boolean;
 }
 
 /** Aggregated summary returned by the apply controller. */
@@ -813,6 +819,11 @@ export async function applyImport(
           externalBillNumber: bill.externalBillNumber,
           normalizedBillNumber: norm,
           status: 'DUPLICATE_EXISTING',
+          // ST-75 P2-26: Mark as reconciled after failure — this proves a
+          // concurrent winner may have committed the bill and deducted stock.
+          // Ordinary pre-existing duplicates (found in initial lookup) do NOT
+          // receive this marker.
+          reconciledAfterFailure: true,
         });
       } else {
         // ST-57: Classify error safely — never expose raw Prisma/SQL internals

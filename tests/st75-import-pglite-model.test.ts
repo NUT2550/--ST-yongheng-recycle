@@ -20,6 +20,42 @@ import { describe, expect, test } from 'bun:test'
 import { PGlite } from '@electric-sql/pglite'
 import { performance } from 'perf_hooks'
 
+// ST-75 P2-27: Counted PGlite wrapper — instruments every SQL operation
+// (query + exec) so the benchmark measures ACTUAL SQL operations, not
+// a fragile manual arithmetic formula. The counter is reset at the
+// measurement boundary (start of applyImport) and excludes setup/cleanup.
+interface CountedPGlite {
+  db: PGlite
+  queryCount: number
+  resetCount: () => void
+}
+
+function createCountedPGlite(): CountedPGlite {
+  const db = new PGlite()
+  let queryCount = 0
+
+  const originalQuery = db.query.bind(db)
+  const originalExec = db.exec.bind(db)
+
+  // Override query to count each call
+  ;(db as any).query = async (...args: any[]) => {
+    queryCount++
+    return originalQuery(...args as [string, unknown[]])
+  }
+
+  // Override exec to count each call
+  ;(db as any).exec = async (...args: any[]) => {
+    queryCount++
+    return originalExec(...args as [string])
+  }
+
+  return {
+    db,
+    get queryCount() { return queryCount },
+    resetCount: () => { queryCount = 0 },
+  }
+}
+
 // Synthetic data generators
 function makeSyntheticProduct(id: string, name: string, categoryId: string) {
   return { id, name, categoryId }
@@ -54,8 +90,9 @@ function makeSyntheticSalesBill(index: number, itemCount: number = 3) {
 }
 
 // PGlite setup — creates tables matching the Prisma schema
-async function setupDatabase() {
-  const db = new PGlite()
+async function setupDatabase(): Promise<CountedPGlite> {
+  const counted = createCountedPGlite()
+  const { db } = counted
 
   await db.exec(`
     CREATE TABLE "ProductCategory" (
@@ -158,7 +195,7 @@ async function setupDatabase() {
       [`perf-prod-${i}`, `Product ${i}`, category.id])
   }
 
-  return db
+  return counted
 }
 
 // Simulate purchase bill creation (matches production bill-service pattern)
@@ -265,15 +302,19 @@ async function createSalesBill(db: PGlite, bill: ReturnType<typeof makeSynthetic
 
 // Import apply simulation (matches import-pipeline pattern)
 async function applyImport(
-  db: PGlite,
+  counted: CountedPGlite,
   type: 'purchase' | 'sales',
   bills: Array<ReturnType<typeof makeSyntheticPurchaseBill> | ReturnType<typeof makeSyntheticSalesBill>>,
   actor: string
 ) {
+  const { db } = counted
+  // ST-75 P2-27: Reset counter at measurement boundary — excludes setup/cleanup SQL.
+  counted.resetCount()
+
   const results: Array<{ status: string; billNumber: string }> = []
   const existingSet = new Set<string>()
 
-  // Batch duplicate check (1 query)
+  // Batch duplicate check
   const table = type === 'purchase' ? 'BuyBill' : 'SellBill'
   const numbers = bills.map(b => b.externalBillNumber)
   if (numbers.length > 0) {
@@ -283,8 +324,6 @@ async function applyImport(
       existingSet.add(row.externalBillNumber)
     }
   }
-
-  let queryCount = 1 // 1 for batch duplicate check
 
   for (const bill of bills) {
     if (existingSet.has(bill.externalBillNumber)) {
@@ -299,8 +338,6 @@ async function applyImport(
       } else {
         result = await createSalesBill(db, bill as any, actor)
       }
-      // Count queries: 1 dup check + 1 bill insert + N item inserts + 1 lot + 1 movement + 1 audit
-      queryCount += 1 + bill.items.length + 1 + 1 + 1
       if (result.status === 'READY') {
         existingSet.add(bill.externalBillNumber)
       }
@@ -314,79 +351,85 @@ async function applyImport(
   const duplicates = results.filter(r => r.status === 'DUPLICATE_EXISTING').length
   const failed = results.filter(r => r.status === 'FAILED').length
 
-  return { imported, duplicates, failed, queryCount, results }
+  // ST-75 P2-27: queryCount is now ACTUAL SQL operations counted by the
+  // instrumented PGlite wrapper, not a manual arithmetic formula.
+  return { imported, duplicates, failed, queryCount: counted.queryCount, results }
 }
 
 // ============ Benchmark tests ============
 
 describe('ST-75 PostgreSQL Performance Baseline', () => {
   test('1. Purchase 1 bill — baseline', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       const bills = [makeSyntheticPurchaseBill(1)]
       const start = performance.now()
-      const result = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result = await applyImport(counted, 'purchase', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Purchase 1 bill: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(1)
       expect(result.failed).toBe(0)
-      expect(result.queryCount).toBe(8) // 1 batch + 1 dup + 1 bill + 3 items + 1 lot + 1 mov + 1 audit - wait, let me recalculate
+      // ST-75 P2-27: queryCount is now ACTUAL SQL operations counted by
+      // the instrumented PGlite wrapper. For 1 purchase bill with 3 items:
+      // 1 batch dup check + 1 per-bill dup check + 1 bill insert + 3 item
+      // inserts + 1 stock lot + 1 stock movement + 1 audit log = 9
+      expect(result.queryCount).toBe(9)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('2. Purchase 5 bills — baseline', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       const bills = Array.from({ length: 5 }, (_, i) => makeSyntheticPurchaseBill(i + 1))
       const start = performance.now()
-      const result = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result = await applyImport(counted, 'purchase', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Purchase 5 bills: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(5)
       expect(result.failed).toBe(0)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('3. Purchase 25 bills — baseline', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       const bills = Array.from({ length: 25 }, (_, i) => makeSyntheticPurchaseBill(i + 1))
       const start = performance.now()
-      const result = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result = await applyImport(counted, 'purchase', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Purchase 25 bills: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(25)
       expect(result.failed).toBe(0)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('4. Purchase 100 bills — baseline', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       const bills = Array.from({ length: 100 }, (_, i) => makeSyntheticPurchaseBill(i + 1))
       const start = performance.now()
-      const result = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result = await applyImport(counted, 'purchase', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Purchase 100 bills: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(100)
       expect(result.failed).toBe(0)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('5. Sales 1 bill — baseline (with stock)', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       // Seed stock for sales
       for (let i = 1; i <= 5; i++) {
-        await db.query(
+        await counted.db.query(
           `INSERT INTO "StockLot" ("id", "productId", "remainingWeight", "costPerKg", "source") VALUES ($1, $2, $3, $4, $5)`,
           [`seed-lot-${i}`, `perf-prod-${i}`, 1000, 10, 'BUY']
         )
@@ -394,21 +437,21 @@ describe('ST-75 PostgreSQL Performance Baseline', () => {
 
       const bills = [makeSyntheticSalesBill(1)]
       const start = performance.now()
-      const result = await applyImport(db, 'sales', bills, 'perf-admin')
+      const result = await applyImport(counted, 'sales', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Sales 1 bill: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(1)
       expect(result.failed).toBe(0)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('6. Sales 25 bills — baseline (with stock)', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       for (let i = 1; i <= 5; i++) {
-        await db.query(
+        await counted.db.query(
           `INSERT INTO "StockLot" ("id", "productId", "remainingWeight", "costPerKg", "source") VALUES ($1, $2, $3, $4, $5)`,
           [`seed-lot-${i}`, `perf-prod-${i}`, 10000, 10, 'BUY']
         )
@@ -416,21 +459,21 @@ describe('ST-75 PostgreSQL Performance Baseline', () => {
 
       const bills = Array.from({ length: 25 }, (_, i) => makeSyntheticSalesBill(i + 1))
       const start = performance.now()
-      const result = await applyImport(db, 'sales', bills, 'perf-admin')
+      const result = await applyImport(counted, 'sales', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Sales 25 bills: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(25)
       expect(result.failed).toBe(0)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('7. Sales 100 bills — baseline (with stock)', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       for (let i = 1; i <= 5; i++) {
-        await db.query(
+        await counted.db.query(
           `INSERT INTO "StockLot" ("id", "productId", "remainingWeight", "costPerKg", "source") VALUES ($1, $2, $3, $4, $5)`,
           [`seed-lot-${i}`, `perf-prod-${i}`, 50000, 10, 'BUY']
         )
@@ -438,13 +481,13 @@ describe('ST-75 PostgreSQL Performance Baseline', () => {
 
       const bills = Array.from({ length: 100 }, (_, i) => makeSyntheticSalesBill(i + 1))
       const start = performance.now()
-      const result = await applyImport(db, 'sales', bills, 'perf-admin')
+      const result = await applyImport(counted, 'sales', bills, 'perf-admin')
       const elapsed = performance.now() - start
       console.log(`  Sales 100 bills: ${elapsed.toFixed(2)}ms, queries=${result.queryCount}, imported=${result.imported}`)
       expect(result.imported).toBe(100)
       expect(result.failed).toBe(0)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 })
@@ -453,26 +496,26 @@ describe('ST-75 PostgreSQL Performance Baseline', () => {
 
 describe('ST-75 Concurrency/Duplicate Safety', () => {
   test('8. Duplicate externalBillNumber — second import skips', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       const bills = [makeSyntheticPurchaseBill(1)]
-      const result1 = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result1 = await applyImport(counted, 'purchase', bills, 'perf-admin')
       expect(result1.imported).toBe(1)
 
       // Retry same bill numbers
-      const result2 = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result2 = await applyImport(counted, 'purchase', bills, 'perf-admin')
       expect(result2.imported).toBe(0)
       expect(result2.duplicates).toBe(1)
       console.log(`  Duplicate retry: imported=${result2.imported}, duplicates=${result2.duplicates}`)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('9. Stock correctness after sales — no negative inventory', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
-      await db.query(
+      await counted.db.query(
         `INSERT INTO "StockLot" ("id", "productId", "remainingWeight", "costPerKg", "source") VALUES ($1, $2, $3, $4, $5)`,
         ['seed-lot-1', 'perf-prod-1', 100, 10, 'BUY']
       )
@@ -480,21 +523,21 @@ describe('ST-75 Concurrency/Duplicate Safety', () => {
       // Sell 50 (within stock)
       const bills = [makeSyntheticSalesBill(1)]
       bills[0].items = [{ productId: 'perf-prod-1', productName: 'P1', weight: 50, pricePerKg: 30, totalAmount: 1500, matched: true }]
-      const result = await applyImport(db, 'sales', bills, 'perf-admin')
+      const result = await applyImport(counted, 'sales', bills, 'perf-admin')
       expect(result.imported).toBe(1)
 
       // Verify remaining stock
-      const stock = await db.query(`SELECT "remainingWeight" FROM "StockLot" WHERE "productId" = $1`, ['perf-prod-1'])
+      const stock = await counted.db.query(`SELECT "remainingWeight" FROM "StockLot" WHERE "productId" = $1`, ['perf-prod-1'])
       const remaining = (stock.rows[0] as any).remainingWeight
       expect(remaining).toBe(50) // 100 - 50 = 50
       console.log(`  Stock after sell: ${remaining} (expected 50)`)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 
   test('10. Partial success — middle bill fails, others succeed', async () => {
-    const db = await setupDatabase()
+    const counted = await setupDatabase()
     try {
       const bills = [
         makeSyntheticPurchaseBill(1),
@@ -504,12 +547,12 @@ describe('ST-75 Concurrency/Duplicate Safety', () => {
       // Make bill 2 fail by using a non-existent product
       bills[1].items[0].productId = 'nonexistent-product'
 
-      const result = await applyImport(db, 'purchase', bills, 'perf-admin')
+      const result = await applyImport(counted, 'purchase', bills, 'perf-admin')
       expect(result.imported).toBe(2) // bills 1 and 3 succeed
       expect(result.failed).toBe(1)  // bill 2 fails
       console.log(`  Partial success: imported=${result.imported}, failed=${result.failed}`)
     } finally {
-      await db.close()
+      await counted.db.close()
     }
   })
 })
@@ -522,16 +565,16 @@ describe('ST-75 Query Count Verification', () => {
     console.log('  Size | Queries | Queries/bill | Estimated')
     console.log('  -----|---------|--------------|----------')
     for (const size of sizes) {
-      const db = await setupDatabase()
+      const counted = await setupDatabase()
       try {
         const bills = Array.from({ length: size }, (_, i) => makeSyntheticPurchaseBill(i + 1))
-        const result = await applyImport(db, 'purchase', bills, 'perf-admin')
+        const result = await applyImport(counted, 'purchase', bills, 'perf-admin')
         const perBill = (result.queryCount / size).toFixed(1)
         const estimated = 2 + size * 7 // 2 batch + 7 per bill
         console.log(`  ${size} | ${result.queryCount} | ${perBill} | ${estimated}`)
         expect(result.imported).toBe(size)
       } finally {
-        await db.close()
+        await counted.db.close()
       }
     }
   })

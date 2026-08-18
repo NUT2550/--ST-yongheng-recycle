@@ -537,16 +537,21 @@ describe('ST-75 P2-B: Real server-backed refresh callback', () => {
     expect(src).toContain('onRefreshAfterImport={loadProducts}')
   })
 
-  test('36. Sell page wires onRefreshAfterImport to real server fetch', () => {
+  test('36. Sell page wires onRefreshAfterImport to product-only refresh (P2-25)', () => {
     const src = readFileSync(
       join(process.cwd(), 'src/components/sell-page.tsx'),
       'utf8',
     )
     expect(src).toMatch(/async function loadData\(\)/)
-    // loadData must call BOTH fetchProducts and fetchCustomers (server-backed).
-    expect(src).toMatch(/fetchProducts\(\)/)
-    expect(src).toMatch(/fetchCustomers\(\)/)
-    expect(src).toContain('onRefreshAfterImport={loadData}')
+    // ST-75 P2-25: onRefreshAfterImport uses refreshProductsAfterImport,
+    // NOT loadData (which waits for customers too).
+    expect(src).toMatch(/async function refreshProductsAfterImport\(\)/)
+    expect(src).toContain('onRefreshAfterImport={refreshProductsAfterImport}')
+    // refreshProductsAfterImport must only call fetchProducts, not fetchCustomers.
+    const refreshFnMatch = src.match(/async function refreshProductsAfterImport\(\) \{([\s\S]*?)\n  \}/)
+    expect(refreshFnMatch).not.toBeNull()
+    expect(refreshFnMatch![1]).toContain('fetchProducts')
+    expect(refreshFnMatch![1]).not.toContain('fetchCustomers')
   })
 
   test('37. Buy page loadProducts is callable (not inline useEffect closure)', () => {

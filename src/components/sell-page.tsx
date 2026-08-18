@@ -83,8 +83,6 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
   async function loadData() {
     let hadError = false;
 
-    // Fire both requests immediately (parallel), but apply each result
-    // independently as soon as it settles.
     const prodPromise = fetchProducts()
       .then((prodRes) => {
         const prodData = prodRes as unknown as { products: Product[] };
@@ -103,13 +101,28 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
         hadError = true;
       });
 
-    // Wait for both to settle so loading state clears after both complete.
     await Promise.allSettled([prodPromise, custPromise]);
 
     if (hadError) {
       toast.error('ไม่สามารถโหลดข้อมูลบางส่วนได้');
     }
     setLoading(false);
+  }
+
+  // ST-75 P2-25: Product-only refresh for post-import reconciliation.
+  // The import dialog's onRefreshAfterImport MUST resolve when the PRODUCT
+  // refresh settles — NOT when customers also finish. A slow/failing customer
+  // request must NOT block delayed product retries, because product/stock
+  // data is authoritative after an import. Customers are not affected by
+  // stock mutations and can refresh independently.
+  async function refreshProductsAfterImport() {
+    try {
+      const prodRes = await fetchProducts();
+      const prodData = prodRes as unknown as { products: Product[] };
+      setProducts(prodData.products || (prodRes as unknown as Product[]));
+    } catch {
+      // Swallow — the bounded retry scheduler will attempt again.
+    }
   }
 
   // Filter products with stock > 0
@@ -434,7 +447,7 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
                 <DetailedSellExcelImportDialog
                   products={availableProducts}
                   onSessionExpired={onSessionExpired}
-                  onRefreshAfterImport={loadData}
+                  onRefreshAfterImport={refreshProductsAfterImport}
                   onImport={async (bills) => {
                     // ST-18: For each bill, add items to cart with stock validation
                     let totalAdded = 0;
