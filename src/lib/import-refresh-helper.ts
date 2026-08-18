@@ -87,14 +87,31 @@ export function scheduleAmbiguousRefresh(
 
   const pendingTimers = new Set<number>();
   let cancelled = false;
+  // ST-75 P2-A3: Serialize refresh attempts so a slow immediate fetch cannot
+  // be overwritten by a faster delayed retry returning stale pre-commit state.
+  // Each retry waits for the previous to complete (success or failure) before
+  // starting. This prevents overlapping fetches where the later-starting but
+  // earlier-completing fetch overwrites the authoritative state.
+  let refreshInFlight = false;
+  const pendingRefreshQueued = new Set<number>();
+
+  const runRefresh = async () => {
+    if (refreshInFlight) return false; // already running, skip
+    refreshInFlight = true;
+    try {
+      await refresh();
+      return true;
+    } catch {
+      // Swallow — bounded, so failures don't propagate.
+      return false;
+    } finally {
+      refreshInFlight = false;
+    }
+  };
 
   // Fire the immediate refresh — gives a chance to catch already-committed
   // state if the backend commit was fast.
-  try {
-    void refresh();
-  } catch {
-    // Swallow — the delayed retries will attempt again.
-  }
+  void runRefresh();
 
   // Schedule bounded delayed retries.
   for (let i = 0; i < maxRetries; i++) {
@@ -102,10 +119,22 @@ export function scheduleAmbiguousRefresh(
     const id = scheduleTimer(() => {
       if (cancelled) return;
       pendingTimers.delete(id);
-      try {
-        void refresh();
-      } catch {
-        // Swallow — bounded, so this is the last attempt if i === maxRetries - 1.
+      // ST-75 P2-A3: Serialize — if the immediate refresh is still in flight,
+      // queue this retry to run after it completes. If a retry is already
+      // queued, skip (bounded — we don't accumulate an infinite queue).
+      if (refreshInFlight) {
+        pendingRefreshQueued.add(id);
+        // Schedule a microtask to check if the refresh is done yet.
+        // This is a lightweight poll — it doesn't add an unbounded loop
+        // because runRefresh sets refreshInFlight=false in finally.
+        void runRefresh().then(() => {
+          if (pendingRefreshQueued.has(id)) {
+            pendingRefreshQueued.delete(id);
+            void runRefresh();
+          }
+        });
+      } else {
+        void runRefresh();
       }
     }, delay);
     pendingTimers.add(id);

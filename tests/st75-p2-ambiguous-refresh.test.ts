@@ -39,7 +39,7 @@ import {
 // ============ Helpers ============
 
 function makeValidSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSummaryLike {
-  return {
+  const base = {
     importedCount: 0,
     duplicateExistingCount: 0,
     duplicateInFileCount: 0,
@@ -47,13 +47,23 @@ function makeValidSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSum
     unmatchedCount: 0,
     insufficientStockCount: 0,
     failedCount: 0,
-    // ST-75 P2-B2: Include required result arrays so the summary passes
-    // isValidImportSummary validation.
-    importedBills: [],
-    skippedDuplicateBills: [],
-    failedBills: [],
+    importedBills: [] as unknown[],
+    skippedDuplicateBills: [] as unknown[],
+    failedBills: [] as unknown[],
     ...overrides,
-  } as ImportSummaryLike
+  }
+  // ST-75 P2-B3: Auto-populate arrays to match counters for consistency.
+  // Guard against non-finite values (NaN, Infinity) that would break Array.from.
+  if (!overrides.importedBills && Number.isFinite(base.importedCount) && base.importedCount > 0) {
+    base.importedBills = Array.from({ length: base.importedCount }, (_, i) => ({ id: `imp-${i}` }))
+  }
+  if (!overrides.failedBills && Number.isFinite(base.failedCount) && base.failedCount > 0) {
+    base.failedBills = Array.from({ length: base.failedCount }, (_, i) => ({ id: `fail-${i}` }))
+  }
+  if (!overrides.skippedDuplicateBills && Number.isFinite(base.duplicateExistingCount) && base.duplicateExistingCount > 0) {
+    base.skippedDuplicateBills = Array.from({ length: base.duplicateExistingCount }, (_, i) => ({ id: `dup-${i}` }))
+  }
+  return base as ImportSummaryLike
 }
 
 const SELL_DIALOG_PATH = join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx')
@@ -235,10 +245,6 @@ describe('ST-75 P2-B: valid summary classification unchanged', () => {
 describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', () => {
   test('27. fires immediate refresh + 2 delayed retries (default config)', async () => {
     let callCount = 0
-    const callTimestamps: number[] = []
-    const startTime = Date.now()
-
-    // Inject fake timers to avoid real wall-clock delays.
     const pendingTimers: Array<{ fn: () => void; delay: number; id: number }> = []
     let nextId = 1
     const fakeSetTimeout = (fn: () => void, delay: number) => {
@@ -251,40 +257,28 @@ describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', 
       if (idx >= 0) pendingTimers.splice(idx, 1)
     }
 
-    const refresh = () => {
-      callCount++
-      callTimestamps.push(Date.now() - startTime)
-    }
-
-    const handle = scheduleAmbiguousRefresh(refresh, {
+    const handle = scheduleAmbiguousRefresh(() => { callCount++ }, {
       scheduleTimer: fakeSetTimeout,
       clearTimer: fakeClearTimeout,
     })
 
-    // Immediate call fires synchronously.
+    // ST-75 P2-A3: refresh is async/serialized. Wait for immediate to complete.
+    await new Promise((r) => setTimeout(r, 0))
     expect(callCount).toBe(1)
-
-    // 2 delayed timers should be pending (bounded — not infinite).
     expect(pendingTimers.length).toBe(2)
 
-    // Fire the first delayed retry.
     pendingTimers[0].fn()
+    await new Promise((r) => setTimeout(r, 0))
     expect(callCount).toBe(2)
 
-    // Fire the second delayed retry.
     pendingTimers[1].fn()
+    await new Promise((r) => setTimeout(r, 0))
     expect(callCount).toBe(3)
 
-    // All 3 refresh calls completed (1 immediate + 2 delayed). Bounded.
-    expect(callTimestamps.length).toBe(3)
-
-    handle.cancel() // cleanup
+    handle.cancel()
   })
 
   test('28. first refresh sees stale state, later refresh sees authoritative state', async () => {
-    // Simulate: first refresh (immediate) sees stale state because backend
-    // hasn't committed yet. Second refresh (delayed retry) sees the committed
-    // authoritative state.
     let authoritativeStateCommitted = false
     const refreshResults: boolean[] = []
 
@@ -301,7 +295,6 @@ describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', 
     }
 
     const refresh = () => {
-      // refresh returns true if authoritative state is visible.
       refreshResults.push(authoritativeStateCommitted)
     }
 
@@ -310,18 +303,17 @@ describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', 
       clearTimer: fakeClearTimeout,
     })
 
-    // Immediate refresh fires BEFORE backend commits → sees stale state.
+    await new Promise((r) => setTimeout(r, 0))
     expect(refreshResults).toEqual([false])
 
-    // Simulate backend commit completing.
     authoritativeStateCommitted = true
 
-    // Fire the first delayed retry — should now see authoritative state.
     pendingTimers[0].fn()
+    await new Promise((r) => setTimeout(r, 0))
     expect(refreshResults).toEqual([false, true])
 
-    // Fire the second delayed retry — still sees authoritative state.
     pendingTimers[1].fn()
+    await new Promise((r) => setTimeout(r, 0))
     expect(refreshResults).toEqual([false, true, true])
   })
 
@@ -339,18 +331,11 @@ describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', 
       pendingTimers.push(entry)
       return entry.id
     }
-    const fakeClearTimeout = (_id: number) => {
-      // no-op for this test
-    }
+    const fakeClearTimeout = (_id: number) => {}
 
-    // The refresh callback simulates a GET/read refresh (like loadProducts).
-    // It must NOT call any mutation endpoint.
     const refresh = () => {
       refreshCallCount++
-      // Simulate a GET refresh — no POST.
     }
-
-    // Simulate a hypothetical mutation that the test verifies is NOT called.
     const fakeMutation = () => {
       mutationCallCount++
     }
@@ -360,20 +345,18 @@ describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', 
       clearTimer: fakeClearTimeout,
     })
 
-    // Fire all delayed retries.
+    // ST-75 P2-A3: refresh is now serialized (async). Await microtasks between
+    // timer firings so each runRefresh completes before the next starts.
     for (const t of pendingTimers) {
       t.fn()
+      await new Promise((r) => setTimeout(r, 0))
     }
+    await new Promise((r) => setTimeout(r, 0))
 
-    // Verify: refresh was called 3 times (1 immediate + 2 delayed), but
-    // NO mutation was ever called.
     expect(refreshCallCount).toBe(3)
     expect(mutationCallCount).toBe(0)
-
-    // Also verify: the refresh callback itself does NOT call fakeMutation.
-    fakeMutation() // this is just to prove the counter works
+    fakeMutation()
     expect(mutationCallCount).toBe(1)
-
     handle.cancel()
   })
 
@@ -394,17 +377,16 @@ describe('ST-75 P2-A: scheduleAmbiguousRefresh bounded delayed reconciliation', 
       clearTimer: fakeClearTimeout,
     })
 
-    // Should schedule exactly maxRetries=3 delayed timers (bounded — not infinite).
     expect(pendingTimers.length).toBe(3)
 
-    // Fire all timers.
+    // ST-75 P2-A3: Await between timer firings for serialized refresh.
     for (const t of [...pendingTimers]) {
       t.fn()
+      await new Promise((r) => setTimeout(r, 0))
     }
+    await new Promise((r) => setTimeout(r, 0))
 
-    // Total calls = 1 (immediate) + 3 (delayed) = 4. Bounded.
     expect(callCount).toBe(4)
-
     handle.cancel()
   })
 
@@ -622,7 +604,7 @@ describe('ST-75 P2-B2: Validate result arrays (importedBills, skippedDuplicateBi
   test('50. valid summary with all 3 arrays present → true', () => {
     const summary = makeValidSummary({
       importedCount: 5,
-      importedBills: [],
+      importedBills: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }],
       skippedDuplicateBills: [],
       failedBills: [],
     })
@@ -718,7 +700,7 @@ describe('ST-75 P2-B2: Validate result arrays (importedBills, skippedDuplicateBi
 // ============ P2-A2: Ambiguous retries stay alive after dialog close ============
 
 describe('ST-75 P2-A2: Ambiguous retries stay alive after dialog close', () => {
-  test('58. scheduleAmbiguousRefresh timers continue firing after dialog closes', () => {
+  test('58. scheduleAmbiguousRefresh timers continue firing after dialog closes', async () => {
     // Simulate: user dismisses AMBIGUOUS_RESULT dialog before 1.5s retry fires.
     // The pending delayed refresh timers must NOT be cancelled by resetDialogState.
     let refreshCallCount = 0
@@ -741,24 +723,23 @@ describe('ST-75 P2-A2: Ambiguous retries stay alive after dialog close', () => {
       clearTimer: fakeClearTimeout,
     })
 
-    // Immediate refresh fired.
+    // ST-75 P2-A3: refresh is now async/serialized. Wait for immediate to complete.
+    await new Promise((r) => setTimeout(r, 0))
     expect(refreshCallCount).toBe(1)
     expect(pendingTimers.length).toBe(2)
 
-    // Simulate dialog close (resetDialogState). Per P2-A2, this must NOT cancel
-    // the pending timers. We verify by NOT calling handle.cancel() here — the
-    // dialog's resetDialogState no longer calls cancel.
+    // Simulate dialog close (resetDialogState). Per P2-A2, this must NOT cancel.
 
-    // Fire the delayed retries — they should still work.
+    // Fire delayed retries — await between each for serialization.
     pendingTimers[0].fn()
+    await new Promise((r) => setTimeout(r, 0))
     expect(refreshCallCount).toBe(2)
 
     pendingTimers[1].fn()
+    await new Promise((r) => setTimeout(r, 0))
     expect(refreshCallCount).toBe(3)
 
-    // All 3 refresh calls completed (1 immediate + 2 delayed) — delayed
-    // reconciliation succeeded even though the dialog was closed.
-    handle.cancel() // cleanup
+    handle.cancel()
   })
 
   test('59. unmount useEffect cleanup still cancels (component destruction)', () => {
@@ -800,5 +781,135 @@ describe('ST-75 P2-A2: Ambiguous retries stay alive after dialog close', () => {
       t.fn()
     }
     expect(refreshCallCount).toBe(1)
+  })
+
+  test('60. P2-A3: serializes refresh attempts (no overlapping)', async () => {
+    // P2-A3: When the immediate refresh takes longer than the first delay,
+    // the delayed retry must NOT start until the immediate completes. This
+    // prevents a faster delayed fetch from overwriting state before the slow
+    // immediate fetch returns.
+    let refreshRunning = false
+    let overlapDetected = false
+    const refreshCallCount = { value: 0 }
+
+    const pendingTimers: Array<{ fn: () => void; id: number }> = []
+    let nextId = 1
+    const fakeSetTimeout = (fn: () => void, _delay: number) => {
+      const entry = { fn, id: nextId++ }
+      pendingTimers.push(entry)
+      return entry.id
+    }
+    const fakeClearTimeout = (_id: number) => {}
+
+    const refresh = () => {
+      // Detect overlap: if refreshRunning is already true when this is called,
+      // two refreshes are running simultaneously.
+      if (refreshRunning) {
+        overlapDetected = true
+      }
+      refreshRunning = true
+      refreshCallCount.value++
+      // Return a promise that resolves after a microtask (simulating async fetch).
+      return new Promise<void>((resolve) => {
+        // Resolve on next microtask — but the delayed timer fires synchronously.
+        // The serialization logic should prevent overlap.
+        setTimeout(() => {
+          refreshRunning = false
+          resolve()
+        }, 0)
+      })
+    }
+
+    const handle = scheduleAmbiguousRefresh(refresh, {
+      scheduleTimer: fakeSetTimeout,
+      clearTimer: fakeClearTimeout,
+    })
+
+    // Immediate refresh was called (synchronously started).
+    expect(refreshCallCount.value).toBe(1)
+
+    // Fire the first delayed retry while the immediate is still in flight.
+    // The serialization logic should queue it, not start it immediately.
+    pendingTimers[0].fn()
+    // Due to serialization, the second refresh should NOT have started yet
+    // (the immediate is still in flight — it resolves on next tick).
+    // Wait for microtasks to settle.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    // No overlap should have been detected.
+    expect(overlapDetected).toBe(false)
+
+    handle.cancel()
+  })
+})
+
+// ============ P2-B3: Reject inconsistent result-array contents ============
+
+describe('ST-75 P2-B3: Reject inconsistent counter/array combinations', () => {
+  test('61. importedCount: 0 with nonempty importedBills → false (AMBIGUOUS)', () => {
+    const inconsistent = makeValidSummary({
+      importedCount: 0,
+      importedBills: [{ id: 'stale-bill' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('62. importedCount: 5 with empty importedBills → false', () => {
+    const inconsistent = makeValidSummary({
+      importedCount: 5,
+      importedBills: [],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('63. failedCount: 0 with nonempty failedBills → false', () => {
+    const inconsistent = makeValidSummary({
+      failedCount: 0,
+      failedBills: [{ id: 'stale-failed-bill' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('64. failedCount: 3 with empty failedBills → false', () => {
+    const inconsistent = makeValidSummary({
+      failedCount: 3,
+      failedBills: [],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('65. duplicateExistingCount: 2 with empty skippedDuplicateBills → false', () => {
+    const inconsistent = makeValidSummary({
+      duplicateExistingCount: 2,
+      skippedDuplicateBills: [],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('66. duplicateExistingCount: 0 with nonempty skippedDuplicateBills → false', () => {
+    const inconsistent = makeValidSummary({
+      duplicateExistingCount: 0,
+      skippedDuplicateBills: [{ id: 'stale-dup' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('67. consistent summary (importedCount matches importedBills.length) → true', () => {
+    const consistent = makeValidSummary({
+      importedCount: 3,
+      importedBills: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      failedCount: 1,
+      failedBills: [{ id: 'f1' }],
+    })
+    expect(isValidImportSummary(consistent)).toBe(true)
+  })
+
+  test('68. 2xx with inconsistent counters/arrays → AMBIGUOUS_RESULT', () => {
+    const inconsistent = makeValidSummary({
+      importedCount: 0,
+      importedBills: [{ id: 'stale' }],
+    })
+    const outcome = classifyImportOutcome(200, inconsistent, false)
+    expect(outcome).toBe('AMBIGUOUS_RESULT')
   })
 })

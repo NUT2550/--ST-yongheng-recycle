@@ -13,7 +13,7 @@ import {
 } from '../src/lib/import-state-helper'
 
 function makeSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSummaryLike {
-  return {
+  const base = {
     importedCount: 0,
     duplicateExistingCount: 0,
     duplicateInFileCount: 0,
@@ -22,11 +22,23 @@ function makeSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSummaryL
     insufficientStockCount: 0,
     failedCount: 0,
     // ST-75 P2-B2: Include required result arrays.
-    importedBills: [],
-    skippedDuplicateBills: [],
-    failedBills: [],
+    importedBills: [] as unknown[],
+    skippedDuplicateBills: [] as unknown[],
+    failedBills: [] as unknown[],
     ...overrides,
   }
+  // ST-75 P2-B3: Auto-populate arrays to match counters if not explicitly overridden.
+  // This keeps existing tests working without requiring each test to specify arrays.
+  if (!overrides.importedBills && base.importedCount > 0) {
+    base.importedBills = Array.from({ length: base.importedCount }, (_, i) => ({ id: `imp-${i}` }))
+  }
+  if (!overrides.failedBills && base.failedCount > 0) {
+    base.failedBills = Array.from({ length: base.failedCount }, (_, i) => ({ id: `fail-${i}` }))
+  }
+  if (!overrides.skippedDuplicateBills && base.duplicateExistingCount > 0) {
+    base.skippedDuplicateBills = Array.from({ length: base.duplicateExistingCount }, (_, i) => ({ id: `dup-${i}` }))
+  }
+  return base as ImportSummaryLike
 }
 
 describe('ST-75: classifyImportOutcome', () => {

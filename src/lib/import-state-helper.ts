@@ -73,6 +73,23 @@ export function isValidImportSummary(summary: unknown): summary is ImportSummary
   for (const key of requiredArrays) {
     if (!Array.isArray(s[key])) return false;
   }
+  // ST-75 P2-B3: Validate counter/array consistency. A malformed 2xx body with
+  // valid counters and valid arrays but INCONSISTENT contents (e.g.,
+  // importedCount: 0 with nonempty importedBills, or failedCount: 5 with empty
+  // failedBills) indicates the summary is structurally untrustworthy. Treat as
+  // invalid → AMBIGUOUS_RESULT — we cannot safely classify the outcome.
+  const importedBills = s['importedBills'] as unknown[];
+  const skippedDuplicateBills = s['skippedDuplicateBills'] as unknown[];
+  const failedBills = s['failedBills'] as unknown[];
+  const importedCount = s.importedCount as number;
+  const failedCount = s.failedCount as number;
+  const duplicateExistingCount = s.duplicateExistingCount as number;
+  if (importedCount === 0 && importedBills.length > 0) return false;
+  if (importedCount > 0 && importedBills.length === 0) return false;
+  if (failedCount === 0 && failedBills.length > 0) return false;
+  if (failedCount > 0 && failedBills.length === 0) return false;
+  if (duplicateExistingCount === 0 && skippedDuplicateBills.length > 0) return false;
+  if (duplicateExistingCount > 0 && skippedDuplicateBills.length === 0) return false;
   return true;
 }
 
