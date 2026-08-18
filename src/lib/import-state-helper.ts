@@ -3,6 +3,18 @@
  *
  * Classifies the import outcome into actionable UI states.
  * Used by both purchase and sales import dialogs.
+ *
+ * ST-75 P2-21 Import Reliability Contract:
+ *   When a concurrent import commits a bill and the losing batch's post-failure
+ *   reconciliation finds it as DUPLICATE_EXISTING (duplicateExistingCount > 0),
+ *   the losing batch has importedCount=0 but stock WAS deducted by the winner.
+ *   classifyImportOutcome returns PARTIAL_SUCCESS (not FAILED_CONFIRMED) so
+ *   shouldRefreshHistory returns true and the authoritative refresh runs,
+ *   ensuring the UI shows the updated post-race stock.
+ *
+ *   Only duplicateExistingCount triggers this (proves a concurrent commit).
+ *   duplicateInFileCount (same file, no concurrent race) does NOT trigger it —
+ *   those remain FAILED_CONFIRMED because no concurrent winner deducted stock.
  */
 
 export type ImportOutcomeState =
