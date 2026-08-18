@@ -105,6 +105,11 @@ export function isValidBillImportResult(element: unknown): boolean {
   if (e.errorCode !== undefined && typeof e.errorCode !== 'string') return false;
   // ST-75 P2-26: reconciledAfterFailure is optional. If present, must be boolean.
   if (e.reconciledAfterFailure !== undefined && typeof e.reconciledAfterFailure !== 'boolean') return false;
+  // ST-75 P2-28: reconciledAfterFailure: true is only valid on DUPLICATE_EXISTING
+  // status — it marks duplicates confirmed by post-failure reconciliation.
+  // A DUPLICATE_IN_FILE or any other status with this flag is structurally
+  // impossible in production and indicates a malformed response.
+  if (e.reconciledAfterFailure === true && e.status !== 'DUPLICATE_EXISTING') return false;
   return true;
 }
 

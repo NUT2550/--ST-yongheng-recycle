@@ -246,7 +246,11 @@ async function cleanupSyntheticData(db: PrismaClient, categoryId: string, produc
   // Clean in dependency order
   await db.stockMovement.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
   await db.stockLot.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
-  await db.auditLog.deleteMany({ where: { entityId: { contains: 'ST75' } } }).catch(() => {});
+  // ST-75 P2-29: Delete audit logs by the synthetic product IDs they reference
+  // (audit logs store the Prisma bill ID in entityId, not 'ST75').
+  // Also delete by any audit logs created during this test run.
+  await db.auditLog.deleteMany({ where: { entityId: { in: productIds } } }).catch(() => {});
+  await db.auditLog.deleteMany({ where: { details: { contains: 'ST75' } } }).catch(() => {});
   // ST-75 P2-24: Delete bills BEFORE their items. If items are deleted first,
   // the relational items.some predicate can no longer match any bill, leaving
   // orphaned bills behind. Delete bills first, then items (orphaned items are
