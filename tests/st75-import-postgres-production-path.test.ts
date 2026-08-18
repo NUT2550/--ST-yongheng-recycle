@@ -248,9 +248,13 @@ async function cleanupSyntheticData(db: PrismaClient, categoryId: string, produc
   await db.stockLot.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
   await db.auditLog.deleteMany({ where: { entityId: { contains: 'ST75' } } }).catch(() => {});
   await db.buyBillItem.deleteMany({ where: { product: { categoryId } } }).catch(() => {});
-  await db.buyBill.deleteMany({ where: { externalBillNumber: { contains: 'ST75-Perf' } } }).catch(() => {});
+  // ST-75 P2-23: Delete ALL synthetic bills for this category, not just
+  // those with 'ST75-Perf' prefix. makeBills generates prefixes like
+  // P100R0, S100R0, CONC-P, RETRY-P, STOCK-CHECK, C3-CAS — none contain
+  // 'ST75-Perf'. Delete by categoryId relation to catch all orphans.
+  await db.buyBill.deleteMany({ where: { items: { some: { product: { categoryId } } } } }).catch(() => {});
   await db.sellBillItem.deleteMany({ where: { product: { categoryId } } }).catch(() => {});
-  await db.sellBill.deleteMany({ where: { externalBillNumber: { contains: 'ST75-Perf' } } }).catch(() => {});
+  await db.sellBill.deleteMany({ where: { items: { some: { product: { categoryId } } } } }).catch(() => {});
   await db.product.deleteMany({ where: { categoryId } }).catch(() => {});
   await db.productCategory.deleteMany({ where: { id: categoryId } }).catch(() => {});
 }
