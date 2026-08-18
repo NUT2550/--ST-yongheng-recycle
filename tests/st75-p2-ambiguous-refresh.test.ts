@@ -1222,3 +1222,89 @@ describe('ST-75 P2-4: Grouped counter validation (production buildImportSummary 
     expect(outcome).toBe('SUCCESS')
   })
 })
+
+// ============ P2-5: Validate summary before storing ============
+
+describe('ST-75 P2-5: Validate summary before storing (setApplyResult)', () => {
+  test('86. Purchase dialog classifies before storing applyResult', () => {
+    const src = readBuyDialog()
+    // setApplyResult must NOT be called before classifyImportOutcome.
+    const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
+    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false)')
+    expect(setApplyResultIdx).toBeGreaterThan(-1)
+    expect(classifyIdx).toBeGreaterThan(-1)
+    // classifyImportOutcome must come BEFORE setApplyResult.
+    expect(classifyIdx).toBeLessThan(setApplyResultIdx)
+  })
+
+  test('87. Purchase dialog only stores summary if outcome !== AMBIGUOUS_RESULT', () => {
+    const src = readBuyDialog()
+    expect(src).toMatch(/if \(outcome !== 'AMBIGUOUS_RESULT'\) \{[\s\S]*?setApplyResult\(summary\)/)
+  })
+
+  test('88. Sales dialog classifies before storing applyResult', () => {
+    const src = readSellDialog()
+    const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
+    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false)')
+    expect(classifyIdx).toBeLessThan(setApplyResultIdx)
+  })
+
+  test('89. Sales dialog only stores summary if outcome !== AMBIGUOUS_RESULT', () => {
+    const src = readSellDialog()
+    expect(src).toMatch(/if \(outcome !== 'AMBIGUOUS_RESULT'\) \{[\s\S]*?setApplyResult\(summary\)/)
+  })
+})
+
+// ============ P2-6: Verify statuses match their result groups ============
+
+describe('ST-75 P2-6: Per-element status matches result group', () => {
+  test('90. importedBills with FAILED status → false', () => {
+    const inconsistent = makeValidSummary({
+      importedCount: 1,
+      importedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'FAILED' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('91. failedBills with READY status → false', () => {
+    const inconsistent = makeValidSummary({
+      failedCount: 1,
+      failedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'READY' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('92. skippedDuplicateBills with INVALID status → false', () => {
+    const inconsistent = makeValidSummary({
+      duplicateExistingCount: 1,
+      skippedDuplicateBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'INVALID' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('93. 2xx with mismatched status in importedBills → AMBIGUOUS_RESULT', () => {
+    const malformed = makeValidSummary({
+      importedCount: 1,
+      importedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'FAILED' }],
+    })
+    const outcome = classifyImportOutcome(200, malformed, false)
+    expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+})
+
+// ============ P2-7: Serialize refreshes across scheduler instances ============
+
+describe('ST-75 P2-7: Cross-scheduler coordination', () => {
+  test('94. Purchase scheduleAmbiguousImportRefresh cancels prior handles', () => {
+    const src = readBuyDialog()
+    // The function must cancel prior handles before creating a new one.
+    expect(src).toMatch(/for \(const handle of ambiguousRefreshHandlesRef\.current\) \{[\s\S]*?handle\.cancel\(\)/)
+    expect(src).toMatch(/ambiguousRefreshHandlesRef\.current = \[\]/)
+  })
+
+  test('95. Sales scheduleAmbiguousImportRefresh cancels prior handles', () => {
+    const src = readSellDialog()
+    expect(src).toMatch(/for \(const handle of ambiguousRefreshHandlesRef\.current\) \{[\s\S]*?handle\.cancel\(\)/)
+    expect(src).toMatch(/ambiguousRefreshHandlesRef\.current = \[\]/)
+  })
+})

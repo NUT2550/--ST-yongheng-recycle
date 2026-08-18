@@ -137,6 +137,30 @@ export function isValidImportSummary(summary: unknown): summary is ImportSummary
   //   importedBills ← status 'READY' (1:1 with importedCount)
   //   skippedDuplicateBills ← 'DUPLICATE_EXISTING' + 'DUPLICATE_IN_FILE'
   //   failedBills ← 'INVALID' + 'UNMATCHED_PRODUCT' + 'INSUFFICIENT_STOCK' + 'FAILED'
+  // ST-75 P2-6: Also verify per-element status matches its group — a
+  // `importedBills: [{ status: 'FAILED' }]` with `importedCount: 1` would
+  // pass aggregate length checks but is semantically inconsistent.
+  const IMPORTED_STATUSES = new Set(['READY']);
+  const DUPLICATE_STATUSES = new Set(['DUPLICATE_EXISTING', 'DUPLICATE_IN_FILE']);
+  const FAILURE_STATUSES = new Set(['INVALID', 'UNMATCHED_PRODUCT', 'INSUFFICIENT_STOCK', 'FAILED']);
+  let importedFromElements = 0;
+  let duplicateFromElements = 0;
+  let failedFromElements = 0;
+  for (const bill of importedBills) {
+    const status = (bill as Record<string, unknown>).status;
+    if (typeof status !== 'string' || !IMPORTED_STATUSES.has(status)) return false;
+    if (status === 'READY') importedFromElements++;
+  }
+  for (const bill of skippedDuplicateBills) {
+    const status = (bill as Record<string, unknown>).status;
+    if (typeof status !== 'string' || !DUPLICATE_STATUSES.has(status)) return false;
+    if (status === 'DUPLICATE_EXISTING' || status === 'DUPLICATE_IN_FILE') duplicateFromElements++;
+  }
+  for (const bill of failedBills) {
+    const status = (bill as Record<string, unknown>).status;
+    if (typeof status !== 'string' || !FAILURE_STATUSES.has(status)) return false;
+    failedFromElements++;
+  }
   const importedCount = s.importedCount as number;
   const duplicateExistingCount = s.duplicateExistingCount as number;
   const duplicateInFileCount = s.duplicateInFileCount as number;
@@ -144,9 +168,14 @@ export function isValidImportSummary(summary: unknown): summary is ImportSummary
   const unmatchedCount = s.unmatchedCount as number;
   const insufficientStockCount = s.insufficientStockCount as number;
   const failedCount = s.failedCount as number;
+  // Aggregate length checks (P2-4)
   if (importedBills.length !== importedCount) return false;
   if (skippedDuplicateBills.length !== duplicateExistingCount + duplicateInFileCount) return false;
   if (failedBills.length !== invalidCount + unmatchedCount + insufficientStockCount + failedCount) return false;
+  // Per-element status consistency (P2-6)
+  if (importedFromElements !== importedCount) return false;
+  if (duplicateFromElements !== duplicateExistingCount + duplicateInFileCount) return false;
+  if (failedFromElements !== invalidCount + unmatchedCount + insufficientStockCount + failedCount) return false;
   return true;
 }
 

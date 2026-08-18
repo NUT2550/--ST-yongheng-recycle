@@ -115,10 +115,14 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   // give the commit time to land so the UI eventually shows authoritative
   // state. This is a GET/read refresh only; it NEVER re-issues the POST
   // /api/import/apply mutation.
+  // ST-75 P2-7: Cancel any prior scheduler handles before creating a new one
+  // so two independent schedulers can't call the same loadData concurrently.
   const scheduleAmbiguousImportRefresh = () => {
+    for (const handle of ambiguousRefreshHandlesRef.current) {
+      handle.cancel();
+    }
+    ambiguousRefreshHandlesRef.current = [];
     const handle = scheduleAmbiguousRefresh(() => {
-      // ST-75 P2-2: Return the parent refresh promise so the scheduler can
-      // serialize on the real async refresh, not a synchronous void.
       return onRefreshAfterImport?.();
     });
     ambiguousRefreshHandlesRef.current.push(handle);
@@ -578,13 +582,17 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
       }
 
       const summary = (await res.json()) as ImportSummary;
-      setApplyResult(summary);
 
-      // ST-75 F1: Classify terminal outcome on success path.
-      // Previously this path never called setImportOutcome, leaving the modal stuck
-      // at IMPORTING and blocking all close paths after every successful sales import.
+      // ST-75 P2-5: Classify outcome BEFORE storing the summary. If the summary
+      // is malformed (fails isValidImportSummary), classifyImportOutcome returns
+      // AMBIGUOUS_RESULT — we must NOT store the raw summary in applyResult
+      // because the UI's applyResult.failedBills.map would crash on a null
+      // or missing element. Only store the summary if it's valid.
       const outcome = classifyImportOutcome(res.status, summary, false);
       setImportOutcome(outcome);
+      if (outcome !== 'AMBIGUOUS_RESULT') {
+        setApplyResult(summary);
+      }
 
       const parts: string[] = [`นำเข้าสำเร็จ ${summary.importedCount} บิล`];
       if (summary.duplicateExistingCount > 0) parts.push(`ข้ามซ้ำ ${summary.duplicateExistingCount}`);
