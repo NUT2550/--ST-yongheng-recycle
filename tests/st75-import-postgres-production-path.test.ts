@@ -112,18 +112,19 @@ function makeTestSellBillDeps(
               include: { items: { include: { product: true } }, customer: true },
             }) as Promise<SellBillCreatedBill>,
           findSourceLots: async (productId) => {
-            // ST-75 P2-18: Barrier AFTER transaction source-lot reads.
-            // Both services must read the original lot inside their transactions
-            // before either can proceed to the CAS update. This ensures the
-            // loser's CAS expected values match the original lot state, so it
-            // fails with SOURCE_LOT_CONFLICT, not INSUFFICIENT_STOCK.
+            // ST-75 P2-19: Read the lots FIRST, then wait at the barrier.
+            // This ensures both transactions have captured the original lot
+            // state before either can proceed to the CAS update. If the
+            // barrier were before the read, one transaction could read,
+            // commit, and the other would read 0 remaining → INSUFFICIENT_STOCK.
+            const lots = await prismaTx.stockLot.findMany({
+              where: { productId, remainingWeight: { gt: 0 } },
+              orderBy: FIFO_ORDER_BY,
+            }) as any[];
             if (opts.stockCheckBarrierFn) {
               await opts.stockCheckBarrierFn();
             }
-            return prismaTx.stockLot.findMany({
-              where: { productId, remainingWeight: { gt: 0 } },
-              orderBy: FIFO_ORDER_BY,
-            }) as Promise<any[]>;
+            return lots;
           },
           // ST-75 F3: Exercise the PRODUCTION CAS implementation, not a test-local
           // reimplementation. This is the exact same executeStockLotBulkCas call that
