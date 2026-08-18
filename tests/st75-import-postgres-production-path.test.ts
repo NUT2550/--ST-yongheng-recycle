@@ -482,15 +482,11 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
       // before either can proceed to the transaction/CAS phase. This ensures
       // both read the original 100kg lot, so the loser fails with
       // SOURCE_LOT_CONFLICT (CAS race), not INSUFFICIENT_STOCK (pre-commit snapshot).
-      let arrivedCount = 0;
-      let resolveBarrier!: () => void;
-      const barrierPromise = new Promise<void>((resolve) => { resolveBarrier = resolve; });
-      const barrierGate: Promise<void> = new Promise((resolve) => {
-        // Poll every 1ms — when both services have arrived at the barrier,
-        // release them both.
+      const arrivalState = { count: 0, resolved: false };
+      const barrierGate = new Promise<void>((resolve) => {
         const check = () => {
-          if (arrivedCount >= 2) {
-            resolveBarrier();
+          if (arrivalState.count >= 2) {
+            arrivalState.resolved = true;
             resolve();
           } else {
             setTimeout(check, 1);
@@ -498,19 +494,20 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
         };
         setTimeout(check, 1);
       });
-      // The stockCheckBarrier each service awaits: increments arrivedCount,
-      // then waits for the gate to open.
-      const stockCheckBarrier = (async () => {
-        arrivedCount++;
-        await barrierGate;
-      })();
+      // Each service gets its OWN barrier wrapper that increments the counter.
+      const makeBarrier = (): Promise<void> => {
+        return new Promise((resolve) => {
+          arrivalState.count++;
+          barrierGate.then(() => resolve());
+        });
+      };
       const depsA = makeTestImportDeps(db, {
         sellBillNumberOverride: billNumberA,
-        stockCheckBarrier,
+        stockCheckBarrier: makeBarrier(),
       });
       const depsB = makeTestImportDeps(db, {
         sellBillNumberOverride: billNumberB,
-        stockCheckBarrier,
+        stockCheckBarrier: makeBarrier(),
       });
       const [r1, r2] = await Promise.allSettled([
         applyImport('sales', [bills[0]], depsA, ACTOR),
