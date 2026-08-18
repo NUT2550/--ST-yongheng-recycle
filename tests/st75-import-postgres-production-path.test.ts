@@ -88,12 +88,6 @@ function makeTestSellBillDeps(
 ): SellBillServiceDeps<SellBillCreatedBill> {
   return {
     checkStockAvailability: async (items: Array<{ productId: string; weight: number }>) => {
-      // ST-75 P2-13: Barrier function is CALLED when checkStockAvailability
-      // actually runs — not when deps are constructed. This ensures the
-      // arrival counter increments during execution, not during setup.
-      if (opts.stockCheckBarrierFn) {
-        await opts.stockCheckBarrierFn();
-      }
       for (const item of items) {
         const lots = await db.stockLot.findMany({
           where: { productId: item.productId, remainingWeight: { gt: 0 } },
@@ -103,6 +97,14 @@ function makeTestSellBillDeps(
         if (totalAvailable < item.weight) {
           return { ok: false as const, productId: item.productId, productName: 'Unknown', available: totalAvailable, requested: item.weight };
         }
+      }
+      // ST-75 P2-16: Barrier AFTER the stock read — both services must have
+      // read the original lot before either can proceed to the transaction.
+      // This ensures both pass the stock check with the original 100kg,
+      // so the loser fails with SOURCE_LOT_CONFLICT (CAS race), not
+      // INSUFFICIENT_STOCK (winner already deducted).
+      if (opts.stockCheckBarrierFn) {
+        await opts.stockCheckBarrierFn();
       }
       return { ok: true as const };
     },

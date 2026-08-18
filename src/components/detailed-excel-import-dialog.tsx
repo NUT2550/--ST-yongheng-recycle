@@ -130,7 +130,9 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   // Multiple callers arriving while the same active request is running coalesce
   // to the same queued refresh. Rejection of the active refresh does not
   // suppress the queued fresh refresh.
-  let queuedRefresh: Promise<void> | null = null;
+  // ST-75 P2-15: Use useRef so queuedRefresh persists across React renders.
+  // A plain local `let` would reset on every render, losing the queued state.
+  const queuedRefreshRef = useRef<Promise<void> | null>(null);
 
   const startTrackedRefresh = (): Promise<void> => {
     const promise = Promise.resolve(onRefreshAfterImport?.());
@@ -146,16 +148,16 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   const runTrackedRefresh = (): Promise<void> => {
     const existing = activeRefreshPromiseRef.current;
     if (existing) {
-      // ST-75 P2-14: Queue a FRESH refresh after the active one settles.
-      // If a queued refresh already exists, reuse it (bounded — one queue max).
-      if (queuedRefresh) return queuedRefresh;
-      queuedRefresh = existing
-        .catch(() => {}) // suppress rejection so chained refresh still runs
+      // ST-75 P2-14/P2-15: Queue a FRESH refresh after the active one settles.
+      // Use ref so queued state persists across React renders.
+      if (queuedRefreshRef.current) return queuedRefreshRef.current;
+      queuedRefreshRef.current = existing
+        .catch(() => {})
         .then(() => {
-          queuedRefresh = null;
+          queuedRefreshRef.current = null;
           return startTrackedRefresh();
         });
-      return queuedRefresh;
+      return queuedRefreshRef.current;
     }
     return startTrackedRefresh();
   };

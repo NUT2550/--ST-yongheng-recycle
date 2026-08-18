@@ -112,7 +112,7 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
 
   // ST-75 P2-10/P2-14: Shared wrapper with queued fresh refresh.
-  let queuedRefresh: Promise<void> | null = null;
+  const queuedRefreshRef = useRef<Promise<void> | null>(null);
 
   const startTrackedRefresh = (): Promise<void> => {
     const promise = Promise.resolve(onRefreshAfterImport?.());
@@ -128,14 +128,14 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   const runTrackedRefresh = (): Promise<void> => {
     const existing = activeRefreshPromiseRef.current;
     if (existing) {
-      if (queuedRefresh) return queuedRefresh;
-      queuedRefresh = existing
+      if (queuedRefreshRef.current) return queuedRefreshRef.current;
+      queuedRefreshRef.current = existing
         .catch(() => {})
         .then(() => {
-          queuedRefresh = null;
+          queuedRefreshRef.current = null;
           return startTrackedRefresh();
         });
-      return queuedRefresh;
+      return queuedRefreshRef.current;
     }
     return startTrackedRefresh();
   };
