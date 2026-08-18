@@ -22,6 +22,12 @@ export interface ImportSummaryLike {
   unmatchedCount: number;
   insufficientStockCount: number;
   failedCount: number;
+  // ST-75 P2-B2: Required result arrays. isValidImportSummary validates these
+  // are present as arrays — a 2xx body missing them would cause
+  // `applyResult.failedBills.length` to throw at render time.
+  importedBills: unknown[];
+  skippedDuplicateBills: unknown[];
+  failedBills: unknown[];
 }
 
 /**
@@ -32,6 +38,12 @@ export interface ImportSummaryLike {
  * to FAILED_CONFIRMED — wrongly claiming "nothing saved" even though the request
  * may have committed bills. This validator blocks that fall-through: callers
  * MUST treat an invalid 2xx summary as AMBIGUOUS_RESULT.
+ *
+ * ST-75 P2-B2: Also validates that the required result arrays
+ * (`importedBills`, `skippedDuplicateBills`, `failedBills`) are present as
+ * arrays. Without this, a 2xx body with valid counters but missing arrays
+ * would pass validation, then both dialogs would access
+ * `applyResult.failedBills.length` at render time → runtime exception.
  */
 export function isValidImportSummary(summary: unknown): summary is ImportSummaryLike {
   if (typeof summary !== 'object' || summary === null) return false;
@@ -52,6 +64,14 @@ export function isValidImportSummary(summary: unknown): summary is ImportSummary
     if (!Number.isFinite(v)) return false;
     if (!Number.isInteger(v)) return false;
     if (v < 0) return false;
+  }
+  // ST-75 P2-B2: Validate required result arrays. The full ImportSummary type
+  // includes `importedBills`, `skippedDuplicateBills`, and `failedBills` — all
+  // arrays. A 2xx body missing these would cause `applyResult.failedBills.length`
+  // to throw at render time. Treat as invalid → AMBIGUOUS_RESULT.
+  const requiredArrays = ['importedBills', 'skippedDuplicateBills', 'failedBills'];
+  for (const key of requiredArrays) {
+    if (!Array.isArray(s[key])) return false;
   }
   return true;
 }

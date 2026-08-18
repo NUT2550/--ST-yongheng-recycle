@@ -657,13 +657,13 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
     setLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     duplicateChecked.current = false;
-    // ST-75 P2-A: Cancel any pending delayed ambiguous-refresh timers so they
-    // don't fire after the dialog has closed and been reopened with a new file
-    // (which would cause a stale-closure refresh against the old state).
-    for (const handle of ambiguousRefreshHandlesRef.current) {
-      handle.cancel();
-    }
-    ambiguousRefreshHandlesRef.current = [];
+    // ST-75 P2-A2: Do NOT cancel pending delayed ambiguous-refresh timers here.
+    // The refresh callbacks (onRefreshAfterImport → loadData) are parent-level
+    // functions that do NOT depend on dialog state. Cancelling them on dialog
+    // close would defeat the purpose of delayed reconciliation — the backend may
+    // still be committing when the user dismisses the dialog, and the delayed
+    // retries are the only way to eventually show authoritative state. The
+    // unmount useEffect cleanup handles component destruction.
   };
 
   const handleSessionExpired = () => {

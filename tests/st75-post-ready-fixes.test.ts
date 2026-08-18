@@ -42,6 +42,10 @@ function makeSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSummaryL
     unmatchedCount: 0,
     insufficientStockCount: 0,
     failedCount: 0,
+    // ST-75 P2-B2: Include required result arrays.
+    importedBills: [],
+    skippedDuplicateBills: [],
+    failedBills: [],
     ...overrides,
   }
 }

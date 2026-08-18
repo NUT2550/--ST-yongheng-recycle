@@ -47,8 +47,13 @@ function makeValidSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSum
     unmatchedCount: 0,
     insufficientStockCount: 0,
     failedCount: 0,
+    // ST-75 P2-B2: Include required result arrays so the summary passes
+    // isValidImportSummary validation.
+    importedBills: [],
+    skippedDuplicateBills: [],
+    failedBills: [],
     ...overrides,
-  }
+  } as ImportSummaryLike
 }
 
 const SELL_DIALOG_PATH = join(process.cwd(), 'src/components/detailed-sell-excel-import-dialog.tsx')
@@ -552,24 +557,30 @@ describe('ST-75 P2-A: Dialog wiring — scheduleAmbiguousRefresh on ambiguous pa
     expect(src).toMatch(/useEffect\(\(\) => \{[\s\S]*?handle\.cancel\(\)/)
   })
 
-  test('46. Purchase resetDialogState cancels pending refreshes', () => {
+  test('46. Purchase resetDialogState does NOT cancel pending refreshes (P2-A2)', () => {
     const src = readBuyDialog()
     const resetIdx = src.indexOf('const resetDialogState = () => {')
     expect(resetIdx).toBeGreaterThan(-1)
     const resetEnd = src.indexOf('};', resetIdx)
     const resetBlock = src.slice(resetIdx, resetEnd)
-    expect(resetBlock).toContain('handle.cancel()')
-    expect(resetBlock).toContain('ambiguousRefreshHandlesRef.current = []')
+    // ST-75 P2-A2: resetDialogState must NOT cancel pending ambiguous-refresh
+    // timers. The refresh callbacks are parent-level and don't depend on dialog
+    // state. Cancelling on close would defeat delayed reconciliation.
+    expect(resetBlock).not.toContain('handle.cancel()')
+    expect(resetBlock).not.toContain('ambiguousRefreshHandlesRef.current = []')
+    // Verify the comment explaining the decision is present.
+    expect(resetBlock).toContain('P2-A2')
   })
 
-  test('47. Sales resetDialogState cancels pending refreshes', () => {
+  test('47. Sales resetDialogState does NOT cancel pending refreshes (P2-A2)', () => {
     const src = readSellDialog()
     const resetIdx = src.indexOf('const resetDialogState = () => {')
     expect(resetIdx).toBeGreaterThan(-1)
     const resetEnd = src.indexOf('};', resetIdx)
     const resetBlock = src.slice(resetIdx, resetEnd)
-    expect(resetBlock).toContain('handle.cancel()')
-    expect(resetBlock).toContain('ambiguousRefreshHandlesRef.current = []')
+    expect(resetBlock).not.toContain('handle.cancel()')
+    expect(resetBlock).not.toContain('ambiguousRefreshHandlesRef.current = []')
+    expect(resetBlock).toContain('P2-A2')
   })
 })
 
@@ -602,5 +613,192 @@ describe('ST-75 P2-A: No automatic POST /api/import/apply retry', () => {
     // The callback signature is () => void | Promise<void> — a refresh function,
     // not a mutation that takes arguments.
     expect(src).toContain('refresh: () => void | Promise<void>')
+  })
+})
+
+// ============ P2-B2: Validate result arrays before accepting summary ============
+
+describe('ST-75 P2-B2: Validate result arrays (importedBills, skippedDuplicateBills, failedBills)', () => {
+  test('50. valid summary with all 3 arrays present → true', () => {
+    const summary = makeValidSummary({
+      importedCount: 5,
+      importedBills: [],
+      skippedDuplicateBills: [],
+      failedBills: [],
+    })
+    expect(isValidImportSummary(summary)).toBe(true)
+  })
+
+  test('51. missing importedBills array → false (AMBIGUOUS_RESULT)', () => {
+    const malformed = {
+      importedCount: 5,
+      duplicateExistingCount: 0,
+      duplicateInFileCount: 0,
+      invalidCount: 0,
+      unmatchedCount: 0,
+      insufficientStockCount: 0,
+      failedCount: 0,
+      // importedBills missing
+      skippedDuplicateBills: [],
+      failedBills: [],
+    }
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('52. missing skippedDuplicateBills array → false', () => {
+    const malformed = {
+      importedCount: 5,
+      duplicateExistingCount: 0,
+      duplicateInFileCount: 0,
+      invalidCount: 0,
+      unmatchedCount: 0,
+      insufficientStockCount: 0,
+      failedCount: 0,
+      importedBills: [],
+      // skippedDuplicateBills missing
+      failedBills: [],
+    }
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('53. missing failedBills array → false (would cause applyResult.failedBills.length exception)', () => {
+    const malformed = {
+      importedCount: 5,
+      duplicateExistingCount: 0,
+      duplicateInFileCount: 0,
+      invalidCount: 0,
+      unmatchedCount: 0,
+      insufficientStockCount: 0,
+      failedCount: 0,
+      importedBills: [],
+      skippedDuplicateBills: [],
+      // failedBills missing — both dialogs access applyResult.failedBills.length
+    }
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('54. wrong-type failedBills (string instead of array) → false', () => {
+    const malformed = makeValidSummary({
+      failedBills: 'not-an-array' as unknown as [],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('55. wrong-type importedBills (null) → false', () => {
+    const malformed = makeValidSummary({
+      importedBills: null as unknown as [],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('56. 2xx with valid counters but missing arrays → AMBIGUOUS_RESULT', () => {
+    // This is the exact scenario Codex flagged: counters pass but failedBills
+    // is missing → previously accepted → applyResult.failedBills.length throws.
+    const malformed = {
+      importedCount: 5,
+      duplicateExistingCount: 0,
+      duplicateInFileCount: 0,
+      invalidCount: 0,
+      unmatchedCount: 0,
+      insufficientStockCount: 0,
+      failedCount: 0,
+      // arrays missing
+    }
+    const outcome = classifyImportOutcome(200, malformed as unknown as ImportSummaryLike, false)
+    expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+
+  test('57. 2xx with all valid fields (counters + arrays) → SUCCESS (unchanged)', () => {
+    const valid = makeValidSummary({ importedCount: 5 })
+    const outcome = classifyImportOutcome(200, valid, false)
+    expect(outcome).toBe('SUCCESS')
+  })
+})
+
+// ============ P2-A2: Ambiguous retries stay alive after dialog close ============
+
+describe('ST-75 P2-A2: Ambiguous retries stay alive after dialog close', () => {
+  test('58. scheduleAmbiguousRefresh timers continue firing after dialog closes', () => {
+    // Simulate: user dismisses AMBIGUOUS_RESULT dialog before 1.5s retry fires.
+    // The pending delayed refresh timers must NOT be cancelled by resetDialogState.
+    let refreshCallCount = 0
+    const pendingTimers: Array<{ fn: () => void; id: number }> = []
+    let nextId = 1
+    const fakeSetTimeout = (fn: () => void, _delay: number) => {
+      const entry = { fn, id: nextId++ }
+      pendingTimers.push(entry)
+      return entry.id
+    }
+    const fakeClearTimeout = (id: number) => {
+      const idx = pendingTimers.findIndex(t => t.id === id)
+      if (idx >= 0) pendingTimers.splice(idx, 1)
+    }
+
+    const refresh = () => { refreshCallCount++ }
+
+    const handle = scheduleAmbiguousRefresh(refresh, {
+      scheduleTimer: fakeSetTimeout,
+      clearTimer: fakeClearTimeout,
+    })
+
+    // Immediate refresh fired.
+    expect(refreshCallCount).toBe(1)
+    expect(pendingTimers.length).toBe(2)
+
+    // Simulate dialog close (resetDialogState). Per P2-A2, this must NOT cancel
+    // the pending timers. We verify by NOT calling handle.cancel() here — the
+    // dialog's resetDialogState no longer calls cancel.
+
+    // Fire the delayed retries — they should still work.
+    pendingTimers[0].fn()
+    expect(refreshCallCount).toBe(2)
+
+    pendingTimers[1].fn()
+    expect(refreshCallCount).toBe(3)
+
+    // All 3 refresh calls completed (1 immediate + 2 delayed) — delayed
+    // reconciliation succeeded even though the dialog was closed.
+    handle.cancel() // cleanup
+  })
+
+  test('59. unmount useEffect cleanup still cancels (component destruction)', () => {
+    // When the component is truly unmounted (not just dialog closed), the
+    // useEffect cleanup must cancel pending timers to prevent stale-closure
+    // leaks. This is different from resetDialogState (dialog close).
+    let refreshCallCount = 0
+    const pendingTimers: Array<{ fn: () => void; id: number }> = []
+    let nextId = 1
+    const fakeSetTimeout = (fn: () => void, _delay: number) => {
+      const entry = { fn, id: nextId++ }
+      pendingTimers.push(entry)
+      return entry.id
+    }
+    const fakeClearTimeout = (id: number) => {
+      const idx = pendingTimers.findIndex(t => t.id === id)
+      if (idx >= 0) pendingTimers.splice(idx, 1)
+    }
+
+    const refresh = () => { refreshCallCount++ }
+
+    const handle = scheduleAmbiguousRefresh(refresh, {
+      scheduleTimer: fakeSetTimeout,
+      clearTimer: fakeClearTimeout,
+    })
+
+    // Immediate refresh fired.
+    expect(refreshCallCount).toBe(1)
+    expect(pendingTimers.length).toBe(2)
+
+    // Simulate component unmount (useEffect cleanup) — must cancel pending timers.
+    handle.cancel()
+
+    // All pending timers cleared.
+    expect(pendingTimers.length).toBe(0)
+
+    // Fire remaining timers (should not exist) — refreshCallCount stays at 1.
+    for (const t of [...pendingTimers]) {
+      t.fn()
+    }
+    expect(refreshCallCount).toBe(1)
   })
 })
