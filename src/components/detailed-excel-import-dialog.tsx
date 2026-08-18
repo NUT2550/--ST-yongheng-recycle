@@ -115,25 +115,32 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
     };
   }, []);
 
+  // ST-75 P2-7/P2-8: Track the active refresh promise at dialog level so
+  // a new scheduler can await the prior refresh's completion before starting.
+  // This prevents overlapping refreshes across scheduler replacements.
+  const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
+
   // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
-  // outcomes (429/5xx after apply dispatch, network error, or malformed 2xx
-  // summary classified as AMBIGUOUS_RESULT). The backend MAY still be
-  // committing bills when the immediate refresh fires — the delayed retries
-  // give the commit time to land so the UI eventually shows authoritative
-  // state. This is a GET/read refresh only; it NEVER re-issues the POST
+  // outcomes. This is a GET/read refresh only; it NEVER re-issues the POST
   // /api/import/apply mutation.
-  // ST-75 P2-7: Cancel any prior scheduler handles before creating a new one
-  // so two independent schedulers can't call the same loadProducts concurrently
-  // (which would allow an older slow response to overwrite a newer snapshot).
+  // ST-75 P2-7: Cancel any prior scheduler handles before creating a new one.
+  // ST-75 P2-8: Also await the prior active refresh promise before starting
+  // a new one, so the old refresh's response cannot overwrite the newer one.
   const scheduleAmbiguousImportRefresh = () => {
     // Cancel prior pending schedulers to prevent cross-scheduler overlap.
     for (const handle of ambiguousRefreshHandlesRef.current) {
       handle.cancel();
     }
     ambiguousRefreshHandlesRef.current = [];
-    const handle = scheduleAmbiguousRefresh(() => {
-      // ST-75 P2-2: Return the parent refresh promise so the scheduler can
-      // serialize on the real async refresh, not a synchronous void.
+    const priorPromise = activeRefreshPromiseRef.current;
+    const handle = scheduleAmbiguousRefresh(async () => {
+      // ST-75 P2-8: If a prior refresh is still in flight, await it before
+      // starting a new one. This ensures the old response settles before
+      // the new fetch begins, preventing stale-state overwrite.
+      if (priorPromise) {
+        try { await priorPromise; } catch { /* swallow */ }
+      }
+      // ST-75 P2-2: Return the parent refresh promise.
       return onRefreshAfterImport?.();
     });
     ambiguousRefreshHandlesRef.current.push(handle);

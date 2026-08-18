@@ -108,21 +108,22 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
     };
   }, []);
 
+  // ST-75 P2-7/P2-8: Track the active refresh promise at dialog level.
+  const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
+
   // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
-  // outcomes (429/5xx after apply dispatch, network error, or malformed 2xx
-  // summary classified as AMBIGUOUS_RESULT). The backend MAY still be
-  // committing bills when the immediate refresh fires — the delayed retries
-  // give the commit time to land so the UI eventually shows authoritative
-  // state. This is a GET/read refresh only; it NEVER re-issues the POST
-  // /api/import/apply mutation.
-  // ST-75 P2-7: Cancel any prior scheduler handles before creating a new one
-  // so two independent schedulers can't call the same loadData concurrently.
+  // outcomes. GET/read refresh only; NEVER re-issues POST /api/import/apply.
+  // ST-75 P2-7: Cancel prior handles. ST-75 P2-8: Await prior active refresh.
   const scheduleAmbiguousImportRefresh = () => {
     for (const handle of ambiguousRefreshHandlesRef.current) {
       handle.cancel();
     }
     ambiguousRefreshHandlesRef.current = [];
-    const handle = scheduleAmbiguousRefresh(() => {
+    const priorPromise = activeRefreshPromiseRef.current;
+    const handle = scheduleAmbiguousRefresh(async () => {
+      if (priorPromise) {
+        try { await priorPromise; } catch { /* swallow */ }
+      }
       return onRefreshAfterImport?.();
     });
     ambiguousRefreshHandlesRef.current.push(handle);

@@ -1308,3 +1308,63 @@ describe('ST-75 P2-7: Cross-scheduler coordination', () => {
     expect(src).toMatch(/ambiguousRefreshHandlesRef\.current = \[\]/)
   })
 })
+
+// ============ P2-8: Await prior active refresh across scheduler replacements ============
+
+describe('ST-75 P2-8: Await prior active refresh', () => {
+  test('96. Purchase dialog awaits priorPromise before new refresh', () => {
+    const src = readBuyDialog()
+    expect(src).toMatch(/priorPromise/)
+    expect(src).toMatch(/await priorPromise/)
+  })
+
+  test('97. Sales dialog awaits priorPromise before new refresh', () => {
+    const src = readSellDialog()
+    expect(src).toMatch(/priorPromise/)
+    expect(src).toMatch(/await priorPromise/)
+  })
+})
+
+// ============ P2-9: Match every result status to its own counter ============
+
+describe('ST-75 P2-9: Per-status counter matching', () => {
+  test('98. duplicateExistingCount: 1 with DUPLICATE_IN_FILE element → false', () => {
+    const inconsistent = makeValidSummary({
+      duplicateExistingCount: 1,
+      skippedDuplicateBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'DUPLICATE_IN_FILE' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('99. invalidCount: 1 with FAILED element → false', () => {
+    const inconsistent = makeValidSummary({
+      invalidCount: 1,
+      failedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'FAILED' }],
+    })
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+  })
+
+  test('100. importedCount: 1 with READY element → true (correct match)', () => {
+    const consistent = makeValidSummary({
+      importedCount: 1,
+      importedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'READY' }],
+    })
+    expect(isValidImportSummary(consistent)).toBe(true)
+  })
+
+  test('101. insufficientStockCount: 1 with INSUFFICIENT_STOCK element → true', () => {
+    const consistent = makeValidSummary({
+      insufficientStockCount: 1,
+    })
+    expect(isValidImportSummary(consistent)).toBe(true)
+  })
+
+  test('102. 2xx with cross-status swap → AMBIGUOUS_RESULT', () => {
+    const malformed = makeValidSummary({
+      duplicateExistingCount: 1,
+      skippedDuplicateBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'DUPLICATE_IN_FILE' }],
+    })
+    const outcome = classifyImportOutcome(200, malformed, false)
+    expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+})
