@@ -468,22 +468,22 @@ describe('ST-75 P2-B: Real server-backed refresh callback', () => {
     expect(src).toMatch(/onRefreshAfterImport\?: \(\) => void \| Promise<void>/)
   })
 
-  test('29. Purchase success path calls onRefreshAfterImport (not onImport([]))', () => {
+  test('29. Purchase success path calls runTrackedRefresh (not onImport([]))', () => {
     const src = readBuyDialog()
-    // The success-path refresh block must call onRefreshAfterImport, not onImport([]).
+    // ST-75 P2-11: success path now uses runTrackedRefresh instead of direct onRefreshAfterImport
     const refreshBlockMatch = src.match(/if \(shouldRefreshHistory\(outcome\)\) \{([\s\S]*?)\n      \}/)
     expect(refreshBlockMatch).not.toBeNull()
     const block = refreshBlockMatch![1]
-    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).toContain('runTrackedRefresh()')
     expect(block).not.toContain('onImport?.([])')
   })
 
-  test('30. Sales success path calls onRefreshAfterImport (not onImport([]))', () => {
+  test('30. Sales success path calls runTrackedRefresh (not onImport([]))', () => {
     const src = readSellDialog()
     const refreshBlockMatch = src.match(/if \(shouldRefreshHistory\(outcome\)\) \{([\s\S]*?)\n      \}/)
     expect(refreshBlockMatch).not.toBeNull()
     const block = refreshBlockMatch![1]
-    expect(block).toContain('onRefreshAfterImport?.()')
+    expect(block).toContain('runTrackedRefresh()')
     expect(block).not.toContain('onImport?.([])')
   })
 

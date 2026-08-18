@@ -560,15 +560,15 @@ describe('ST-75 P2-A: Dialog wiring — scheduleAmbiguousRefresh on ambiguous pa
 
   test('42. Purchase success path: AMBIGUOUS_RESULT uses scheduleAmbiguousImportRefresh', () => {
     const src = readBuyDialog()
-    // The success-path refresh block must branch on outcome === 'AMBIGUOUS_RESULT'.
     expect(src).toMatch(/if \(outcome === 'AMBIGUOUS_RESULT'\)[\s\S]*?scheduleAmbiguousImportRefresh\(\)/)
-    expect(src).toMatch(/else[\s\S]*?onRefreshAfterImport\?\.\(\)/)
+    // ST-75 P2-11: else branch now uses runTrackedRefresh, not direct onRefreshAfterImport
+    expect(src).toMatch(/else[\s\S]*?runTrackedRefresh\(\)/)
   })
 
   test('43. Sales success path: AMBIGUOUS_RESULT uses scheduleAmbiguousImportRefresh', () => {
     const src = readSellDialog()
     expect(src).toMatch(/if \(outcome === 'AMBIGUOUS_RESULT'\)[\s\S]*?scheduleAmbiguousImportRefresh\(\)/)
-    expect(src).toMatch(/else[\s\S]*?onRefreshAfterImport\?\.\(\)/)
+    expect(src).toMatch(/else[\s\S]*?runTrackedRefresh\(\)/)
   })
 
   test('44. Purchase dialog cancels pending refreshes on unmount', () => {

@@ -641,7 +641,9 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
         if (outcome === 'AMBIGUOUS_RESULT') {
           scheduleAmbiguousImportRefresh();
         } else {
-          onRefreshAfterImport?.();
+          // ST-75 P2-11: Use runTrackedRefresh for confirmed refreshes too,
+          // so they serialize behind any active ambiguous reconciliation.
+          runTrackedRefresh();
         }
         onApplied?.(summary);
       }

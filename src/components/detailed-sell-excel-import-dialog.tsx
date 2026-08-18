@@ -637,7 +637,8 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         if (outcome === 'AMBIGUOUS_RESULT') {
           scheduleAmbiguousImportRefresh();
         } else {
-          onRefreshAfterImport?.();
+          // ST-75 P2-11: Use runTrackedRefresh for confirmed refreshes too.
+          runTrackedRefresh();
         }
         onApplied?.(summary);
       }
