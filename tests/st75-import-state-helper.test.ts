@@ -101,8 +101,10 @@ describe('ST-75: classifyImportOutcome', () => {
     expect(classifyImportOutcome(200, makeSummary({ failedCount: 5 }), false)).toBe('FAILED_CONFIRMED')
   })
 
-  test('5. HTTP 200, all duplicates → FAILED_CONFIRMED', () => {
-    expect(classifyImportOutcome(200, makeSummary({ duplicateExistingCount: 5 }), false)).toBe('FAILED_CONFIRMED')
+  test('5. HTTP 200, all duplicates → PARTIAL_SUCCESS (P2-21: concurrent race committed stock)', () => {
+    // ST-75 P2-21: duplicateExistingCount > 0 means a concurrent import
+    // committed bills and deducted stock. The UI must refresh.
+    expect(classifyImportOutcome(200, makeSummary({ duplicateExistingCount: 5 }), false)).toBe('PARTIAL_SUCCESS')
   })
 
   test('6. HTTP 200, no summary → AMBIGUOUS_RESULT', () => {

@@ -217,6 +217,15 @@ export function classifyImportOutcome(
     if (summary.importedCount > 0 && totalNonSuccess > 0) {
       return 'PARTIAL_SUCCESS';
     }
+    // ST-75 P2-21: importedCount === 0 but duplicateExistingCount > 0 means
+    // a concurrent import committed the bill and this batch's post-failure
+    // reconciliation found it. Stock WAS deducted by the concurrent winner,
+    // so the UI MUST refresh even though this batch imported nothing.
+    // Classify as PARTIAL_SUCCESS (not FAILED_CONFIRMED) so shouldRefreshHistory
+    // returns true and the authoritative refresh runs.
+    if (summary.importedCount === 0 && summary.duplicateExistingCount > 0) {
+      return 'PARTIAL_SUCCESS';
+    }
     // importedCount === 0 — all bills failed/skipped
     return 'FAILED_CONFIRMED';
   }

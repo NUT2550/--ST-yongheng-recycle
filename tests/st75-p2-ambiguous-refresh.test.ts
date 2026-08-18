@@ -248,9 +248,10 @@ describe('ST-75 P2-B: valid summary classification unchanged', () => {
     expect(outcome).toBe('FAILED_CONFIRMED')
   })
 
-  test('21. valid 2xx all duplicates → FAILED_CONFIRMED', () => {
+  test('21. valid 2xx all duplicates → PARTIAL_SUCCESS (P2-21: concurrent race committed stock)', () => {
+    // ST-75 P2-21: duplicateExistingCount > 0 means concurrent race committed stock.
     const outcome = classifyImportOutcome(200, makeValidSummary({ duplicateExistingCount: 5 }), false)
-    expect(outcome).toBe('FAILED_CONFIRMED')
+    expect(outcome).toBe('PARTIAL_SUCCESS')
   })
 
   test('22. 429 → AMBIGUOUS_RESULT (unchanged)', () => {
@@ -1201,8 +1202,9 @@ describe('ST-75 P2-4: Grouped counter validation (production buildImportSummary 
     })
     // Helper auto-populates: skippedDuplicateBills[3] (2 DUPLICATE_EXISTING + 1 DUPLICATE_IN_FILE)
     expect(isValidImportSummary(summary)).toBe(true)
+    // ST-75 P2-21: duplicateExistingCount > 0 → PARTIAL_SUCCESS (concurrent race committed stock)
     const outcome = classifyImportOutcome(200, summary, false)
-    expect(outcome).toBe('FAILED_CONFIRMED')
+    expect(outcome).toBe('PARTIAL_SUCCESS')
   })
 
   test('84. inconsistent grouped counts → AMBIGUOUS_RESULT', () => {
@@ -1433,5 +1435,42 @@ describe('ST-75 P2-10: Populate activeRefreshPromiseRef', () => {
   test('110. Sales dialog: no priorPromise pattern remains', () => {
     const src = readSellDialog()
     expect(src).not.toMatch(/const priorPromise = activeRefreshPromiseRef\.current/)
+  })
+})
+
+// ============ P2-21: Refresh after post-failure duplicate reconciliation ============
+
+describe('ST-75 P2-21: Refresh when importedCount=0 but duplicateExistingCount>0', () => {
+  test('103. 2xx with importedCount=0, duplicateExistingCount=1 → PARTIAL_SUCCESS (not FAILED_CONFIRMED)', () => {
+    // P2-21: When a concurrent import committed the bill, the losing batch's
+    // post-failure reconciliation finds it as DUPLICATE_EXISTING. Stock was
+    // deducted by the winner, so the UI MUST refresh. Classify as
+    // PARTIAL_SUCCESS so shouldRefreshHistory returns true.
+    const summary = makeValidSummary({
+      importedCount: 0,
+      duplicateExistingCount: 1,
+      skippedDuplicateBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'DUPLICATE_EXISTING' }],
+    })
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('PARTIAL_SUCCESS')
+  })
+
+  test('104. PARTIAL_SUCCESS triggers shouldRefreshHistory=true', () => {
+    expect(shouldRefreshHistory('PARTIAL_SUCCESS')).toBe(true)
+  })
+
+  test('105. 2xx with importedCount=0, duplicateExistingCount=0, failedCount=0 → FAILED_CONFIRMED (no race)', () => {
+    const summary = makeValidSummary()
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('FAILED_CONFIRMED')
+  })
+
+  test('106. 2xx with importedCount=0, duplicateInFileCount=1 → FAILED_CONFIRMED (in-file dup, no concurrent race)', () => {
+    const summary = makeValidSummary({
+      duplicateInFileCount: 1,
+      skippedDuplicateBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'DUPLICATE_IN_FILE' }],
+    })
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('FAILED_CONFIRMED')
   })
 })
