@@ -1080,15 +1080,18 @@ describe('ST-75 P2-1: Chain queued retries to active refresh', () => {
 // ============ P2-2: Return parent refresh promise ============
 
 describe('ST-75 P2-2: Return parent refresh promise to scheduler', () => {
-  test('71. Purchase dialog scheduleAmbiguousImportRefresh returns parent promise', () => {
+  test('71. Purchase dialog scheduleAmbiguousImportRefresh returns parent promise via runTrackedRefresh', () => {
     const src = readBuyDialog()
-    // The wrapper must return the parent callback result, not void.
-    expect(src).toMatch(/return onRefreshAfterImport\?\.\(\)/)
+    // ST-75 P2-10: The scheduler now calls runTrackedRefresh() which wraps
+    // onRefreshAfterImport and returns its promise.
+    expect(src).toMatch(/return runTrackedRefresh\(\)/)
+    expect(src).toMatch(/Promise\.resolve\(onRefreshAfterImport\?\.\(\)\)/)
   })
 
-  test('72. Sales dialog scheduleAmbiguousImportRefresh returns parent promise', () => {
+  test('72. Sales dialog scheduleAmbiguousImportRefresh returns parent promise via runTrackedRefresh', () => {
     const src = readSellDialog()
-    expect(src).toMatch(/return onRefreshAfterImport\?\.\(\)/)
+    expect(src).toMatch(/return runTrackedRefresh\(\)/)
+    expect(src).toMatch(/Promise\.resolve\(onRefreshAfterImport\?\.\(\)\)/)
   })
 })
 
@@ -1312,16 +1315,18 @@ describe('ST-75 P2-7: Cross-scheduler coordination', () => {
 // ============ P2-8: Await prior active refresh across scheduler replacements ============
 
 describe('ST-75 P2-8: Await prior active refresh', () => {
-  test('96. Purchase dialog awaits priorPromise before new refresh', () => {
+  test('96. Purchase dialog uses runTrackedRefresh for cross-scheduler coordination', () => {
     const src = readBuyDialog()
-    expect(src).toMatch(/priorPromise/)
-    expect(src).toMatch(/await priorPromise/)
+    // ST-75 P2-10: The old priorPromise pattern is replaced by runTrackedRefresh
+    // which reuses the existing in-flight promise.
+    expect(src).toContain('runTrackedRefresh')
+    expect(src).toContain('if (existing) return existing')
   })
 
-  test('97. Sales dialog awaits priorPromise before new refresh', () => {
+  test('97. Sales dialog uses runTrackedRefresh for cross-scheduler coordination', () => {
     const src = readSellDialog()
-    expect(src).toMatch(/priorPromise/)
-    expect(src).toMatch(/await priorPromise/)
+    expect(src).toContain('runTrackedRefresh')
+    expect(src).toContain('if (existing) return existing')
   })
 })
 
@@ -1366,5 +1371,62 @@ describe('ST-75 P2-9: Per-status counter matching', () => {
     })
     const outcome = classifyImportOutcome(200, malformed, false)
     expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+})
+
+// ============ P2-10: Populate cross-scheduler refresh promise ============
+
+describe('ST-75 P2-10: Populate activeRefreshPromiseRef', () => {
+  test('103. Purchase dialog declares runTrackedRefresh that assigns activeRefreshPromiseRef', () => {
+    const src = readBuyDialog()
+    expect(src).toContain('runTrackedRefresh')
+    expect(src).toContain('activeRefreshPromiseRef.current = promise')
+    expect(src).toContain('activeRefreshPromiseRef.current === promise')
+    expect(src).toContain('runTrackedRefresh()')
+  })
+
+  test('104. Sales dialog declares runTrackedRefresh that assigns activeRefreshPromiseRef', () => {
+    const src = readSellDialog()
+    expect(src).toContain('runTrackedRefresh')
+    expect(src).toContain('activeRefreshPromiseRef.current = promise')
+    expect(src).toContain('activeRefreshPromiseRef.current === promise')
+    expect(src).toContain('runTrackedRefresh()')
+  })
+
+  test('105. Purchase dialog: activeRefreshPromiseRef.current is assigned (not just read)', () => {
+    const src = readBuyDialog()
+    // Must contain assignment (=), not just read
+    expect(src).toMatch(/activeRefreshPromiseRef\.current = promise/)
+    expect(src).toMatch(/activeRefreshPromiseRef\.current = null/)
+  })
+
+  test('106. Sales dialog: activeRefreshPromiseRef.current is assigned (not just read)', () => {
+    const src = readSellDialog()
+    expect(src).toMatch(/activeRefreshPromiseRef\.current = promise/)
+    expect(src).toMatch(/activeRefreshPromiseRef\.current = null/)
+  })
+
+  test('107. runTrackedRefresh reuses existing in-flight promise', () => {
+    const src = readBuyDialog()
+    // Must check existing first and return it if present
+    expect(src).toMatch(/const existing = activeRefreshPromiseRef\.current/)
+    expect(src).toMatch(/if \(existing\) return existing/)
+  })
+
+  test('108. Identity check prevents older finally from clearing newer promise', () => {
+    const src = readBuyDialog()
+    expect(src).toMatch(/if \(activeRefreshPromiseRef\.current === promise\)/)
+  })
+
+  test('109. No priorPromise pattern remains (old P2-8 code replaced)', () => {
+    const src = readBuyDialog()
+    // The old pattern read priorPromise but never assigned — it's now replaced
+    // by runTrackedRefresh. Verify the old pattern is gone.
+    expect(src).not.toMatch(/const priorPromise = activeRefreshPromiseRef\.current/)
+  })
+
+  test('110. Sales dialog: no priorPromise pattern remains', () => {
+    const src = readSellDialog()
+    expect(src).not.toMatch(/const priorPromise = activeRefreshPromiseRef\.current/)
   })
 })

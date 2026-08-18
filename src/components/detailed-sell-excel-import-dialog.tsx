@@ -108,23 +108,37 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
     };
   }, []);
 
-  // ST-75 P2-7/P2-8: Track the active refresh promise at dialog level.
+  // ST-75 P2-7/P2-8/P2-10: Track the active refresh promise at dialog level.
   const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
+
+  // ST-75 P2-10: Shared wrapper that tracks the REAL parent refresh promise.
+  const runTrackedRefresh = (): Promise<void> => {
+    const existing = activeRefreshPromiseRef.current;
+    if (existing) return existing;
+
+    const promise = Promise.resolve(onRefreshAfterImport?.());
+    activeRefreshPromiseRef.current = promise;
+
+    promise.finally(() => {
+      if (activeRefreshPromiseRef.current === promise) {
+        activeRefreshPromiseRef.current = null;
+      }
+    });
+
+    return promise;
+  };
 
   // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
   // outcomes. GET/read refresh only; NEVER re-issues POST /api/import/apply.
-  // ST-75 P2-7: Cancel prior handles. ST-75 P2-8: Await prior active refresh.
+  // ST-75 P2-7: Cancel prior handles.
+  // ST-75 P2-8/P2-10: Uses runTrackedRefresh for cross-scheduler coordination.
   const scheduleAmbiguousImportRefresh = () => {
     for (const handle of ambiguousRefreshHandlesRef.current) {
       handle.cancel();
     }
     ambiguousRefreshHandlesRef.current = [];
-    const priorPromise = activeRefreshPromiseRef.current;
-    const handle = scheduleAmbiguousRefresh(async () => {
-      if (priorPromise) {
-        try { await priorPromise; } catch { /* swallow */ }
-      }
-      return onRefreshAfterImport?.();
+    const handle = scheduleAmbiguousRefresh(() => {
+      return runTrackedRefresh();
     });
     ambiguousRefreshHandlesRef.current.push(handle);
   };

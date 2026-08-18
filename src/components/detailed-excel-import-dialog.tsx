@@ -115,33 +115,52 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
     };
   }, []);
 
-  // ST-75 P2-7/P2-8: Track the active refresh promise at dialog level so
-  // a new scheduler can await the prior refresh's completion before starting.
-  // This prevents overlapping refreshes across scheduler replacements.
+  // ST-75 P2-7/P2-8/P2-10: Track the active refresh promise at dialog level.
+  // The ref is POPULATED by runTrackedRefresh and CLEARED when that exact
+  // promise settles (identity check prevents older finally from clearing
+  // a newer promise). This ensures scheduler replacements await the real
+  // parent refresh, not a stale null.
   const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
+
+  // ST-75 P2-10: Shared wrapper that tracks the REAL parent refresh promise.
+  // If a refresh is already in flight, reuse it (no overlapping fetches).
+  // When it settles, clear the ref only if it still points to this promise.
+  const runTrackedRefresh = (): Promise<void> => {
+    const existing = activeRefreshPromiseRef.current;
+    if (existing) return existing; // reuse in-flight refresh
+
+    // Start the real parent refresh and track its promise.
+    const promise = Promise.resolve(onRefreshAfterImport?.());
+    activeRefreshPromiseRef.current = promise;
+
+    // Clear the ref when this promise settles — but only if it hasn't been
+    // replaced by a newer one (identity check).
+    promise.finally(() => {
+      if (activeRefreshPromiseRef.current === promise) {
+        activeRefreshPromiseRef.current = null;
+      }
+    });
+
+    return promise;
+  };
 
   // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
   // outcomes. This is a GET/read refresh only; it NEVER re-issues the POST
   // /api/import/apply mutation.
-  // ST-75 P2-7: Cancel any prior scheduler handles before creating a new one.
-  // ST-75 P2-8: Also await the prior active refresh promise before starting
-  // a new one, so the old refresh's response cannot overwrite the newer one.
+  // ST-75 P2-7: Cancel prior scheduler handles before creating a new one.
+  // ST-75 P2-8/P2-10: The scheduler uses runTrackedRefresh which awaits/
+  // reuses the active promise across scheduler replacements.
   const scheduleAmbiguousImportRefresh = () => {
     // Cancel prior pending schedulers to prevent cross-scheduler overlap.
     for (const handle of ambiguousRefreshHandlesRef.current) {
       handle.cancel();
     }
     ambiguousRefreshHandlesRef.current = [];
-    const priorPromise = activeRefreshPromiseRef.current;
-    const handle = scheduleAmbiguousRefresh(async () => {
-      // ST-75 P2-8: If a prior refresh is still in flight, await it before
-      // starting a new one. This ensures the old response settles before
-      // the new fetch begins, preventing stale-state overwrite.
-      if (priorPromise) {
-        try { await priorPromise; } catch { /* swallow */ }
-      }
-      // ST-75 P2-2: Return the parent refresh promise.
-      return onRefreshAfterImport?.();
+    const handle = scheduleAmbiguousRefresh(() => {
+      // ST-75 P2-10: Use the shared tracked refresh wrapper — this ensures
+      // the real parent promise is tracked in activeRefreshPromiseRef and
+      // awaited across scheduler replacements.
+      return runTrackedRefresh();
     });
     ambiguousRefreshHandlesRef.current.push(handle);
   };
