@@ -77,31 +77,34 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
   // (SUCCESS / PARTIAL_SUCCESS / AMBIGUOUS_RESULT) so the UI reflects any committed
   // bills and updated stock. Replaces the legacy onImport([]) call which did not
   // actually reload server state.
+  // ST-75 P2-17: Apply each state as its own request settles, rather than
+  // waiting for BOTH via Promise.allSettled. A slow customer request should not
+  // delay the product refresh (which has the authoritative post-import stock).
   async function loadData() {
-    const [prodResult, custResult] = await Promise.allSettled([
-      fetchProducts(),
-      fetchCustomers(),
-    ]);
-
     let hadError = false;
 
-    // Stock is authoritative after an import. Apply it independently so an
-    // unrelated customer-list failure cannot leave the sales UI stale.
-    if (prodResult.status === 'fulfilled') {
-      const prodRes = prodResult.value;
-      const prodData = prodRes as unknown as { products: Product[] };
-      setProducts(prodData.products || (prodRes as unknown as Product[]));
-    } else {
-      hadError = true;
-    }
+    // Fire both requests immediately (parallel), but apply each result
+    // independently as soon as it settles.
+    const prodPromise = fetchProducts()
+      .then((prodRes) => {
+        const prodData = prodRes as unknown as { products: Product[] };
+        setProducts(prodData.products || (prodRes as unknown as Product[]));
+      })
+      .catch(() => {
+        hadError = true;
+      });
 
-    if (custResult.status === 'fulfilled') {
-      const custRes = custResult.value;
-      const custData = custRes as unknown as { customers: Customer[] };
-      setCustomers(custData.customers || (custRes as unknown as Customer[]));
-    } else {
-      hadError = true;
-    }
+    const custPromise = fetchCustomers()
+      .then((custRes) => {
+        const custData = custRes as unknown as { customers: Customer[] };
+        setCustomers(custData.customers || (custRes as unknown as Customer[]));
+      })
+      .catch(() => {
+        hadError = true;
+      });
+
+    // Wait for both to settle so loading state clears after both complete.
+    await Promise.allSettled([prodPromise, custPromise]);
 
     if (hadError) {
       toast.error('ไม่สามารถโหลดข้อมูลบางส่วนได้');

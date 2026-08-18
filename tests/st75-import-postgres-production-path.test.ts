@@ -98,14 +98,6 @@ function makeTestSellBillDeps(
           return { ok: false as const, productId: item.productId, productName: 'Unknown', available: totalAvailable, requested: item.weight };
         }
       }
-      // ST-75 P2-16: Barrier AFTER the stock read — both services must have
-      // read the original lot before either can proceed to the transaction.
-      // This ensures both pass the stock check with the original 100kg,
-      // so the loser fails with SOURCE_LOT_CONFLICT (CAS race), not
-      // INSUFFICIENT_STOCK (winner already deducted).
-      if (opts.stockCheckBarrierFn) {
-        await opts.stockCheckBarrierFn();
-      }
       return { ok: true as const };
     },
     generateBillNumber: opts.sellBillNumberOverride
@@ -119,11 +111,20 @@ function makeTestSellBillDeps(
               ...args,
               include: { items: { include: { product: true } }, customer: true },
             }) as Promise<SellBillCreatedBill>,
-          findSourceLots: (productId) =>
-            prismaTx.stockLot.findMany({
+          findSourceLots: async (productId) => {
+            // ST-75 P2-18: Barrier AFTER transaction source-lot reads.
+            // Both services must read the original lot inside their transactions
+            // before either can proceed to the CAS update. This ensures the
+            // loser's CAS expected values match the original lot state, so it
+            // fails with SOURCE_LOT_CONFLICT, not INSUFFICIENT_STOCK.
+            if (opts.stockCheckBarrierFn) {
+              await opts.stockCheckBarrierFn();
+            }
+            return prismaTx.stockLot.findMany({
               where: { productId, remainingWeight: { gt: 0 } },
               orderBy: FIFO_ORDER_BY,
-            }) as Promise<any[]>,
+            }) as Promise<any[]>;
+          },
           // ST-75 F3: Exercise the PRODUCTION CAS implementation, not a test-local
           // reimplementation. This is the exact same executeStockLotBulkCas call that
           // bill-service-prisma-adapters.ts makeSellBillServiceDeps uses at runtime —
