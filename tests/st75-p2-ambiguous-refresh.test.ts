@@ -52,16 +52,58 @@ function makeValidSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSum
     failedBills: [] as unknown[],
     ...overrides,
   }
-  // ST-75 P2-B3: Auto-populate arrays to match counters for consistency.
-  // Guard against non-finite values (NaN, Infinity) that would break Array.from.
+  // ST-75 P2-3: Auto-populate arrays with valid BillImportResult elements.
   if (!overrides.importedBills && Number.isFinite(base.importedCount) && base.importedCount > 0) {
-    base.importedBills = Array.from({ length: base.importedCount }, (_, i) => ({ id: `imp-${i}` }))
+    base.importedBills = Array.from({ length: base.importedCount }, (_, i) => ({
+      externalBillNumber: `imp-${i}`,
+      normalizedBillNumber: `imp-${i}`,
+      status: 'READY',
+    }))
   }
   if (!overrides.failedBills && Number.isFinite(base.failedCount) && base.failedCount > 0) {
-    base.failedBills = Array.from({ length: base.failedCount }, (_, i) => ({ id: `fail-${i}` }))
+    base.failedBills = Array.from({ length: base.failedCount }, (_, i) => ({
+      externalBillNumber: `fail-${i}`,
+      normalizedBillNumber: `fail-${i}`,
+      status: 'FAILED',
+    }))
   }
   if (!overrides.skippedDuplicateBills && Number.isFinite(base.duplicateExistingCount) && base.duplicateExistingCount > 0) {
-    base.skippedDuplicateBills = Array.from({ length: base.duplicateExistingCount }, (_, i) => ({ id: `dup-${i}` }))
+    base.skippedDuplicateBills = Array.from({ length: base.duplicateExistingCount }, (_, i) => ({
+      externalBillNumber: `dup-${i}`,
+      normalizedBillNumber: `dup-${i}`,
+      status: 'DUPLICATE_EXISTING',
+    }))
+  }
+  // ST-75 P2-4: Also auto-populate skippedDuplicateBills for duplicateInFileCount.
+  if (!overrides.skippedDuplicateBills && Number.isFinite(base.duplicateInFileCount) && base.duplicateInFileCount > 0) {
+    const inFileDups = Array.from({ length: base.duplicateInFileCount }, (_, i) => ({
+      externalBillNumber: `inf-${i}`,
+      normalizedBillNumber: `inf-${i}`,
+      status: 'DUPLICATE_IN_FILE',
+    }))
+    base.skippedDuplicateBills = [...base.skippedDuplicateBills, ...inFileDups]
+  }
+  // ST-75 P2-4: Populate failedBills for invalid/unmatched/insufficientStock counts.
+  if (!overrides.failedBills) {
+    const extraFailures: unknown[] = []
+    if (Number.isFinite(base.invalidCount) && base.invalidCount > 0) {
+      for (let i = 0; i < base.invalidCount; i++) {
+        extraFailures.push({ externalBillNumber: `inv-${i}`, normalizedBillNumber: `inv-${i}`, status: 'INVALID' })
+      }
+    }
+    if (Number.isFinite(base.unmatchedCount) && base.unmatchedCount > 0) {
+      for (let i = 0; i < base.unmatchedCount; i++) {
+        extraFailures.push({ externalBillNumber: `unm-${i}`, normalizedBillNumber: `unm-${i}`, status: 'UNMATCHED_PRODUCT' })
+      }
+    }
+    if (Number.isFinite(base.insufficientStockCount) && base.insufficientStockCount > 0) {
+      for (let i = 0; i < base.insufficientStockCount; i++) {
+        extraFailures.push({ externalBillNumber: `ins-${i}`, normalizedBillNumber: `ins-${i}`, status: 'INSUFFICIENT_STOCK' })
+      }
+    }
+    if (extraFailures.length > 0) {
+      base.failedBills = [...base.failedBills, ...extraFailures]
+    }
   }
   return base as ImportSummaryLike
 }
@@ -604,7 +646,11 @@ describe('ST-75 P2-B2: Validate result arrays (importedBills, skippedDuplicateBi
   test('50. valid summary with all 3 arrays present → true', () => {
     const summary = makeValidSummary({
       importedCount: 5,
-      importedBills: [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }],
+      importedBills: Array.from({ length: 5 }, (_, i) => ({
+        externalBillNumber: `imp-${i}`,
+        normalizedBillNumber: `imp-${i}`,
+        status: 'READY',
+      })),
       skippedDuplicateBills: [],
       failedBills: [],
     })
@@ -897,9 +943,13 @@ describe('ST-75 P2-B3: Reject inconsistent counter/array combinations', () => {
   test('67. consistent summary (importedCount matches importedBills.length) → true', () => {
     const consistent = makeValidSummary({
       importedCount: 3,
-      importedBills: [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      importedBills: Array.from({ length: 3 }, (_, i) => ({
+        externalBillNumber: `imp-${i}`,
+        normalizedBillNumber: `imp-${i}`,
+        status: 'READY',
+      })),
       failedCount: 1,
-      failedBills: [{ id: 'f1' }],
+      failedBills: [{ externalBillNumber: 'f0', normalizedBillNumber: 'f0', status: 'FAILED' }],
     })
     expect(isValidImportSummary(consistent)).toBe(true)
   })
@@ -911,5 +961,264 @@ describe('ST-75 P2-B3: Reject inconsistent counter/array combinations', () => {
     })
     const outcome = classifyImportOutcome(200, inconsistent, false)
     expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+})
+
+// ============ P2-1: Chain queued retries to active refresh ============
+
+describe('ST-75 P2-1: Chain queued retries to active refresh', () => {
+  test('69. immediate refresh lasting beyond ALL retry delays: at least one queued refresh executes', async () => {
+    // P2-1: When the immediate refresh takes longer than all configured retry
+    // delays, both retries fire while the immediate is still active. The
+    // prior implementation discarded both retries (runRefresh returned false).
+    // The fix chains queued retries to the active promise — at least one
+    // queued refresh must execute after the immediate settles.
+    let refreshCallCount = 0
+    let immediateResolve: (() => void) | null = null
+    const refreshTimestamps: number[] = []
+
+    const pendingTimers: Array<{ fn: () => void; id: number }> = []
+    let nextId = 1
+    const fakeSetTimeout = (fn: () => void, _delay: number) => {
+      const entry = { fn, id: nextId++ }
+      pendingTimers.push(entry)
+      return entry.id
+    }
+    const fakeClearTimeout = (_id: number) => {}
+
+    // The refresh returns a promise that resolves only when immediateResolve is called.
+    const refresh = () => {
+      refreshCallCount++
+      refreshTimestamps.push(Date.now())
+      return new Promise<void>((resolve) => {
+        if (refreshCallCount === 1) {
+          // First (immediate) refresh — hold it open.
+          immediateResolve = resolve
+        } else {
+          // Subsequent refreshes resolve immediately.
+          resolve()
+        }
+      })
+    }
+
+    const handle = scheduleAmbiguousRefresh(refresh, {
+      maxRetries: 2,
+      delaysMs: [100, 200],
+      scheduleTimer: fakeSetTimeout,
+      clearTimer: fakeClearTimeout,
+    })
+
+    // Immediate refresh started but hasn't resolved yet (held open).
+    expect(refreshCallCount).toBe(1)
+    expect(pendingTimers.length).toBe(2)
+
+    // Fire both delayed retries while the immediate is still active.
+    pendingTimers[0].fn()
+    pendingTimers[1].fn()
+
+    // Still only 1 refresh call — both retries are queued.
+    expect(refreshCallCount).toBe(1)
+
+    // Resolve the immediate refresh — the queued retry should now execute.
+    immediateResolve!()
+    // Wait for the chained refresh to complete.
+    await new Promise((r) => setTimeout(r, 10))
+
+    // At least one queued refresh must have executed after the immediate settled.
+    expect(refreshCallCount).toBeGreaterThanOrEqual(2)
+
+    handle.cancel()
+  })
+
+  test('70. no overlapping authoritative refreshes (serialized)', async () => {
+    let refreshRunning = false
+    let overlapDetected = false
+
+    const refresh = () => {
+      if (refreshRunning) {
+        overlapDetected = true
+      }
+      refreshRunning = true
+      return new Promise<void>((resolve) => {
+        setTimeout(() => {
+          refreshRunning = false
+          resolve()
+        }, 5)
+      })
+    }
+
+    const pendingTimers: Array<{ fn: () => void; id: number }> = []
+    let nextId = 1
+    const fakeSetTimeout = (fn: () => void, _delay: number) => {
+      const entry = { fn, id: nextId++ }
+      pendingTimers.push(entry)
+      return entry.id
+    }
+    const fakeClearTimeout = (_id: number) => {}
+
+    const handle = scheduleAmbiguousRefresh(refresh, {
+      maxRetries: 2,
+      delaysMs: [1, 2],
+      scheduleTimer: fakeSetTimeout,
+      clearTimer: fakeClearTimeout,
+    })
+
+    // Fire both retries immediately.
+    pendingTimers[0].fn()
+    pendingTimers[1].fn()
+
+    // Wait for all refreshes to complete.
+    await new Promise((r) => setTimeout(r, 30))
+
+    // No overlap should have been detected.
+    expect(overlapDetected).toBe(false)
+
+    handle.cancel()
+  })
+})
+
+// ============ P2-2: Return parent refresh promise ============
+
+describe('ST-75 P2-2: Return parent refresh promise to scheduler', () => {
+  test('71. Purchase dialog scheduleAmbiguousImportRefresh returns parent promise', () => {
+    const src = readBuyDialog()
+    // The wrapper must return the parent callback result, not void.
+    expect(src).toMatch(/return onRefreshAfterImport\?\.\(\)/)
+  })
+
+  test('72. Sales dialog scheduleAmbiguousImportRefresh returns parent promise', () => {
+    const src = readSellDialog()
+    expect(src).toMatch(/return onRefreshAfterImport\?\.\(\)/)
+  })
+})
+
+// ============ P2-3: Validate result-array elements ============
+
+describe('ST-75 P2-3: Validate result-array elements (isValidBillImportResult)', () => {
+  test('73. null element in failedBills → false', () => {
+    const malformed = makeValidSummary({
+      failedCount: 1,
+      failedBills: [null],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('74. string element → false', () => {
+    const malformed = makeValidSummary({
+      importedCount: 1,
+      importedBills: ['not-an-object'],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('75. number element → false', () => {
+    const malformed = makeValidSummary({
+      importedCount: 1,
+      importedBills: [42],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('76. missing externalBillNumber → false', () => {
+    const malformed = makeValidSummary({
+      importedCount: 1,
+      importedBills: [{ normalizedBillNumber: 'x', status: 'READY' }],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('77. missing status → false', () => {
+    const malformed = makeValidSummary({
+      importedCount: 1,
+      importedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x' }],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('78. invalid status value → false', () => {
+    const malformed = makeValidSummary({
+      importedCount: 1,
+      importedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'UNKNOWN' }],
+    })
+    expect(isValidImportSummary(malformed)).toBe(false)
+  })
+
+  test('79. valid BillImportResult elements → true', () => {
+    const valid = makeValidSummary({
+      importedCount: 2,
+      importedBills: [
+        { externalBillNumber: 'B1', normalizedBillNumber: 'B1', status: 'READY', billNumber: 'BUY-2569-00001', billId: 'id1' },
+        { externalBillNumber: 'B2', normalizedBillNumber: 'B2', status: 'READY' },
+      ],
+    })
+    expect(isValidImportSummary(valid)).toBe(true)
+  })
+
+  test('80. 2xx with null element in failedBills → AMBIGUOUS_RESULT', () => {
+    const malformed = makeValidSummary({
+      failedCount: 1,
+      failedBills: [null],
+    })
+    const outcome = classifyImportOutcome(200, malformed, false)
+    expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+})
+
+// ============ P2-4: Validate grouped arrays against all contributing counters ============
+
+describe('ST-75 P2-4: Grouped counter validation (production buildImportSummary contract)', () => {
+  test('81. valid insufficient-stock summary remains valid (PARTIAL_SUCCESS)', () => {
+    // Production scenario: importedCount=2, insufficientStockCount=1, failedCount=0
+    // failedBills should contain 1 element (the insufficient-stock bill).
+    const summary = makeValidSummary({
+      importedCount: 2,
+      insufficientStockCount: 1,
+    })
+    // Helper auto-populates: importedBills[2], failedBills[1] (INSUFFICIENT_STOCK)
+    expect(isValidImportSummary(summary)).toBe(true)
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('PARTIAL_SUCCESS')
+  })
+
+  test('82. valid invalid/unmatched failure grouping remains valid', () => {
+    const summary = makeValidSummary({
+      invalidCount: 2,
+      unmatchedCount: 1,
+    })
+    // Helper auto-populates: failedBills[3] (2 INVALID + 1 UNMATCHED_PRODUCT)
+    expect(isValidImportSummary(summary)).toBe(true)
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('FAILED_CONFIRMED')
+  })
+
+  test('83. valid duplicate grouping remains valid (DUPLICATE_EXISTING + DUPLICATE_IN_FILE)', () => {
+    const summary = makeValidSummary({
+      duplicateExistingCount: 2,
+      duplicateInFileCount: 1,
+    })
+    // Helper auto-populates: skippedDuplicateBills[3] (2 DUPLICATE_EXISTING + 1 DUPLICATE_IN_FILE)
+    expect(isValidImportSummary(summary)).toBe(true)
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('FAILED_CONFIRMED')
+  })
+
+  test('84. inconsistent grouped counts → AMBIGUOUS_RESULT', () => {
+    // failedBills has 1 element but failedCount=0 and insufficientStockCount=0
+    // → failedBills.length (1) !== invalidCount + unmatchedCount + insufficientStockCount + failedCount (0)
+    const inconsistent = makeValidSummary({
+      failedBills: [{ externalBillNumber: 'x', normalizedBillNumber: 'x', status: 'FAILED' }],
+    })
+    // Helper won't auto-populate because failedBills is explicitly set, but
+    // failedCount=0 so failedBills.length (1) !== 0.
+    expect(isValidImportSummary(inconsistent)).toBe(false)
+    const outcome = classifyImportOutcome(200, inconsistent, false)
+    expect(outcome).toBe('AMBIGUOUS_RESULT')
+  })
+
+  test('85. valid full server summary remains non-ambiguous (SUCCESS)', () => {
+    const summary = makeValidSummary({ importedCount: 5 })
+    expect(isValidImportSummary(summary)).toBe(true)
+    const outcome = classifyImportOutcome(200, summary, false)
+    expect(outcome).toBe('SUCCESS')
   })
 })

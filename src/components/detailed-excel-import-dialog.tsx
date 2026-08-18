@@ -124,7 +124,9 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   // /api/import/apply mutation.
   const scheduleAmbiguousImportRefresh = () => {
     const handle = scheduleAmbiguousRefresh(() => {
-      onRefreshAfterImport?.();
+      // ST-75 P2-2: Return the parent refresh promise so the scheduler can
+      // serialize on the real async refresh, not a synchronous void.
+      return onRefreshAfterImport?.();
     });
     ambiguousRefreshHandlesRef.current.push(handle);
   };

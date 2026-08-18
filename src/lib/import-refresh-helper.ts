@@ -89,24 +89,39 @@ export function scheduleAmbiguousRefresh(
   let cancelled = false;
   // ST-75 P2-A3: Serialize refresh attempts so a slow immediate fetch cannot
   // be overwritten by a faster delayed retry returning stale pre-commit state.
-  // Each retry waits for the previous to complete (success or failure) before
-  // starting. This prevents overlapping fetches where the later-starting but
-  // earlier-completing fetch overwrites the authoritative state.
-  let refreshInFlight = false;
-  const pendingRefreshQueued = new Set<number>();
+  // ST-75 P2-1: Chain queued retries to the active refresh promise. When a
+  // retry timer fires while a refresh is active, the retry must wait for the
+  // active promise to settle, then execute. The prior implementation called
+  // runRefresh() again immediately (which returned false because
+  // refreshInFlight was still true), effectively discarding the queued retry.
+  let activeRefreshPromise: Promise<void> | null = null;
+  let hasQueuedRefresh = false;
 
-  const runRefresh = async () => {
-    if (refreshInFlight) return false; // already running, skip
-    refreshInFlight = true;
-    try {
-      await refresh();
-      return true;
-    } catch {
-      // Swallow — bounded, so failures don't propagate.
-      return false;
-    } finally {
-      refreshInFlight = false;
+  const runRefresh = (): Promise<void> => {
+    // If a refresh is already in flight, mark that a queued refresh is pending.
+    // The active refresh's .finally() will drain the queue after it settles.
+    if (activeRefreshPromise !== null) {
+      hasQueuedRefresh = true;
+      return activeRefreshPromise;
     }
+    activeRefreshPromise = (async () => {
+      try {
+        await refresh();
+      } catch {
+        // Swallow — bounded, so failures don't propagate.
+      } finally {
+        // ST-75 P2-1: Drain the queued refresh after the active one settles.
+        // Only ONE queued refresh runs (bounded — no infinite chain).
+        const shouldRunQueued = hasQueuedRefresh;
+        hasQueuedRefresh = false;
+        activeRefreshPromise = null; // clear BEFORE running queued so it can set again
+        if (shouldRunQueued && !cancelled) {
+          // Chain the queued refresh to the current settlement.
+          void runRefresh();
+        }
+      }
+    })();
+    return activeRefreshPromise;
   };
 
   // Fire the immediate refresh — gives a chance to catch already-committed
@@ -119,23 +134,10 @@ export function scheduleAmbiguousRefresh(
     const id = scheduleTimer(() => {
       if (cancelled) return;
       pendingTimers.delete(id);
-      // ST-75 P2-A3: Serialize — if the immediate refresh is still in flight,
-      // queue this retry to run after it completes. If a retry is already
-      // queued, skip (bounded — we don't accumulate an infinite queue).
-      if (refreshInFlight) {
-        pendingRefreshQueued.add(id);
-        // Schedule a microtask to check if the refresh is done yet.
-        // This is a lightweight poll — it doesn't add an unbounded loop
-        // because runRefresh sets refreshInFlight=false in finally.
-        void runRefresh().then(() => {
-          if (pendingRefreshQueued.has(id)) {
-            pendingRefreshQueued.delete(id);
-            void runRefresh();
-          }
-        });
-      } else {
-        void runRefresh();
-      }
+      // ST-75 P2-1: Call runRefresh() — it will either start immediately (if
+      // no refresh is active) or queue itself to run after the active refresh
+      // settles. The chaining logic in runRefresh handles this correctly.
+      void runRefresh();
     }, delay);
     pendingTimers.add(id);
   }

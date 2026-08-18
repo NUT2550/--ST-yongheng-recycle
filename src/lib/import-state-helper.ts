@@ -44,7 +44,56 @@ export interface ImportSummaryLike {
  * arrays. Without this, a 2xx body with valid counters but missing arrays
  * would pass validation, then both dialogs would access
  * `applyResult.failedBills.length` at render time → runtime exception.
+ *
+ * ST-75 P2-3: Also validates each result-array element via
+ * `isValidBillImportResult`. A `failedBills: [null]` or `[42]` would crash
+ * the UI's `b.externalBillNumber` access. Invalid element → whole summary
+ * invalid → AMBIGUOUS_RESULT.
+ *
+ * ST-75 P2-4: Counter/array consistency uses the PRODUCTION grouping contract
+ * from `buildImportSummary`:
+ *   - importedBills.length === importedCount
+ *   - skippedDuplicateBills.length === duplicateExistingCount + duplicateInFileCount
+ *   - failedBills.length === invalidCount + unmatchedCount + insufficientStockCount + failedCount
+ * The prior P2-B3 check used `failedCount === failedBills.length` which is
+ * WRONG — failedBills aggregates 4 failure statuses, not just failedCount.
  */
+
+/** Valid BillClassification values (must match production type). */
+const VALID_BILL_STATUSES = new Set([
+  'READY',
+  'DUPLICATE_EXISTING',
+  'DUPLICATE_IN_FILE',
+  'INVALID',
+  'UNMATCHED_PRODUCT',
+  'INSUFFICIENT_STOCK',
+  'FAILED',
+]);
+
+/**
+ * ST-75 P2-3: Runtime-validate a single result-array element as a structurally
+ * valid BillImportResult. The UI accesses `externalBillNumber` and `status`
+ * on each element, so these MUST be present with the correct types.
+ * Does NOT enforce optional fields (billNumber, billId, error, errorCode)
+ * because legitimate server responses may omit them depending on status.
+ */
+export function isValidBillImportResult(element: unknown): boolean {
+  if (typeof element !== 'object' || element === null) return false;
+  const e = element as Record<string, unknown>;
+  // externalBillNumber is accessed by UI render (applyResult.failedBills.map).
+  if (typeof e.externalBillNumber !== 'string') return false;
+  // normalizedBillNumber is used by the pipeline and UI.
+  if (typeof e.normalizedBillNumber !== 'string') return false;
+  // status must be one of the valid BillClassification values.
+  if (typeof e.status !== 'string' || !VALID_BILL_STATUSES.has(e.status)) return false;
+  // Optional fields: if present, must be correct types.
+  if (e.billNumber !== undefined && typeof e.billNumber !== 'string') return false;
+  if (e.billId !== undefined && typeof e.billId !== 'string') return false;
+  if (e.error !== undefined && typeof e.error !== 'string') return false;
+  if (e.errorCode !== undefined && typeof e.errorCode !== 'string') return false;
+  return true;
+}
+
 export function isValidImportSummary(summary: unknown): summary is ImportSummaryLike {
   if (typeof summary !== 'object' || summary === null) return false;
   const s = summary as Record<string, unknown>;
@@ -65,31 +114,39 @@ export function isValidImportSummary(summary: unknown): summary is ImportSummary
     if (!Number.isInteger(v)) return false;
     if (v < 0) return false;
   }
-  // ST-75 P2-B2: Validate required result arrays. The full ImportSummary type
-  // includes `importedBills`, `skippedDuplicateBills`, and `failedBills` — all
-  // arrays. A 2xx body missing these would cause `applyResult.failedBills.length`
-  // to throw at render time. Treat as invalid → AMBIGUOUS_RESULT.
+  // ST-75 P2-B2: Validate required result arrays are present as arrays.
   const requiredArrays = ['importedBills', 'skippedDuplicateBills', 'failedBills'];
   for (const key of requiredArrays) {
     if (!Array.isArray(s[key])) return false;
   }
-  // ST-75 P2-B3: Validate counter/array consistency. A malformed 2xx body with
-  // valid counters and valid arrays but INCONSISTENT contents (e.g.,
-  // importedCount: 0 with nonempty importedBills, or failedCount: 5 with empty
-  // failedBills) indicates the summary is structurally untrustworthy. Treat as
-  // invalid → AMBIGUOUS_RESULT — we cannot safely classify the outcome.
   const importedBills = s['importedBills'] as unknown[];
   const skippedDuplicateBills = s['skippedDuplicateBills'] as unknown[];
   const failedBills = s['failedBills'] as unknown[];
+  // ST-75 P2-3: Validate each result-array element as a valid BillImportResult.
+  for (const bill of importedBills) {
+    if (!isValidBillImportResult(bill)) return false;
+  }
+  for (const bill of skippedDuplicateBills) {
+    if (!isValidBillImportResult(bill)) return false;
+  }
+  for (const bill of failedBills) {
+    if (!isValidBillImportResult(bill)) return false;
+  }
+  // ST-75 P2-4: Counter/array consistency using PRODUCTION grouping contract
+  // from buildImportSummary:
+  //   importedBills ← status 'READY' (1:1 with importedCount)
+  //   skippedDuplicateBills ← 'DUPLICATE_EXISTING' + 'DUPLICATE_IN_FILE'
+  //   failedBills ← 'INVALID' + 'UNMATCHED_PRODUCT' + 'INSUFFICIENT_STOCK' + 'FAILED'
   const importedCount = s.importedCount as number;
-  const failedCount = s.failedCount as number;
   const duplicateExistingCount = s.duplicateExistingCount as number;
-  if (importedCount === 0 && importedBills.length > 0) return false;
-  if (importedCount > 0 && importedBills.length === 0) return false;
-  if (failedCount === 0 && failedBills.length > 0) return false;
-  if (failedCount > 0 && failedBills.length === 0) return false;
-  if (duplicateExistingCount === 0 && skippedDuplicateBills.length > 0) return false;
-  if (duplicateExistingCount > 0 && skippedDuplicateBills.length === 0) return false;
+  const duplicateInFileCount = s.duplicateInFileCount as number;
+  const invalidCount = s.invalidCount as number;
+  const unmatchedCount = s.unmatchedCount as number;
+  const insufficientStockCount = s.insufficientStockCount as number;
+  const failedCount = s.failedCount as number;
+  if (importedBills.length !== importedCount) return false;
+  if (skippedDuplicateBills.length !== duplicateExistingCount + duplicateInFileCount) return false;
+  if (failedBills.length !== invalidCount + unmatchedCount + insufficientStockCount + failedCount) return false;
   return true;
 }
 

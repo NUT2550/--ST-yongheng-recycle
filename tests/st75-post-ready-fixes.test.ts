@@ -42,21 +42,63 @@ function makeSummary(overrides: Partial<ImportSummaryLike> = {}): ImportSummaryL
     unmatchedCount: 0,
     insufficientStockCount: 0,
     failedCount: 0,
-    // ST-75 P2-B2: Include required result arrays.
     importedBills: [] as unknown[],
     skippedDuplicateBills: [] as unknown[],
     failedBills: [] as unknown[],
     ...overrides,
   }
-  // ST-75 P2-B3: Auto-populate arrays to match counters if not explicitly overridden.
-  if (!overrides.importedBills && base.importedCount > 0) {
-    base.importedBills = Array.from({ length: base.importedCount }, (_, i) => ({ id: `imp-${i}` }))
+  // ST-75 P2-3: Auto-populate arrays with valid BillImportResult elements.
+  if (!overrides.importedBills && Number.isFinite(base.importedCount) && base.importedCount > 0) {
+    base.importedBills = Array.from({ length: base.importedCount }, (_, i) => ({
+      externalBillNumber: `imp-${i}`,
+      normalizedBillNumber: `imp-${i}`,
+      status: 'READY',
+    }))
   }
-  if (!overrides.failedBills && base.failedCount > 0) {
-    base.failedBills = Array.from({ length: base.failedCount }, (_, i) => ({ id: `fail-${i}` }))
+  if (!overrides.failedBills && Number.isFinite(base.failedCount) && base.failedCount > 0) {
+    base.failedBills = Array.from({ length: base.failedCount }, (_, i) => ({
+      externalBillNumber: `fail-${i}`,
+      normalizedBillNumber: `fail-${i}`,
+      status: 'FAILED',
+    }))
   }
-  if (!overrides.skippedDuplicateBills && base.duplicateExistingCount > 0) {
-    base.skippedDuplicateBills = Array.from({ length: base.duplicateExistingCount }, (_, i) => ({ id: `dup-${i}` }))
+  if (!overrides.skippedDuplicateBills && Number.isFinite(base.duplicateExistingCount) && base.duplicateExistingCount > 0) {
+    base.skippedDuplicateBills = Array.from({ length: base.duplicateExistingCount }, (_, i) => ({
+      externalBillNumber: `dup-${i}`,
+      normalizedBillNumber: `dup-${i}`,
+      status: 'DUPLICATE_EXISTING',
+    }))
+  }
+  // ST-75 P2-4: Also auto-populate skippedDuplicateBills for duplicateInFileCount.
+  if (!overrides.skippedDuplicateBills && Number.isFinite(base.duplicateInFileCount) && base.duplicateInFileCount > 0) {
+    const inFileDups = Array.from({ length: base.duplicateInFileCount }, (_, i) => ({
+      externalBillNumber: `inf-${i}`,
+      normalizedBillNumber: `inf-${i}`,
+      status: 'DUPLICATE_IN_FILE',
+    }))
+    base.skippedDuplicateBills = [...base.skippedDuplicateBills, ...inFileDups]
+  }
+  // ST-75 P2-4: Populate failedBills for invalid/unmatched/insufficientStock counts.
+  if (!overrides.failedBills) {
+    const extraFailures: unknown[] = []
+    if (Number.isFinite(base.invalidCount) && base.invalidCount > 0) {
+      for (let i = 0; i < base.invalidCount; i++) {
+        extraFailures.push({ externalBillNumber: `inv-${i}`, normalizedBillNumber: `inv-${i}`, status: 'INVALID' })
+      }
+    }
+    if (Number.isFinite(base.unmatchedCount) && base.unmatchedCount > 0) {
+      for (let i = 0; i < base.unmatchedCount; i++) {
+        extraFailures.push({ externalBillNumber: `unm-${i}`, normalizedBillNumber: `unm-${i}`, status: 'UNMATCHED_PRODUCT' })
+      }
+    }
+    if (Number.isFinite(base.insufficientStockCount) && base.insufficientStockCount > 0) {
+      for (let i = 0; i < base.insufficientStockCount; i++) {
+        extraFailures.push({ externalBillNumber: `ins-${i}`, normalizedBillNumber: `ins-${i}`, status: 'INSUFFICIENT_STOCK' })
+      }
+    }
+    if (extraFailures.length > 0) {
+      base.failedBills = [...base.failedBills, ...extraFailures]
+    }
   }
   return base as ImportSummaryLike
 }
