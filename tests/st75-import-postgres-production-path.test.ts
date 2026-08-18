@@ -84,10 +84,17 @@ function makeTestBuyBillDeps(db: PrismaClient): BuyBillServiceDeps<BuyBillCreate
 
 function makeTestSellBillDeps(
   db: PrismaClient,
-  opts: { sellBillNumberOverride?: string } = {},
+  opts: { sellBillNumberOverride?: string; stockCheckBarrier?: Promise<void> } = {},
 ): SellBillServiceDeps<SellBillCreatedBill> {
   return {
     checkStockAvailability: async (items: Array<{ productId: string; weight: number }>) => {
+      // ST-75 P2-12: Barrier — both services must reach checkStockAvailability
+      // before either can proceed. This ensures both pass the stock check
+      // (reading the original 100kg lot) before either CAS update commits,
+      // so the loser fails with SOURCE_LOT_CONFLICT, not INSUFFICIENT_STOCK.
+      if (opts.stockCheckBarrier) {
+        await opts.stockCheckBarrier;
+      }
       for (const item of items) {
         const lots = await db.stockLot.findMany({
           where: { productId: item.productId, remainingWeight: { gt: 0 } },
@@ -100,9 +107,6 @@ function makeTestSellBillDeps(
       }
       return { ok: true as const };
     },
-    // ST-75 P2-A: Allow tests to override the internal billNumber so concurrent
-    // services can be given DISTINCT deterministic numbers, isolating the CAS
-    // failure cause from billNumber unique-constraint collision.
     generateBillNumber: opts.sellBillNumberOverride
       ? () => Promise.resolve(opts.sellBillNumberOverride!)
       : () => generateBillNumber(db as any, 'SELL'),
@@ -141,7 +145,7 @@ function makeTestSellBillDeps(
 
 function makeTestImportDeps(
   db: PrismaClient,
-  opts: { sellBillNumberOverride?: string } = {},
+  opts: { sellBillNumberOverride?: string; stockCheckBarrier?: Promise<void> } = {},
 ): ImportApplyDeps {
   const buyDeps = makeTestBuyBillDeps(db);
   const sellDeps = makeTestSellBillDeps(db, opts);
@@ -474,8 +478,40 @@ describe('ST-75 Production-Path Concurrent Duplicate Sales', () => {
       // P2-A: distinct deterministic internal billNumbers — loser CANNOT fail from billNumber collision.
       const billNumberA = `SELL-2569-900001`;
       const billNumberB = `SELL-2569-900002`;
-      const depsA = makeTestImportDeps(db, { sellBillNumberOverride: billNumberA });
-      const depsB = makeTestImportDeps(db, { sellBillNumberOverride: billNumberB });
+      // ST-75 P2-12: Barrier — both services must pass checkStockAvailability
+      // before either can proceed to the transaction/CAS phase. This ensures
+      // both read the original 100kg lot, so the loser fails with
+      // SOURCE_LOT_CONFLICT (CAS race), not INSUFFICIENT_STOCK (pre-commit snapshot).
+      let arrivedCount = 0;
+      let resolveBarrier!: () => void;
+      const barrierPromise = new Promise<void>((resolve) => { resolveBarrier = resolve; });
+      const barrierGate: Promise<void> = new Promise((resolve) => {
+        // Poll every 1ms — when both services have arrived at the barrier,
+        // release them both.
+        const check = () => {
+          if (arrivedCount >= 2) {
+            resolveBarrier();
+            resolve();
+          } else {
+            setTimeout(check, 1);
+          }
+        };
+        setTimeout(check, 1);
+      });
+      // The stockCheckBarrier each service awaits: increments arrivedCount,
+      // then waits for the gate to open.
+      const stockCheckBarrier = (async () => {
+        arrivedCount++;
+        await barrierGate;
+      })();
+      const depsA = makeTestImportDeps(db, {
+        sellBillNumberOverride: billNumberA,
+        stockCheckBarrier,
+      });
+      const depsB = makeTestImportDeps(db, {
+        sellBillNumberOverride: billNumberB,
+        stockCheckBarrier,
+      });
       const [r1, r2] = await Promise.allSettled([
         applyImport('sales', [bills[0]], depsA, ACTOR),
         applyImport('sales', [bills[1]], depsB, ACTOR),

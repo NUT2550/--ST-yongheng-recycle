@@ -442,8 +442,10 @@ describe('ST-75 F3: Production CAS path wiring', () => {
     expect(testSrc).toContain('sellBillNumberOverride')
     expect(testSrc).toMatch(/billNumberA = `SELL-2569-900001`/)
     expect(testSrc).toMatch(/billNumberB = `SELL-2569-900002`/)
-    expect(testSrc).toMatch(/depsA = makeTestImportDeps\(db, \{ sellBillNumberOverride: billNumberA \}\)/)
-    expect(testSrc).toMatch(/depsB = makeTestImportDeps\(db, \{ sellBillNumberOverride: billNumberB \}\)/)
+    // ST-75 P2-12: deps now include stockCheckBarrier for synchronization.
+    expect(testSrc).toContain('stockCheckBarrier')
+    expect(testSrc).toMatch(/depsA = makeTestImportDeps\(db, \{[\s\S]*?sellBillNumberOverride: billNumberA/)
+    expect(testSrc).toMatch(/depsB = makeTestImportDeps\(db, \{[\s\S]*?sellBillNumberOverride: billNumberB/)
     // Loser errorCode MUST be SOURCE_LOT_CONFLICT (CAS), not BILL_CREATE_FAILED.
     expect(testSrc).toMatch(/loser!\.failedBills\[0\]\.errorCode\)\.toBe\('SOURCE_LOT_CONFLICT'\)/)
     // Loser's billNumber MUST NOT exist in DB (rollback proof).
