@@ -1315,18 +1315,21 @@ describe('ST-75 P2-7: Cross-scheduler coordination', () => {
 // ============ P2-8: Await prior active refresh across scheduler replacements ============
 
 describe('ST-75 P2-8: Await prior active refresh', () => {
-  test('96. Purchase dialog uses runTrackedRefresh for cross-scheduler coordination', () => {
+  test('96. Purchase dialog uses runTrackedRefresh with queued fresh refresh', () => {
     const src = readBuyDialog()
-    // ST-75 P2-10: The old priorPromise pattern is replaced by runTrackedRefresh
-    // which reuses the existing in-flight promise.
     expect(src).toContain('runTrackedRefresh')
-    expect(src).toContain('if (existing) return existing')
+    expect(src).toContain('startTrackedRefresh')
+    expect(src).toContain('queuedRefresh')
+    // ST-75 P2-14: does NOT just return old promise
+    expect(src).not.toContain('if (existing) return existing')
   })
 
-  test('97. Sales dialog uses runTrackedRefresh for cross-scheduler coordination', () => {
+  test('97. Sales dialog uses runTrackedRefresh with queued fresh refresh', () => {
     const src = readSellDialog()
     expect(src).toContain('runTrackedRefresh')
-    expect(src).toContain('if (existing) return existing')
+    expect(src).toContain('startTrackedRefresh')
+    expect(src).toContain('queuedRefresh')
+    expect(src).not.toContain('if (existing) return existing')
   })
 })
 
@@ -1406,11 +1409,13 @@ describe('ST-75 P2-10: Populate activeRefreshPromiseRef', () => {
     expect(src).toMatch(/activeRefreshPromiseRef\.current = null/)
   })
 
-  test('107. runTrackedRefresh reuses existing in-flight promise', () => {
+  test('107. runTrackedRefresh queues fresh refresh when in-flight exists (P2-14)', () => {
     const src = readBuyDialog()
-    // Must check existing first and return it if present
+    // ST-75 P2-14: when existing is active, queues a fresh refresh
     expect(src).toMatch(/const existing = activeRefreshPromiseRef\.current/)
-    expect(src).toMatch(/if \(existing\) return existing/)
+    expect(src).toContain('queuedRefresh')
+    // Does NOT just return the old promise
+    expect(src).not.toMatch(/if \(existing\) return existing/)
   })
 
   test('108. Identity check prevents older finally from clearing newer promise', () => {

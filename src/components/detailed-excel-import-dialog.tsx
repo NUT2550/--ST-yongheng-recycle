@@ -122,26 +122,42 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
   // parent refresh, not a stale null.
   const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
 
-  // ST-75 P2-10: Shared wrapper that tracks the REAL parent refresh promise.
-  // If a refresh is already in flight, reuse it (no overlapping fetches).
-  // When it settles, clear the ref only if it still points to this promise.
-  const runTrackedRefresh = (): Promise<void> => {
-    const existing = activeRefreshPromiseRef.current;
-    if (existing) return existing; // reuse in-flight refresh
+  // ST-75 P2-10/P2-14: Shared wrapper that tracks the REAL parent refresh
+  // promise. When a refresh is in-flight, queues ONE fresh refresh to execute
+  // AFTER the active one settles (not just returning the old promise). This
+  // ensures a confirmed refresh (SUCCESS/PARTIAL_SUCCESS) gets fresh post-commit
+  // data, not a stale pre-commit snapshot from an in-flight ambiguous refresh.
+  // Multiple callers arriving while the same active request is running coalesce
+  // to the same queued refresh. Rejection of the active refresh does not
+  // suppress the queued fresh refresh.
+  let queuedRefresh: Promise<void> | null = null;
 
-    // Start the real parent refresh and track its promise.
+  const startTrackedRefresh = (): Promise<void> => {
     const promise = Promise.resolve(onRefreshAfterImport?.());
     activeRefreshPromiseRef.current = promise;
-
-    // Clear the ref when this promise settles — but only if it hasn't been
-    // replaced by a newer one (identity check).
     promise.finally(() => {
       if (activeRefreshPromiseRef.current === promise) {
         activeRefreshPromiseRef.current = null;
       }
     });
-
     return promise;
+  };
+
+  const runTrackedRefresh = (): Promise<void> => {
+    const existing = activeRefreshPromiseRef.current;
+    if (existing) {
+      // ST-75 P2-14: Queue a FRESH refresh after the active one settles.
+      // If a queued refresh already exists, reuse it (bounded — one queue max).
+      if (queuedRefresh) return queuedRefresh;
+      queuedRefresh = existing
+        .catch(() => {}) // suppress rejection so chained refresh still runs
+        .then(() => {
+          queuedRefresh = null;
+          return startTrackedRefresh();
+        });
+      return queuedRefresh;
+    }
+    return startTrackedRefresh();
   };
 
   // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous

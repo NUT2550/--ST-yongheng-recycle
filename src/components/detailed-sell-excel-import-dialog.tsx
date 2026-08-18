@@ -111,21 +111,33 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   // ST-75 P2-7/P2-8/P2-10: Track the active refresh promise at dialog level.
   const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
 
-  // ST-75 P2-10: Shared wrapper that tracks the REAL parent refresh promise.
-  const runTrackedRefresh = (): Promise<void> => {
-    const existing = activeRefreshPromiseRef.current;
-    if (existing) return existing;
+  // ST-75 P2-10/P2-14: Shared wrapper with queued fresh refresh.
+  let queuedRefresh: Promise<void> | null = null;
 
+  const startTrackedRefresh = (): Promise<void> => {
     const promise = Promise.resolve(onRefreshAfterImport?.());
     activeRefreshPromiseRef.current = promise;
-
     promise.finally(() => {
       if (activeRefreshPromiseRef.current === promise) {
         activeRefreshPromiseRef.current = null;
       }
     });
-
     return promise;
+  };
+
+  const runTrackedRefresh = (): Promise<void> => {
+    const existing = activeRefreshPromiseRef.current;
+    if (existing) {
+      if (queuedRefresh) return queuedRefresh;
+      queuedRefresh = existing
+        .catch(() => {})
+        .then(() => {
+          queuedRefresh = null;
+          return startTrackedRefresh();
+        });
+      return queuedRefresh;
+    }
+    return startTrackedRefresh();
   };
 
   // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
