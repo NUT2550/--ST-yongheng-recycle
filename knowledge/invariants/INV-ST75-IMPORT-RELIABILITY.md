@@ -247,7 +247,7 @@ before the client receives the response. Without the above invariants:
   - tests/st75-p2-ambiguous-refresh.test.ts (ambiguous transport, malformed 2xx, dispatch count, bounded refresh serialization)
   - tests/st75-import-state-helper.test.ts (classifyImportOutcome, isValidImportSummary, duplicate provenance, reconciledAfterFailure validity)
   - tests/st75-post-ready-fixes.test.ts (auth semantics, close guard)
-  - tests/st75-defect-fix-validation.test.ts (regression coverage for ST-70/71/72/73/74)
+  - tests/st75-defect-fix-validation.test.ts (ST-75 Defect 1: dispatch count mismatch → AMBIGUOUS_RESULT)
   - tests/st75-sales-refresh-independence.test.ts (product-only Sales reconciliation)
   - tests/st75-import-postgres-production-path.test.ts (PostgreSQL CI, CAS concurrency, C3 barrier, SOURCE_LOT_CONFLICT)
   - tests/st75-import-reliability-audit.test.ts (audit trail, stock integrity)
