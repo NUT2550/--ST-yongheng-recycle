@@ -116,6 +116,13 @@ export function createMockDeps(options: {
       state.createOutputStockLotCalls.push(data);
       if (options.createLotShouldThrow) throw options.createLotShouldThrow;
     },
+    // ST-63 Phase B1: batch mock — pushes each row to the same array for backward compat
+    async createOutputStockLots(data: Record<string, unknown>[]) {
+      for (const row of data) {
+        state.createOutputStockLotCalls.push(row);
+      }
+      if (options.createLotShouldThrow) throw options.createLotShouldThrow;
+    },
     async createStockMovements(data) {
       state.createStockMovementCalls.push(...data);
       if (options.createMovementShouldThrow) throw options.createMovementShouldThrow;

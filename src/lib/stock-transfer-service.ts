@@ -126,6 +126,8 @@ export interface StockTransferDeps {
   deductSourceLots(productId: string, weightToDeduct: number): Promise<DeductResult>;
   createStockTransfer(data: Record<string, unknown>): Promise<CreatedTransfer>;
   createOutputStockLot(data: Record<string, unknown>): Promise<void>;
+  // ST-63 Phase B1: batch output lot creation (1 createMany instead of N creates)
+  createOutputStockLots(data: Record<string, unknown>[]): Promise<void>;
   createStockMovements(data: StockMovementDraft[]): Promise<void>;
   createAuditLog(data: AuditLogInput): Promise<void>;
   compensate(deductedLots: Array<{ id: string; deducted: number }>, requestId: string, reason?: string): Promise<void>;
@@ -737,11 +739,16 @@ async function createStockTransferInternal(
   // 13. Create output StockLots
   try {
     await time('output_lot_creation', async () => {
+      // ST-63 Phase B1: batch output lot creation — 1 createMany instead of N sequential creates
+      const allLotData: Record<string, unknown>[] = [];
       for (let idx = 0; idx < input.items.length; idx++) {
         const lotData = buildOutputStockLotData(input.items[idx], allocatedItems[idx].costPerKg, dateValidation.storedBusinessDate, created.id);
         if (lotData) {
-          await deps.createOutputStockLot(lotData);
+          allLotData.push(lotData);
         }
+      }
+      if (allLotData.length > 0) {
+        await deps.createOutputStockLots(allLotData);
       }
     });
   } catch (err) {
