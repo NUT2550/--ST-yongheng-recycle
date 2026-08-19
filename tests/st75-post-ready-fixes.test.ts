@@ -118,16 +118,16 @@ function readBuyDialog(): string {
 describe('ST-75 F1: Sales terminal outcome', () => {
   test('1. Sales full success: IMPORTING → SUCCESS', () => {
     // Runtime: helper classifies 2xx with all-imported as SUCCESS.
-    const outcome = classifyImportOutcome(200, makeSummary({ importedCount: 5 }), false)
+    const outcome = classifyImportOutcome(200, makeSummary({ importedCount: 5 }), false, 5)
     expect(outcome).toBe('SUCCESS')
     // Wiring: sales dialog success path calls setImportOutcome with the classifier result.
     const src = readSellDialog()
-    expect(src).toContain('const outcome = classifyImportOutcome(res.status, summary, false)')
+    expect(src).toContain('const outcome = classifyImportOutcome(res.status, summary, false, parsedBills.length)')
     expect(src).toContain('setImportOutcome(outcome)')
   })
 
   test('2. Sales partial success: IMPORTING → PARTIAL_SUCCESS', () => {
-    const outcome = classifyImportOutcome(200, makeSummary({ importedCount: 3, failedCount: 2 }), false)
+    const outcome = classifyImportOutcome(200, makeSummary({ importedCount: 3, failedCount: 2 }), false, 5)
     expect(outcome).toBe('PARTIAL_SUCCESS')
     // Wiring: sales dialog uses outcome for toast branching (PARTIAL_SUCCESS → warning).
     const src = readSellDialog()

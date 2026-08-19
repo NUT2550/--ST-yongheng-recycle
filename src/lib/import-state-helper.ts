@@ -208,7 +208,8 @@ export function isValidImportSummary(summary: unknown): summary is ImportSummary
 export function classifyImportOutcome(
   httpStatus: number | null,
   summary: ImportSummaryLike | null,
-  networkError: boolean
+  networkError: boolean,
+  expectedDispatchedCount?: number
 ): ImportOutcomeState {
   // Network error after request was sent → ambiguous (server may have committed)
   if (networkError) return 'AMBIGUOUS_RESULT';
@@ -223,6 +224,16 @@ export function classifyImportOutcome(
     // safely claim "nothing saved" (FAILED_CONFIRMED) from an unparseable/invalid body.
     if (!summary || !isValidImportSummary(summary)) {
       return 'AMBIGUOUS_RESULT';
+    }
+
+    // ST-75 Defect 1: Validate accounted-result count === expected dispatched count
+    if (expectedDispatchedCount !== undefined && expectedDispatchedCount > 0) {
+      const accountedCount = summary.importedBills.length +
+        summary.skippedDuplicateBills.length +
+        summary.failedBills.length;
+      if (accountedCount !== expectedDispatchedCount) {
+        return 'AMBIGUOUS_RESULT';
+      }
     }
 
     // At this point, summary is validated — all counters are finite non-negative integers.

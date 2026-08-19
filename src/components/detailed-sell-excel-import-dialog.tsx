@@ -615,11 +615,15 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
       // AMBIGUOUS_RESULT — we must NOT store the raw summary in applyResult
       // because the UI's applyResult.failedBills.map would crash on a null
       // or missing element. Only store the summary if it's valid.
-      const outcome = classifyImportOutcome(res.status, summary, false);
+      const outcome = classifyImportOutcome(res.status, summary, false, parsedBills.length);
       setImportOutcome(outcome);
-      if (outcome !== 'AMBIGUOUS_RESULT') {
-        setApplyResult(summary);
+      if (outcome === 'AMBIGUOUS_RESULT') {
+        // ST-75 Defect 2: If AMBIGUOUS_RESULT, we must NOT consume the summary.
+        toast.error(getOutcomeMessage(outcome));
+        scheduleAmbiguousImportRefresh();
+        return;
       }
+      setApplyResult(summary);
 
       const parts: string[] = [`นำเข้าสำเร็จ ${summary.importedCount} บิล`];
       if (summary.duplicateExistingCount > 0) parts.push(`ข้ามซ้ำ ${summary.duplicateExistingCount}`);
@@ -631,8 +635,6 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         toast.success(parts.join(' · '));
       } else if (outcome === 'PARTIAL_SUCCESS') {
         toast.warning(parts.join(' · '));
-      } else if (outcome === 'AMBIGUOUS_RESULT') {
-        toast.error(getOutcomeMessage(outcome));
       } else {
         toast.error(parts.join(' · ') || 'นำเข้าไม่สำเร็จ');
       }

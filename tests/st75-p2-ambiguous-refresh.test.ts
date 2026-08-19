@@ -1235,28 +1235,42 @@ describe('ST-75 P2-5: Validate summary before storing (setApplyResult)', () => {
     const src = readBuyDialog()
     // setApplyResult must NOT be called before classifyImportOutcome.
     const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
-    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false)')
+    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false, parsedBills.length)')
     expect(setApplyResultIdx).toBeGreaterThan(-1)
     expect(classifyIdx).toBeGreaterThan(-1)
     // classifyImportOutcome must come BEFORE setApplyResult.
     expect(classifyIdx).toBeLessThan(setApplyResultIdx)
   })
 
-  test('87. Purchase dialog only stores summary if outcome !== AMBIGUOUS_RESULT', () => {
+  test('87. Purchase dialog returns early if AMBIGUOUS_RESULT', () => {
     const src = readBuyDialog()
-    expect(src).toMatch(/if \(outcome !== 'AMBIGUOUS_RESULT'\) \{[\s\S]*?setApplyResult\(summary\)/)
+    // Purchase dialog returns early if outcome === 'AMBIGUOUS_RESULT'
+    expect(src).toMatch(/if \(outcome === 'AMBIGUOUS_RESULT'\) \{[\s\S]*?return;/)
+    // Verify setApplyResult(summary) comes AFTER the early return block
+    const earlyReturnIdx = src.indexOf("if (outcome === 'AMBIGUOUS_RESULT')")
+    const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
+    expect(earlyReturnIdx).toBeGreaterThan(-1)
+    expect(setApplyResultIdx).toBeGreaterThan(-1)
+    expect(earlyReturnIdx).toBeLessThan(setApplyResultIdx)
   })
 
   test('88. Sales dialog classifies before storing applyResult', () => {
     const src = readSellDialog()
     const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
-    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false)')
+    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false, parsedBills.length)')
     expect(classifyIdx).toBeLessThan(setApplyResultIdx)
   })
 
-  test('89. Sales dialog only stores summary if outcome !== AMBIGUOUS_RESULT', () => {
+  test('89. Sales dialog returns early if AMBIGUOUS_RESULT', () => {
     const src = readSellDialog()
-    expect(src).toMatch(/if \(outcome !== 'AMBIGUOUS_RESULT'\) \{[\s\S]*?setApplyResult\(summary\)/)
+    // Sales dialog returns early if outcome === 'AMBIGUOUS_RESULT'
+    expect(src).toMatch(/if \(outcome === 'AMBIGUOUS_RESULT'\) \{[\s\S]*?return;/)
+    // Verify setApplyResult(summary) comes AFTER the early return block
+    const earlyReturnIdx = src.indexOf("if (outcome === 'AMBIGUOUS_RESULT')")
+    const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
+    expect(earlyReturnIdx).toBeGreaterThan(-1)
+    expect(setApplyResultIdx).toBeGreaterThan(-1)
+    expect(earlyReturnIdx).toBeLessThan(setApplyResultIdx)
   })
 })
 
