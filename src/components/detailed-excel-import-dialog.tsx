@@ -620,7 +620,7 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
       // AMBIGUOUS_RESULT — we must NOT store the raw summary in applyResult
       // because the UI's applyResult.failedBills.map would crash on a null
       // or missing element. Only store the summary if it's valid.
-      const outcome = classifyImportOutcome(res.status, summary, false, parsedBills.length);
+      const outcome = classifyImportOutcome(res.status, summary, false, billsToApply.length);
       setImportOutcome(outcome);
       if (outcome === 'AMBIGUOUS_RESULT') {
         // ST-75 Defect 2: If AMBIGUOUS_RESULT, we must NOT consume the summary.
@@ -658,13 +658,9 @@ export function DetailedExcelImportDialog({ products, onSessionExpired, onImport
       // SUCCESS/PARTIAL_SUCCESS, an immediate refresh is safe (backend has
       // confirmed commit).
       if (shouldRefreshHistory(outcome)) {
-        if (outcome === 'AMBIGUOUS_RESULT') {
-          scheduleAmbiguousImportRefresh();
-        } else {
-          // ST-75 P2-11: Use runTrackedRefresh for confirmed refreshes too,
-          // so they serialize behind any active ambiguous reconciliation.
-          runTrackedRefresh();
-        }
+        // ST-75 P2-11: Use runTrackedRefresh for confirmed refreshes,
+        // so they serialize behind any active ambiguous reconciliation.
+        runTrackedRefresh();
         onApplied?.(summary);
       }
 

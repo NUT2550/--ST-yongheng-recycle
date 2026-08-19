@@ -122,7 +122,7 @@ describe('ST-75 F1: Sales terminal outcome', () => {
     expect(outcome).toBe('SUCCESS')
     // Wiring: sales dialog success path calls setImportOutcome with the classifier result.
     const src = readSellDialog()
-    expect(src).toContain('const outcome = classifyImportOutcome(res.status, summary, false, parsedBills.length)')
+    expect(src).toContain('const outcome = classifyImportOutcome(res.status, summary, false, billsToApply.length)')
     expect(src).toContain('setImportOutcome(outcome)')
   })
 

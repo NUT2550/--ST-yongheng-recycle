@@ -1235,9 +1235,11 @@ describe('ST-75 P2-5: Validate summary before storing (setApplyResult)', () => {
     const src = readBuyDialog()
     // setApplyResult must NOT be called before classifyImportOutcome.
     const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
-    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false, parsedBills.length)')
+    // Use regex to match the exact call with semicolon
+    const classifyMatch = src.match(/classifyImportOutcome\(res\.status, summary, false, billsToApply\.length\);/)
     expect(setApplyResultIdx).toBeGreaterThan(-1)
-    expect(classifyIdx).toBeGreaterThan(-1)
+    expect(classifyMatch).not.toBeNull()
+    const classifyIdx = classifyMatch!.index!
     // classifyImportOutcome must come BEFORE setApplyResult.
     expect(classifyIdx).toBeLessThan(setApplyResultIdx)
   })
@@ -1257,7 +1259,10 @@ describe('ST-75 P2-5: Validate summary before storing (setApplyResult)', () => {
   test('88. Sales dialog classifies before storing applyResult', () => {
     const src = readSellDialog()
     const setApplyResultIdx = src.indexOf('setApplyResult(summary)')
-    const classifyIdx = src.indexOf('classifyImportOutcome(res.status, summary, false, parsedBills.length)')
+    // Use regex to match the exact call with semicolon
+    const classifyMatch = src.match(/classifyImportOutcome\(res\.status, summary, false, billsToApply\.length\);/)
+    expect(classifyMatch).not.toBeNull()
+    const classifyIdx = classifyMatch!.index!
     expect(classifyIdx).toBeLessThan(setApplyResultIdx)
   })
 
