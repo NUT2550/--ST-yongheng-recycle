@@ -70,24 +70,60 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
 
   // Fetch products and customers on mount
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [prodRes, custRes] = await Promise.all([
-          fetchProducts(),
-          fetchCustomers(),
-        ]);
-        const prodData = prodRes as unknown as { products: Product[] };
-        setProducts(prodData.products || (prodRes as unknown as Product[]));
-        const custData = custRes as unknown as { customers: Customer[] };
-        setCustomers(custData.customers || (custRes as unknown as Customer[]));
-      } catch {
-        toast.error('ไม่สามารถโหลดข้อมูลได้');
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, []);
+
+  // ST-75 P2-B: Real server-backed refresh — called by import dialog after apply
+  // (SUCCESS / PARTIAL_SUCCESS / AMBIGUOUS_RESULT) so the UI reflects any committed
+  // bills and updated stock. Replaces the legacy onImport([]) call which did not
+  // actually reload server state.
+  // ST-75 P2-17: Apply each state as its own request settles, rather than
+  // waiting for BOTH via Promise.allSettled. A slow customer request should not
+  // delay the product refresh (which has the authoritative post-import stock).
+  async function loadData() {
+    let hadError = false;
+
+    const prodPromise = fetchProducts()
+      .then((prodRes) => {
+        const prodData = prodRes as unknown as { products: Product[] };
+        setProducts(prodData.products || (prodRes as unknown as Product[]));
+      })
+      .catch(() => {
+        hadError = true;
+      });
+
+    const custPromise = fetchCustomers()
+      .then((custRes) => {
+        const custData = custRes as unknown as { customers: Customer[] };
+        setCustomers(custData.customers || (custRes as unknown as Customer[]));
+      })
+      .catch(() => {
+        hadError = true;
+      });
+
+    await Promise.allSettled([prodPromise, custPromise]);
+
+    if (hadError) {
+      toast.error('ไม่สามารถโหลดข้อมูลบางส่วนได้');
+    }
+    setLoading(false);
+  }
+
+  // ST-75 P2-25: Product-only refresh for post-import reconciliation.
+  // The import dialog's onRefreshAfterImport MUST resolve when the PRODUCT
+  // refresh settles — NOT when customers also finish. A slow/failing customer
+  // request must NOT block delayed product retries, because product/stock
+  // data is authoritative after an import. Customers are not affected by
+  // stock mutations and can refresh independently.
+  async function refreshProductsAfterImport() {
+    try {
+      const prodRes = await fetchProducts();
+      const prodData = prodRes as unknown as { products: Product[] };
+      setProducts(prodData.products || (prodRes as unknown as Product[]));
+    } catch {
+      // Swallow — the bounded retry scheduler will attempt again.
+    }
+  }
 
   // Filter products with stock > 0
   const availableProducts = useMemo(
@@ -411,6 +447,7 @@ export function SellPage({ onSessionExpired }: { onSessionExpired?: () => void }
                 <DetailedSellExcelImportDialog
                   products={availableProducts}
                   onSessionExpired={onSessionExpired}
+                  onRefreshAfterImport={refreshProductsAfterImport}
                   onImport={async (bills) => {
                     // ST-18: For each bill, add items to cart with stock validation
                     let totalAdded = 0;

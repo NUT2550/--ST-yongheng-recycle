@@ -1,0 +1,129 @@
+# ST-75: Production-bound PostgreSQL import benchmark.
+#
+# Runs the REAL production import/bill/stock path against an ephemeral
+# PostgreSQL 16 service container. Zero-skip enforcement via
+# CI_ST75_POSTGRES_REQUIRED=1.
+#
+# No Production access. No migration. No deploy. Non-Production credentials only.
+
+name: ST-75 PostgreSQL Import
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/import-pipeline.ts'
+      - 'src/lib/bill-services.ts'
+      - 'src/lib/bill-service-prisma-adapters.ts'
+      - 'src/lib/stock-lot-bulk-cas.ts'
+      - 'src/lib/bill-errors.ts'
+      - 'src/lib/bill-helpers.ts'
+      - 'src/lib/fifo-validation.ts'
+      - 'src/lib/import-state-helper.ts'
+      - 'src/lib/auth-response-classifier.ts'
+      - 'src/app/api/import/**'
+      - 'src/components/detailed-excel-import-dialog.tsx'
+      - 'src/components/detailed-sell-excel-import-dialog.tsx'
+      - 'tests/st75-import-postgres-production-path.test.ts'
+      - 'tests/st75-import-reliability-audit.test.ts'
+      - 'tests/st75-import-state-helper.test.ts'
+      - 'tests/st75-auth-response-classifier.test.ts'
+      - '.github/workflows/st75-postgres-import.yml'
+      - 'prisma/schema.prisma'
+      - 'package.json'
+      - 'bun.lock'
+  push:
+    branches:
+      - 'st-75-import-reliability-phase2'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: st75-pg-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres-import:
+    name: ST-75 PostgreSQL Import Benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: st75_test
+          POSTGRES_PASSWORD: st75_test_nonprod_only
+          POSTGRES_DB: st75_import_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U st75_test -d st75_import_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      DATABASE_URL: postgresql://st75_test:st75_test_nonprod_only@localhost:5432/st75_import_test?schema=public
+      JWT_SECRET: st75-ci-jwt-secret-not-for-production-use-only
+      CI_ST75_POSTGRES_REQUIRED: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-st75-pg-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+
+      - name: Validate Prisma schema
+        run: bunx prisma validate
+
+      - name: Push schema to test database
+        run: bunx prisma db push --skip-generate
+
+      - name: TypeScript typecheck
+        run: npx tsc --noEmit
+
+      - name: Run ST-75 production-path PostgreSQL tests
+        run: bun test --timeout 15000 tests/st75-import-postgres-production-path.test.ts
+
+      - name: Verify zero-skip guard
+        run: |
+          set -e
+          echo "Resetting isolated CI PostgreSQL before the zero-skip rerun..."
+          bunx prisma db push --force-reset --skip-generate
+          echo "Checking that no ST-75 PostgreSQL tests were skipped..."
+          set +e
+          OUTPUT=$(bun test --timeout 15000 tests/st75-import-postgres-production-path.test.ts 2>&1)
+          TEST_EXIT=$?
+          set -e
+          echo "$OUTPUT" | tee /tmp/st75-pg-output.txt
+          if echo "$OUTPUT" | grep -q "SKIPPED"; then
+            echo "::error::ST-75 PostgreSQL tests were skipped — see output above"
+            exit 1
+          fi
+          if [ "$TEST_EXIT" -ne 0 ]; then
+            echo "::error::ST-75 PostgreSQL zero-skip rerun failed with exit code $TEST_EXIT"
+            exit "$TEST_EXIT"
+          fi
+          echo "All ST-75 PostgreSQL tests executed (none skipped)"

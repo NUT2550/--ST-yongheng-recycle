@@ -25,9 +25,23 @@ function bill(number: string, weight = 10): ParsedBill {
   }
 }
 
-function deps(createSalesBill: ImportApplyDeps['createSalesBill'], existing = new Set<string>()): ImportApplyDeps {
+function deps(
+  createSalesBill: ImportApplyDeps['createSalesBill'],
+  existing = new Set<string>(),
+  confirmedAfterFailure = new Set<string>(),
+): ImportApplyDeps {
+  let lookupCalls = 0
   return {
-    loadExistingBillNumbers: async () => new Set(existing),
+    loadExistingBillNumbers: async (_type, numbers) => {
+      lookupCalls += 1
+      const result = new Set(existing)
+      if (lookupCalls > 1) {
+        for (const number of numbers) {
+          if (confirmedAfterFailure.has(number)) result.add(number)
+        }
+      }
+      return result
+    },
     checkStockAvailability: async () => ({ ok: true }),
     createPurchaseBill: async () => ({ id: 'unused', billNumber: 'BUY-unused' }),
     createSalesBill,
@@ -103,14 +117,14 @@ describe('ST-57 executable applyImport behavior', () => {
     }
   })
 
-  test('duplicate existing remains non-fatal and does not count as failed', async () => {
+  test('confirmed duplicate existing remains non-fatal and does not count as failed', async () => {
     const summary = await applyImport('sales', [bill('S-DUP')], deps(async () => {
       throw new DuplicateExistingError('externalBillNumber')
-    }), actor)
+    }, new Set(), new Set(['S-DUP'])), actor)
     expect(summary).toMatchObject({ duplicateExistingCount: 1, failedCount: 0, importedCount: 0 })
   })
 
-  test('summary counts mixed success, timeout, duplicate, and insufficient stock', async () => {
+  test('summary counts mixed success, timeout, confirmed duplicate, and insufficient stock', async () => {
     const outcomes: unknown[] = [
       { id: 'sell-ok', billNumber: 'SELL-ok' },
       Object.assign(new Error('P2028 detail'), { code: 'P2028' }),
@@ -122,7 +136,7 @@ describe('ST-57 executable applyImport behavior', () => {
       const outcome = outcomes[index++]
       if (outcome instanceof Error) throw outcome
       return outcome as { id: string; billNumber: string }
-    }), actor)
+    }, new Set(), new Set(['S-DUP'])), actor)
     expect(summary).toMatchObject({ importedCount: 1, duplicateExistingCount: 1, insufficientStockCount: 1, failedCount: 1 })
     expect(summary.failedBills).toHaveLength(2)
   })

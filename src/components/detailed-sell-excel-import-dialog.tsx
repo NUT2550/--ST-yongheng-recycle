@@ -20,6 +20,8 @@ import { toast } from 'sonner';
 import { formatBaht, formatWeight } from '@/lib/helpers';
 import { getAuthToken, setAuthToken } from '@/lib/api';
 import { classifyAuthResponse } from '@/lib/auth-response-classifier';
+import { classifyImportOutcome, shouldBlockClose, shouldRefreshHistory, getOutcomeMessage, type ImportOutcomeState } from '@/lib/import-state-helper';
+import { scheduleAmbiguousRefresh, type ScheduledRefreshHandle } from '@/lib/import-refresh-helper';
 import * as XLSX from 'xlsx';
 import {
   normalizeBillNumber,
@@ -70,9 +72,16 @@ interface DetailedSellExcelImportDialogProps {
   }>) => void;
   /** ST-8: New callback — fired after /api/import/apply completes (success or partial). */
   onApplied?: (summary: ImportSummary) => void;
+  /**
+   * ST-75 P2-B: Real server-backed refresh callback — invoked when bills may have
+   * committed (SUCCESS / PARTIAL_SUCCESS / AMBIGUOUS_RESULT). The parent MUST wire
+   * this to an actual server fetch (e.g., reload products/stock/bills from the API).
+   * Replaces the legacy onImport([]) call which did NOT actually refresh server state.
+   */
+  onRefreshAfterImport?: () => void | Promise<void>;
 }
 
-export function DetailedSellExcelImportDialog({ products, onSessionExpired, onImport, onApplied }: DetailedSellExcelImportDialogProps) {
+export function DetailedSellExcelImportDialog({ products, onSessionExpired, onImport, onApplied, onRefreshAfterImport }: DetailedSellExcelImportDialogProps) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -80,7 +89,71 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
   const [fileName, setFileName] = useState('');
   const [existingDuplicates, setExistingDuplicates] = useState<Set<string>>(new Set());
   const [applyResult, setApplyResult] = useState<ImportSummary | null>(null);
+  const [importOutcome, setImportOutcome] = useState<ImportOutcomeState>('IDLE');
+  const importInFlightRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // ST-75 P2-A: Track scheduled ambiguous-refresh handles so they can be
+  // cancelled on unmount or dialog reset. Prevents stale-closure leaks and
+  // duplicate refresh side effects if the dialog closes during the delayed
+  // retry window.
+  const ambiguousRefreshHandlesRef = useRef<ScheduledRefreshHandle[]>([]);
+
+  // ST-75 P2-A: Cancel any pending delayed refreshes on unmount.
+  useEffect(() => {
+    return () => {
+      for (const handle of ambiguousRefreshHandlesRef.current) {
+        handle.cancel();
+      }
+      ambiguousRefreshHandlesRef.current = [];
+    };
+  }, []);
+
+  // ST-75 P2-7/P2-8/P2-10: Track the active refresh promise at dialog level.
+  const activeRefreshPromiseRef = useRef<Promise<void> | null>(null);
+
+  // ST-75 P2-10/P2-14: Shared wrapper with queued fresh refresh.
+  const queuedRefreshRef = useRef<Promise<void> | null>(null);
+
+  const startTrackedRefresh = (): Promise<void> => {
+    const promise = Promise.resolve(onRefreshAfterImport?.());
+    activeRefreshPromiseRef.current = promise;
+    promise.finally(() => {
+      if (activeRefreshPromiseRef.current === promise) {
+        activeRefreshPromiseRef.current = null;
+      }
+    });
+    return promise;
+  };
+
+  const runTrackedRefresh = (): Promise<void> => {
+    const existing = activeRefreshPromiseRef.current;
+    if (existing) {
+      if (queuedRefreshRef.current) return queuedRefreshRef.current;
+      queuedRefreshRef.current = existing
+        .catch(() => {})
+        .then(() => {
+          queuedRefreshRef.current = null;
+          return startTrackedRefresh();
+        });
+      return queuedRefreshRef.current;
+    }
+    return startTrackedRefresh();
+  };
+
+  // ST-75 P2-A: Schedule a bounded delayed reconciliation refresh for ambiguous
+  // outcomes. GET/read refresh only; NEVER re-issues POST /api/import/apply.
+  // ST-75 P2-7: Cancel prior handles.
+  // ST-75 P2-8/P2-10: Uses runTrackedRefresh for cross-scheduler coordination.
+  const scheduleAmbiguousImportRefresh = () => {
+    for (const handle of ambiguousRefreshHandlesRef.current) {
+      handle.cancel();
+    }
+    ambiguousRefreshHandlesRef.current = [];
+    const handle = scheduleAmbiguousRefresh(() => {
+      return runTrackedRefresh();
+    });
+    ambiguousRefreshHandlesRef.current.push(handle);
+  };
 
   const productMap = useMemo(() => {
     const m = new Map<string, Product>();
@@ -433,12 +506,17 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
 
   const handleImport = async () => {
     if (!canImport) return;
+    if (importInFlightRef.current) return;
+    importInFlightRef.current = true;
     setImporting(true);
+    setImportOutcome('IMPORTING');
     setApplyResult(null);
     try {
       const token = getAuthToken();
       if (!token) {
         toast.error('ไม่ได้เข้าสู่ระบบ — กรุณา Login ใหม่');
+        // ST-75: pre-dispatch — no request sent, no backend writes possible.
+        setImportOutcome('IDLE');
         setImporting(false);
         return;
       }
@@ -471,6 +549,8 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
 
       if (billsToApply.length === 0) {
         toast.warning('ไม่มีบิลพร้อมนำเข้า');
+        // ST-75: pre-dispatch — no request sent, no backend writes possible.
+        setImportOutcome('IDLE');
         setImporting(false);
         return;
       }
@@ -484,7 +564,13 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         body: JSON.stringify({ type: 'sales', bills: billsToApply }),
       });
 
-      // ST-75: Use tested classifier for auth response handling
+      // ST-75: Use tested classifier for auth response handling.
+      // NOTE: /api/import/apply has already been dispatched at this point.
+      // For 401, the backend rejects before processing — session is expired, no writes.
+      // For 403, the backend denies permission — no writes, session preserved.
+      // For 429/5xx, the backend MAY have started or committed per-bill transactions.
+      //   A client receiving 429/5xx after dispatch CANNOT safely claim zero writes.
+      //   Therefore 429/5xx MUST be classified as AMBIGUOUS_RESULT, not a simple retry.
       const applyAction = classifyAuthResponse(res.status);
       if (applyAction === 'SESSION_EXPIRED') {
         toast.error('เซสชันหมดอายุ — กรุณา Login ใหม่');
@@ -496,20 +582,47 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         handlePermissionDenied();
         return;
       }
+      // ST-75 F4: 429/5xx after apply dispatch → AMBIGUOUS_RESULT (backend may have committed).
       if (applyAction === 'TRANSIENT_ERROR') {
-        toast.error('เซิร์ฟเวอร์ไม่ตอบสนอง — กรุณาลองใหม่ภายหลัง');
-        setImporting(false);
+        const ambiguousOutcome = classifyImportOutcome(res.status, null, false);
+        setImportOutcome(ambiguousOutcome); // AMBIGUOUS_RESULT for 429/5xx
+        toast.error(getOutcomeMessage(ambiguousOutcome));
+        // ST-75 P2-A: Schedule a BOUNDED delayed reconciliation refresh instead of a
+        // single immediate call. The backend MAY still be committing per-bill
+        // transactions when this fires — the delayed retries (default 1.5s, 4s)
+        // give the commit time to land so the UI eventually shows authoritative
+        // state. This is a GET/read refresh only; it NEVER re-issues the POST
+        // /api/import/apply mutation.
+        if (shouldRefreshHistory(ambiguousOutcome)) {
+          scheduleAmbiguousImportRefresh();
+        }
         return;
       }
 
       if (!res.ok) {
+        // ST-75: other non-2xx (400/404 etc.) — confirmed client error, no commit.
+        const failedOutcome = classifyImportOutcome(res.status, null, false);
+        setImportOutcome(failedOutcome); // FAILED_CONFIRMED for 400/404
         const data = await res.json().catch(() => ({}));
         toast.error(`นำเข้าไม่สำเร็จ: ${data.error || res.statusText}`);
-        setImporting(false);
         return;
       }
 
       const summary = (await res.json()) as ImportSummary;
+
+      // ST-75 P2-5: Classify outcome BEFORE storing the summary. If the summary
+      // is malformed (fails isValidImportSummary), classifyImportOutcome returns
+      // AMBIGUOUS_RESULT — we must NOT store the raw summary in applyResult
+      // because the UI's applyResult.failedBills.map would crash on a null
+      // or missing element. Only store the summary if it's valid.
+      const outcome = classifyImportOutcome(res.status, summary, false, billsToApply.length);
+      setImportOutcome(outcome);
+      if (outcome === 'AMBIGUOUS_RESULT') {
+        // ST-75 Defect 2: If AMBIGUOUS_RESULT, we must NOT consume the summary.
+        toast.error(getOutcomeMessage(outcome));
+        scheduleAmbiguousImportRefresh();
+        return;
+      }
       setApplyResult(summary);
 
       const parts: string[] = [`นำเข้าสำเร็จ ${summary.importedCount} บิล`];
@@ -517,32 +630,62 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
       if (summary.duplicateInFileCount > 0) parts.push(`ซ้ำในไฟล์ ${summary.duplicateInFileCount}`);
       if (summary.insufficientStockCount > 0) parts.push(`สต็อกไม่พอ ${summary.insufficientStockCount}`);
       if (summary.failedCount > 0) parts.push(`ล้มเหลว ${summary.failedCount}`);
-      if (summary.importedCount > 0) {
+
+      if (outcome === 'SUCCESS') {
         toast.success(parts.join(' · '));
-      } else {
+      } else if (outcome === 'PARTIAL_SUCCESS') {
         toast.warning(parts.join(' · '));
+      } else {
+        toast.error(parts.join(' · ') || 'นำเข้าไม่สำเร็จ');
       }
 
-      onImport?.([]);
-      onApplied?.(summary);
+      // ST-75 P2-B: Refresh history only when bills may have committed.
+      // Use the real server-backed refresh callback instead of legacy onImport([])
+      // which did not actually reload server state.
+      // ST-75 P2-A: If the outcome is AMBIGUOUS_RESULT (e.g., malformed 2xx summary
+      // that failed isValidImportSummary validation), schedule a BOUNDED delayed
+      // reconciliation refresh — the backend MAY still be committing. For
+      // SUCCESS/PARTIAL_SUCCESS, an immediate refresh is safe (backend has
+      // confirmed commit).
+      if (shouldRefreshHistory(outcome)) {
+        // ST-75 P2-11: Use runTrackedRefresh for confirmed refreshes,
+        // so they serialize behind any active ambiguous reconciliation.
+        runTrackedRefresh();
+        onApplied?.(summary);
+      }
 
       setTimeout(() => {
         checkDuplicatesBatch();
       }, 100);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'เกิดข้อผิดพลาด';
-      toast.error(`นำเข้าไม่สำเร็จ: ${message}`);
+      const outcome = classifyImportOutcome(null, null, true);
+      setImportOutcome(outcome);
+      toast.error(getOutcomeMessage(outcome));
+      // ST-75 P2-A: Schedule a BOUNDED delayed reconciliation refresh — the backend
+      // may have committed before the network dropped. The delayed retries give the
+      // commit time to land. This is a GET/read refresh only; it NEVER re-issues the
+      // POST /api/import/apply mutation.
+      if (shouldRefreshHistory(outcome)) {
+        scheduleAmbiguousImportRefresh();
+      }
     } finally {
       setImporting(false);
+      importInFlightRef.current = false;
     }
   };
 
   const handleOpenChange = (v: boolean) => {
+    if (!v && shouldBlockClose(importOutcome)) {
+      toast.warning('กำลังนำเข้า กรุณารอผลลัพธ์ก่อน เพื่อป้องกันสถานะบิลไม่ชัดเจน');
+      return;
+    }
     setOpen(v);
     if (!v) { resetDialogState(); }
   };
 
   const resetDialogState = () => {
+    setImportOutcome('IDLE');
+    importInFlightRef.current = false;
     setPlannedBills([]);
     setFileName('');
     setApplyResult(null);
@@ -551,6 +694,13 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
     setLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     duplicateChecked.current = false;
+    // ST-75 P2-A2: Do NOT cancel pending delayed ambiguous-refresh timers here.
+    // The refresh callbacks (onRefreshAfterImport → loadData) are parent-level
+    // functions that do NOT depend on dialog state. Cancelling them on dialog
+    // close would defeat the purpose of delayed reconciliation — the backend may
+    // still be committing when the user dismisses the dialog, and the delayed
+    // retries are the only way to eventually show authoritative state. The
+    // unmount useEffect cleanup handles component destruction.
   };
 
   const handleSessionExpired = () => {
@@ -610,7 +760,11 @@ export function DetailedSellExcelImportDialog({ products, onSessionExpired, onIm
         <FileSpreadsheet className="h-4 w-4 mr-1" />
         นำเข้าแบบละเอียด (แยกบิล)
       </Button>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent
+        className="max-w-4xl max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => { if (shouldBlockClose(importOutcome)) e.preventDefault(); }}
+        onEscapeKeyDown={(e) => { if (shouldBlockClose(importOutcome)) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileSpreadsheet className="h-5 w-5 text-green-600" />

@@ -46,19 +46,24 @@ export function BuyPage({ onSessionExpired }: { onSessionExpired?: () => void })
 
   // Fetch products on mount
   useEffect(() => {
-    async function loadProducts() {
-      try {
-        const res = await fetchProducts();
-        const data = res as unknown as { products: Product[] };
-        setProducts(data.products || (res as unknown as Product[]));
-      } catch {
-        toast.error('ไม่สามารถโหลดข้อมูลสินค้าได้');
-      } finally {
-        setLoading(false);
-      }
-    }
     loadProducts();
   }, []);
+
+  // ST-75 P2-B: Real server-backed refresh — called by import dialog after apply
+  // (SUCCESS / PARTIAL_SUCCESS / AMBIGUOUS_RESULT) so the UI reflects any committed
+  // bills and updated stock. Replaces the legacy onImport([]) call which did not
+  // actually reload server state.
+  async function loadProducts() {
+    try {
+      const res = await fetchProducts();
+      const data = res as unknown as { products: Product[] };
+      setProducts(data.products || (res as unknown as Product[]));
+    } catch {
+      toast.error('ไม่สามารถโหลดข้อมูลสินค้าได้');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   // Group products by category
   const groupedProducts = useMemo((): ProductComboboxGroup[] => {
@@ -306,6 +311,7 @@ export function BuyPage({ onSessionExpired }: { onSessionExpired?: () => void })
                 <DetailedExcelImportDialog
                   products={products}
                   onSessionExpired={onSessionExpired}
+                  onRefreshAfterImport={loadProducts}
                   onImport={async (bills) => {
                     setSubmitting(true);
                     let success = 0;

@@ -15,9 +15,9 @@
  *     normal POST /api/buy-bills and /api/sell-bills routes, with NO
  *     second bill engine (no direct db.buyBill.create / db.sellBill.create /
  *     db.stockLot.create in the import route).
- *   - Duplicate/batch: prove loadExistingBillNumbers is called exactly
- *     ONCE per import request (not per bill), P2002 maps to
- *     DUPLICATE_EXISTING (not FAILED), and full re-upload is idempotent.
+ *   - Duplicate/batch: prove the normal successful path uses one initial
+ *     request-wide lookup, confirmed concurrent duplicate races map to
+ *     DUPLICATE_EXISTING, and full re-upload is idempotent.
  *
  * Run: bun test tests/st8-route-tests.test.ts
  */
@@ -129,7 +129,7 @@ interface MockApplyState {
   existingBillNumbers: Set<string>;
   insufficientStockProductIds: Set<string>;
   failOnBillNumbers: Set<string>;
-  duplicateOnBillNumbers: Set<string>; // createPurchase/SalesBill throws DuplicateExistingError
+  duplicateOnBillNumbers: Set<string>; // createPurchase/SalesBill simulates a concurrent winner + throws DuplicateExistingError
   loadExistingBillNumbersCalls: Array<{ type: 'purchase' | 'sales'; normalizedCandidates: string[] }>;
   checkStockAvailabilityCalls: Array<{ items: ParsedBillItem[] }>;
   createPurchaseBillCalls: Array<{ bill: ParsedBill; actor: ImportActor }>;
@@ -187,6 +187,9 @@ function makeMockApplyDeps(): { deps: ImportApplyDeps; state: MockApplyState; re
       state.createPurchaseBillCalls.push({ bill, actor });
       const norm = normalizeBillNumber(bill.externalBillNumber);
       if (state.duplicateOnBillNumbers.has(norm)) {
+        // Model the actual race: the initial lookup missed, then a concurrent
+        // winner committed this external number before our create collided.
+        state.existingBillNumbers.add(norm);
         throw new DuplicateExistingError('externalBillNumber');
       }
       if (state.failOnBillNumbers.has(norm)) {
@@ -203,6 +206,7 @@ function makeMockApplyDeps(): { deps: ImportApplyDeps; state: MockApplyState; re
       state.createSalesBillCalls.push({ bill, actor });
       const norm = normalizeBillNumber(bill.externalBillNumber);
       if (state.duplicateOnBillNumbers.has(norm)) {
+        state.existingBillNumbers.add(norm);
         throw new DuplicateExistingError('externalBillNumber');
       }
       if (state.failOnBillNumbers.has(norm)) {
@@ -683,20 +687,20 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
     expect(sellServiceBody).toMatch(/validateSourceLotCosts\s*\(/);
   });
 
-  test('23. P2002 maps to DUPLICATE_EXISTING (DuplicateExistingError handling)', () => {
-    // import-pipeline.ts catches DuplicateExistingError and classifies the
-    // bill as DUPLICATE_EXISTING (not FAILED).
+  test('23. P2002 duplicate signal requires post-failure row confirmation', () => {
+    // A create-time duplicate signal is not enough by itself: reconciliation
+    // must confirm the normalized external bill number now exists.
     const src = readSource(IMPORT_PIPELINE_PATH);
     expect(src).toMatch(/import.*DuplicateExistingError.*from ['"]\.\/bill-errors['"]/);
-    expect(src).toMatch(/err instanceof DuplicateExistingError/);
+    expect(src).toContain('const afterFailureExisting = await deps.loadExistingBillNumbers(type, [norm])');
+    expect(src).toMatch(/duplicateAfterRace = afterFailureExisting\.has\(norm\)/);
+    expect(src).not.toMatch(/duplicateAfterRace\s*=\s*err instanceof DuplicateExistingError/);
     expect(src).toMatch(/status: 'DUPLICATE_EXISTING'/);
     // Verify isPrismaP2002 maps P2002 to DuplicateExistingError in bill-services.
     const billServicesSrc = readSource(BILL_SERVICES_PATH);
     expect(billServicesSrc).toMatch(/isP2002OnField\s*\(/);
     expect(billServicesSrc).toMatch(/throw new DuplicateExistingError/);
     // Real isPrismaP2002 behavior.
-    expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);
-    // New bill-errors.ts only checks code === 'P2002' (stricter than old version that also checked message)
     expect(isPrismaP2002({ code: 'P2002' } as never)).toBe(true);
     expect(isPrismaP2002(new Error('random error'))).toBe(false);
   });
@@ -707,10 +711,9 @@ describe('ST-8 rev 2: Shared production path (source inspection)', () => {
 // ============================================================================
 
 describe('ST-8 rev 2: Duplicate / batch behavior', () => {
-  test('24. P2002 does not increment failedCount', async () => {
-    // When createPurchaseBill throws DuplicateExistingError (simulating
-    // a Prisma P2002), the apply controller classifies the bill as
-    // DUPLICATE_EXISTING — NOT FAILED. failedCount stays at 0.
+  test('24. confirmed P2002 race does not increment failedCount', async () => {
+    // Simulate a race where the initial lookup misses, another request commits,
+    // and our create then collides. The post-failure recheck confirms the row.
     mockApply.state.duplicateOnBillNumbers.add('A1051492');
     const bills = [makeBill({ externalBillNumber: 'A1051492' })];
     const summary = await applyImport('purchase', bills, mockApply.deps, ACTOR);
@@ -718,7 +721,8 @@ describe('ST-8 rev 2: Duplicate / batch behavior', () => {
     expect(summary.failedCount).toBe(0);
     expect(summary.importedCount).toBe(0);
     expect(mockApply.state.createPurchaseBillCalls).toHaveLength(1); // attempt was made
-    expect(mockApply.state.stockLotWrites).toBe(0); // no stock written (rolled back)
+    expect(mockApply.state.loadExistingBillNumbersCalls).toHaveLength(2); // initial + post-failure confirmation
+    expect(mockApply.state.stockLotWrites).toBe(0); // no stock written by the losing request
   });
 
   test('25. duplicate causes zero stock side effects', async () => {
@@ -755,9 +759,9 @@ describe('ST-8 rev 2: Duplicate / batch behavior', () => {
     expect(mockApply.state.stockLotWrites).toBe(2);
   });
 
-  test('26. one lookup for 100 bills (loadExistingBillNumbers called once)', async () => {
-    // The CRITICAL fix: loadExistingBillNumbers is called ONCE per import
-    // request, not per bill. Verify with 100 bills.
+  test('26. one lookup for 100 successful/non-racing bills', async () => {
+    // Normal successful/non-racing imports still use exactly one initial
+    // request-wide lookup rather than one query per bill.
     const bills: ParsedBill[] = [];
     for (let i = 0; i < 100; i++) {
       bills.push(
@@ -768,7 +772,7 @@ describe('ST-8 rev 2: Duplicate / batch behavior', () => {
     mockApply.state.existingBillNumbers.add('B00010');
     mockApply.state.existingBillNumbers.add('B00050');
     const summary = await applyImport('purchase', bills, mockApply.deps, ACTOR);
-    // Exactly ONE call to loadExistingBillNumbers, regardless of bill count.
+    // Exactly ONE call to loadExistingBillNumbers for the non-racing path.
     expect(mockApply.state.loadExistingBillNumbersCalls).toHaveLength(1);
     // The single call received ALL 100 normalized bill numbers as candidates.
     expect(mockApply.state.loadExistingBillNumbersCalls[0].normalizedCandidates).toHaveLength(100);

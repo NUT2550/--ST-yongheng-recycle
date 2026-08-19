@@ -57,7 +57,7 @@ export async function generateBillNumber(
 }
 
 // Helper: extract the numeric suffix from bill numbers like "SORT-2569-00132" → 132
-function computeMaxSeq(billNumbers: (string | null)[], yearPrefix: string): number {
+export function computeMaxSeq(billNumbers: (string | null)[], yearPrefix: string): number {
   let max = 0
   for (const bn of billNumbers) {
     if (!bn || !bn.startsWith(yearPrefix)) continue

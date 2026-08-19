@@ -16,6 +16,7 @@
 |---|---|---|---|
 | INV-ST70-REVERSAL-IDENTITY | Reversal movements must have fresh IDs and idempotency keys | stock-movement-ledger | tests/st70-sorting-cancellation-history.test.ts |
 | INV-ST70-ATOMIC-CANCEL | Sorting cancellation must be atomic with CAS-protected output lot deletion | sorting-cancellation | tests/st70-postgres-concurrency.test.ts |
+| INV-ST75-IMPORT-RELIABILITY | Excel import must handle ambiguous transport, concurrent races, and malformed responses safely | import-reliability | tests/st75-p2-ambiguous-refresh.test.ts + tests/st75-import-postgres-production-path.test.ts |
 
 ## Decisions
 
