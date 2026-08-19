@@ -246,11 +246,22 @@ async function cleanupSyntheticData(db: PrismaClient, categoryId: string, produc
   // Clean in dependency order
   await db.stockMovement.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
   await db.stockLot.deleteMany({ where: { productId: { in: productIds } } }).catch(() => {});
-  // ST-75 P2-29: Delete audit logs by the synthetic product IDs they reference
-  // (audit logs store the Prisma bill ID in entityId, not 'ST75').
-  // Also delete by any audit logs created during this test run.
-  await db.auditLog.deleteMany({ where: { entityId: { in: productIds } } }).catch(() => {});
-  await db.auditLog.deleteMany({ where: { details: { contains: 'ST75' } } }).catch(() => {});
+  // ST-75 P2-29: Delete audit logs by the ACTUAL synthetic bill IDs they reference
+  // (audit logs store the Prisma bill ID in entityId, not the product ID and not
+  // the literal 'ST75'). Capture the synthetic bill IDs BEFORE deleting the bills,
+  // then remove only matching audit rows when at least one bill exists.
+  const syntheticBuyBillIds = (await db.buyBill.findMany({
+    where: { items: { some: { product: { categoryId } } } },
+    select: { id: true },
+  })).map((b) => b.id);
+  const syntheticSellBillIds = (await db.sellBill.findMany({
+    where: { items: { some: { product: { categoryId } } } },
+    select: { id: true },
+  })).map((b) => b.id);
+  const syntheticBillIds = [...syntheticBuyBillIds, ...syntheticSellBillIds];
+  if (syntheticBillIds.length > 0) {
+    await db.auditLog.deleteMany({ where: { entityId: { in: syntheticBillIds } } }).catch(() => {});
+  }
   // ST-75 P2-24: Delete bills BEFORE their items. If items are deleted first,
   // the relational items.some predicate can no longer match any bill, leaving
   // orphaned bills behind. Delete bills first, then items (orphaned items are
@@ -660,6 +671,57 @@ describe('ST-75 Production-Path Stock Correctness', () => {
       // No negative lots
       const negative = lots.filter(l => l.remainingWeight < 0);
       expect(negative.length).toBe(0);
+    } finally {
+      await cleanupSyntheticData(db, categoryId, products);
+    }
+  });
+});
+
+// ============ Audit cleanup regression ============
+
+describe('ST-75 AuditCleanup Regression', () => {
+  test('AC1. cleanupSyntheticData removes bill audit rows + bills for Purchase and Sales', async () => {
+    if (SKIP_REASON) { console.log(`  [SKIPPED] ${SKIP_REASON}`); return; }
+    const db = prisma();
+    const { categoryId, products } = await setupSyntheticData(db);
+    try {
+      // One Purchase bill + one Sales bill.
+      const purchaseBills = makeBills(1, products, 'AC-PUR');
+      const salesBills = makeBills(1, products, 'AC-SAL');
+      const deps = makeTestImportDeps(db);
+      const purchaseResult = await applyImport('purchase', purchaseBills, deps, ACTOR);
+      const salesResult = await applyImport('sales', salesBills, deps, ACTOR);
+      expect(purchaseResult.importedCount).toBe(1);
+      expect(salesResult.importedCount).toBe(1);
+
+      // BillImportResult uses `billId` (NOT `id`) for the db id.
+      const purchaseBillId = purchaseResult.importedBills[0].billId;
+      const salesBillId = salesResult.importedBills[0].billId;
+      expect(purchaseBillId).toBeDefined();
+      expect(salesBillId).toBeDefined();
+
+      const capturedBillIds = [purchaseBillId!, salesBillId!];
+
+      // Audit rows exist BEFORE cleanup.
+      const beforeAudit = await db.auditLog.findMany({
+        where: { entityId: { in: capturedBillIds } },
+      });
+      expect(beforeAudit.some(a => a.entityType === 'BUY_BILL' && a.action === 'CREATE')).toBe(true);
+      expect(beforeAudit.some(a => a.entityType === 'SELL_BILL' && a.action === 'CREATE')).toBe(true);
+
+      // Cleanup must delete those audit rows via the captured bill IDs.
+      await cleanupSyntheticData(db, categoryId, products);
+
+      const afterAudit = await db.auditLog.findMany({
+        where: { entityId: { in: capturedBillIds } },
+      });
+      expect(afterAudit.length).toBe(0);
+
+      // Both fixture bills must also be gone.
+      const buyCount = await db.buyBill.count({ where: { id: purchaseBillId } });
+      const sellCount = await db.sellBill.count({ where: { id: salesBillId } });
+      expect(buyCount).toBe(0);
+      expect(sellCount).toBe(0);
     } finally {
       await cleanupSyntheticData(db, categoryId, products);
     }
