@@ -1,29 +1,29 @@
-# CLAUDE.md — คำสั่งเริ่มต้นสำหรับ AI ทุกตัว
+# CLAUDE.md — Compatibility Redirect
 
-> **⚠️ อ่านไฟล์นี้ก่อนเริ่มทำงานทุกครั้ง**
+> Legacy compatibility file only. **Do not use this file as an independent policy source.**
+> Last reconciled: 2026-08-07
 
-## กฎเหล็ก (ทำทุกครั้งก่อนเริ่มงาน)
+All AI agents, including Claude-compatible tooling, must start from:
 
-1. **อ่าน `worklog.md` ก่อนเริ่มทำงานทุกครั้ง** — เพื่อเข้าใจสิ่งที่ทำไปแล้ว และไม่ทำซ้ำ/ทำลายงานเดิม
-2. **อัปเดต `worklog.md` ทุกครั้งหลังเสร็จงาน** — append บันทึกใหม่ในส่วน 8 (ประวัติการทำงาน)
-3. **Commit + push `worklog.md` ทุกครั้ง** — ให้ข้อมูลล่าสุดอยู่บน GitHub เสมอ
-4. **อ่าน `UPDATE_WORKLOG.md`** — สำหรับรูปแบบการบันทึก
+1. `AGENTS.md`
+2. `process/GOVERNANCE.md`
+3. `process/CURRENT_STATE.md`
+4. task-relevant canonical docs/code/tests/issues/PRs
+5. Notion `AI Read First — YH Stock System` / current Owner decisions when Owner/business context is relevant
 
-## โปรเจกท์นี้คืออะไร
+`AGENTS.md` supersedes all historical instructions previously stored in this file.
 
-- **ชื่อ**: ยงเฮง มหาชัย รีไซเคิล — ระบบจัดการสต๊อกร้านรับซื้อเหล็กและโลหะ
-- **Tech**: Next.js 16 + Prisma + Supabase PostgreSQL + TypeScript
-- **Deploy**: Vercel ที่ https://st-yongheng-recycle.vercel.app
-- **GitHub**: https://github.com/NUT2550/--ST-yongheng-recycle
+In particular, the following legacy behavior is **not** current policy:
 
-## ห้ามทำ
+- mandatory reading of `worklog.md` as the primary current-state source
+- mandatory append/update of `worklog.md` after every task
+- mandatory commit/push of `worklog.md` after every task
+- treating `worklog.md` as the full system specification
 
-- ห้าม commit `.env`
-- ห้ามใช้ git email อื่นนอกจาก `207142776+NUT2550@users.noreply.github.com`
-- ห้ามใส่ `output: "standalone"` ใน next.config.ts
-- ห้ามเปลี่ยน Prisma provider เป็นอย่างอื่นนอกจาก `postgresql` (production)
-- ห้ามลบ `worklog.md` หรือไฟล์นี้
+Historical worklog content may still be used as supporting evidence, but current truth must be re-verified through the canonical sources above.
 
-## ข้อมูลละเอียด
+Git/Production/approval rules come from `AGENTS.md` + `process/GOVERNANCE.md`, not from this compatibility file.
 
-ดูทั้งหมดใน `worklog.md` — มี schema, API routes, ฟีเจอร์, วิธีสร้างแอปขึ้นมาใหม่
+## Key takeaway
+
+**If you opened `CLAUDE.md`, immediately continue with `AGENTS.md`; do not derive additional operating rules from this file.**

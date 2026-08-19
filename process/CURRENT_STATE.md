@@ -1,142 +1,109 @@
 # Current State — YH Stock System
 
-> **Concise, current, dated. No progress diaries. No raw logs.**
-> Last updated: 2026-07-30 (ST-71 core closure — follow-ups tracked separately)
+> Concise current technical state only. No progress diary. No historical issue list.
+> Last updated: 2026-08-07
 
-## Version Identity
+## Version identity
 
-> **Update this section after every merge to main.**
-> Run `git log --oneline -1 origin/main` to get the current main SHA.
-
-| Item | Value |
+| Item | Current evidence |
 |---|---|
-| **Current main SHA** | Check: `git log --oneline -1 origin/main` |
-| **Current Production SHA** | Check: GitHub deployment API or Vercel dashboard |
-| **Last verified Production SHA** | `132d21e13ccf5b9ccb9fbd5bc9235b1ee563a733` (verified 2026-07-30, ST-71 P0) |
+| **Current `main`** | `9d6a416a866a3eeb6ece2e7354efb4a1bc855881` — squash merge of PR #79 (`fix(st-75): stop import flow on expired session + 403`) |
+| **Previous main** | `2acae10c4ea1e970ee10d8ab4f4ccf69f88e6f7c` — ST-27 credential remediation |
 | **Production URL** | https://st-yongheng-recycle.vercel.app |
-| **Production deployment state** | success (as of 2026-07-30) |
+| **Production deployment for current main** | Vercel status was `pending` at the 2026-08-07 governance-cleanup check; do not claim current-main Production verification until rechecked |
+| **Governance cleanup PR** | #80, Draft, branch `policy/governance-reconciliation`; not merged |
 
-## Active Issues
+`main` advanced by one commit from `2acae10...` to `9d6a416...` via merged PR #79. PR #80 was created from the previous main and must be synchronized/revalidated before any Ready/Merge request.
 
-| Issue | Status | Summary |
-|---|---|---|
-| **ST-71 / Issue #50** | Core Complete (Linear: Done) | Core engineering work complete (PRs #51–#59). Owner-controlled follow-ups: ST-72 / GitHub #60 (branch protection), ST-73 / GitHub #61 (Production 403). |
-| **ST-70 / PR #49** | Closed | Sorting cancellation atomic + duplicate-safe. Production verified (Phases 1-3). |
-| **ST-71 P0 / PR #51** | Merged | 401/403 separation for Buy/Sell/Transfer cancel. Production 401 verified. |
-| **ST-71 / PR #52** | Merged | Reliability foundation: AGENTS.md, DoD, PR template, smoke workflow. |
-| **ST-71 / PR #53** | Merged | CI foundation validation enforcement + regression tests. |
-| **ST-71 / PR #54** | Merged | Knowledge directory + seed records. |
-| **ST-71 / PR #55** | Merged | Knowledge semantic validation (15 rules). |
-| **ST-71 / PR #56** | Merged | Cancel route auth-wiring static coverage (39 tests). |
-| **ST-71 / PR #57** | Merged | Cancel business-logic contract static coverage (47 tests, 321 expectations). Static CAS-presence verification added; CAS production code landed in PR #58. |
-| **ST-71 / PR #58** | Merged | Cancel PostgreSQL runtime regression harness + CAS concurrency fix. |
-| **ST-71 / PR #59** | Merged | CURRENT_STATE reconciliation after PR #58. |
-| **ST-72 / GitHub #60** | Open | Configure and verify main branch protection. |
-| **ST-73 / GitHub #61** | Verified | Production 403 PERMISSION_DENIED verified (smoke run 30615346890). All 4 routes returned 403. Secret cleaned up. |
+## Current active work visible in GitHub
 
-## Recently Completed
+### ST-75 — Excel import auth/session containment and remaining import reliability
 
-| Incident | PR | Merge SHA | Production Verified |
-|---|---|---|---|
-| ST-70 (sorting cancel) | #49 | `de9848e1f3` | ✅ Phases 1-3 (incident read-only, history, controlled cancellation) |
-| ST-71 P0 (cancel auth) | #51 | `132d21e` | ✅ 401 AUTH_REQUIRED (8/8 Production checks). ❌ 403 PERMISSION_DENIED (no staff credentials in sandbox) |
-| ST-71 reliability foundation | #52 | `19d6171` | n/a (docs + workflow only) |
-| ST-71 CI foundation enforcement | #53 | `b81da4a` | n/a (CI only) |
-| ST-71 knowledge directory | #54 | `f77f138` | n/a (docs only) |
-| ST-71 knowledge semantic validation | #55 | `e836b9f` | n/a (tests only) |
-| ST-71 cancel route auth-wiring | #56 | `97eabee` | n/a (static tests only) |
-| ST-71 cancel business-logic contract | #57 | `172929d` | n/a (static tests + CAS fix) |
-| ST-71 cancel PostgreSQL runtime harness | #58 | `22fb3cb` | n/a (runtime tests in CI PostgreSQL; no Production cancellation test performed) |
+- GitHub issue **#78** remains open.
+- PR **#79** is merged into `main`.
+- Verified code change from PR #79:
+  - production frontend uses `classifyAuthResponse()`
+  - 401 = session expired → clear token/user and close/reset import dialog
+  - 403 = permission denied → do not clear valid token
+  - 429/5xx = transient → do not clear auth state
+  - purchase and sales detailed-import flows received the same containment pattern
+- PR #79 explicitly leaves broader ST-75 scope open: AbortController/cancellation, partial-success reporting, durable idempotency, import performance, and Production verification.
 
-## Current Verified Behavior
+Do not mark ST-75 complete from PR #79 alone.
 
-- ✅ **Login + JWT auth** — works in Production (ST-10 tests + ST-70 unauth gate verification)
-- ✅ **401 AUTH_REQUIRED** — all 4 cancel routes (Buy, Sell, Transfer, Sorting) return 401 for no/invalid token
-- ✅ **Sorting cancellation** — atomic, duplicate-safe, cost evidence, CAS delete (ST-70 Production verified)
-- ✅ **Combined sorting history** — server-side merge, deterministic ordering, bounded pagination (ST-70 Phase 2 verified)
-- ✅ **401/403 separation** — shared `resolveHistoryEditAuth` helper in `src/lib/cancel-auth.ts` (ST-71 automated tests)
-- ✅ **Buy/Sell/Transfer cancellation services** — extracted from route handlers into testable service functions (PR #58). CAS guard, downstream-use rejection, reversal, audit, credit settlement all inside `$transaction`.
-- ✅ **CAS concurrency guard** — Buy/Sell/Transfer cancellation uses `updateMany` with `isCancelled: false` + `count !== 1` check (PR #58). Concurrent cancellation proven safe by PostgreSQL runtime tests (21 tests, 104 expectations, 0 skipped).
-- ✅ **Buy/Sell/Transfer rollback** — proven at 3 fault-injection stages (afterClaim, beforeReversal, beforeAudit) via PostgreSQL runtime tests (PR #58).
-- ✅ **FIFO cost** — deterministic ordering `dateAdded ASC → createdAt ASC → id ASC` (ST-39 tests)
-- ✅ **StockMovement ledger** — reversal identity, idempotency keys (ST-47 tests)
+### ST-63 — stock-transfer performance/concurrency follow-up
 
-## Current Unverified Behavior
+- PR **#77** remains open.
+- It contains measurement/batching work and explicitly states that real PostgreSQL latency improvement and concurrent-request safety were not yet proven at the recorded checkpoint.
+- Keep separate from ST-75 and governance cleanup.
 
-- ✅ **403 PERMISSION_DENIED** — verified in Production (smoke run 30615346890, 2026-07-31). All 4 routes (Buy/Sell/Transfer/Sorting DELETE) returned HTTP 403 with code `PERMISSION_DENIED` for authenticated staff without `history.edit`. Secret cleaned up after verification.
-- ✅ **Buy/Sell/Transfer cancellation** — covered by PostgreSQL runtime tests (PR #58: successful, duplicate, downstream rejection, rollback, concurrent). NOT tested in Production (no live cancellation performed).
-- ❌ **Buy/Sell/Transfer Production cancellation** — not tested in Production (by design — no Production mutation performed)
-- ❌ **Dashboard** — no automated test, not Production-verified
-- ❌ **Stock page** — no automated test, not Production-verified
-- ✅ **Post-deploy smoke test** — production-smoke.yml workflow (PR #52); 401 + 403 checks verified (smoke run 30615346890)
+### Governance reconciliation
 
-## Active Blockers and Risks
+- PR **#80** remains Draft.
+- Purpose: clean stale/conflicting GitHub + Notion operating instructions before introducing a new optimized/agentic rule set.
+- Documentation-only scope; no Production mutation, migration, deploy, or application-code change in this PR.
 
-| Risk | Priority | Status |
-|---|---|---|
-| Buy/Sell/Transfer cancel runtime PostgreSQL coverage | P0 | ✅ Resolved: PostgreSQL runtime coverage released (PR #58). 21 tests, 104 expectations, 0 skipped in CI. Covers successful, duplicate, downstream rejection, rollback, concurrent. |
-| Buy/Sell/Transfer concurrent cancellation race | P0 | ✅ Resolved: CAS guard (`updateMany` + `isCancelled: false` + `count !== 1`) proven effective by PostgreSQL concurrent tests (PR #58). Exactly one winner, loser gets 409, zero duplicate writes. |
-| 403 PERMISSION_DENIED Production-verified | P2 | ✅ Resolved: ST-73 / GitHub #61. Smoke run 30615346890 verified all 4 routes return 403 `PERMISSION_DENIED`. Secret cleaned up. |
-| Direct route-handler import blocked by `server-only` | P1 | ✅ Resolved: cancellation logic extracted to service functions (PR #58). Runtime tests import services directly. |
-| Production 403 verification | P2 | ✅ Resolved: ST-73 / GitHub #61. Verified via smoke run 30615346890. Secret deleted after verification. |
-| Branch protection not configured | P2 | Moved to ST-72 / GitHub #60. Governance follow-up (not engineering). Owner UI action. |
-| weightExpression migration not run | P0 | Pending Owner decision |
+## Current governance baseline
 
-## Pending Owner Decisions
+Until PR #80 is merged, the repository `main` still contains the previously merged Push-Early policy from PR #76. On the governance-cleanup branch, the intended reconciled hierarchy is:
 
-1. **weightExpression migration** — `prisma/migrations/add_weight_expression.sql` ready but NOT run. Owner decision required.
-2. **ST-72 / GitHub #60**: Configure main branch protection (GitHub UI action)
-3. **ST-73 / GitHub #61**: ✅ Complete — Production 403 verified (smoke run 30615346890). Secret cleaned up. Temporary account disabled/deleted by Owner. JWT may remain cryptographically valid up to 7 days.
+1. `AGENTS.md`
+2. `process/GOVERNANCE.md`
+3. this `process/CURRENT_STATE.md`
+4. task-relevant canonical domain docs
+5. current code/tests/issues/PRs
+6. Notion `AI Read First — YH Stock System` / current Owner decisions when relevant
 
-## Current Status
+No direct main push. Merge/deploy/Production/migration remain Owner-gated.
 
-`ST-71 FULLY COMPLETE — ALL FOLLOW-UPS VERIFIED`
+## Current known durable technical facts
 
-**ST-72**: Branch protection configured and verified ✅
-**ST-73**: Production 403 verified ✅ (smoke run 30615346890)
+- Production database platform: Supabase PostgreSQL.
+- Tracked `prisma/schema.prisma` Production provider must remain `postgresql`.
+- ST-27 removed exposed Production DB credential values from tracked files and added credential scanning; the exposed credential had already been rotated.
+- ST-62 durable stock-transfer idempotency was merged before ST-27.
+- `add_weight_expression.sql` was explicitly **not** run during ST-62 and later schema-mismatch fixes; do not assume it has been applied unless newly verified.
+- Historical July documentation that says Excel import is absent is stale: current repository has detailed purchase/sales import flows, and ST-75 is actively fixing their reliability/auth behavior.
 
-**Residual note**: The temporary staff account has been disabled/deleted by Owner. The JWT may remain cryptographically valid for up to 7 days after issue, but is no longer stored in any system (GitHub secret deleted, account disabled). No further use is authorized.
+## Production verification status
 
-**Owner decision**: `APPROVED — CLOSE ST-71 CORE WORK AND CREATE TWO FOLLOW-UP ISSUES` (2026-07-30)
-**Linear status**: Done (core engineering complete)
+### Verified from current GitHub evidence
 
-**Accepted residual risks** (P2, Owner-controlled):
-1. Production 403 not executed — ST-73 / GitHub #61
-2. Branch protection absent — ST-72 / GitHub #60
-3. JWT valid after account deactivation (applies only after #61)
-4. Main push CI excluded by design — pre-merge exact-head CI is evidence of record
-5. Path-filtered PostgreSQL checks not universally required — by design
+- PR #79 merged to `main` at `9d6a416...`.
+- The merge commit states no Production access was performed as part of the fix.
 
-**No P0/P1 technical findings remain.**
+### Not verified in this cleanup
 
-## Next Safe Work Item
+- Whether Vercel deployment of `9d6a416...` has completed successfully.
+- Whether PR #79 behavior has been exercised in Production after deploy.
+- Current Production database schema/row counts.
+- Whether `add_weight_expression.sql` has since been applied outside the evidence inspected here.
 
-Both Owner-controlled follow-ups are complete:
-1. **ST-72 / GitHub #60**: ✅ Branch protection configured and verified (Ruleset "Protect main", ID 20102920)
-2. **ST-73 / GitHub #61**: ✅ Production 403 verified (smoke run 30615346890, all 4 routes passed, secret cleaned up)
+Do not infer any of these from code alone.
 
-ST-71 core engineering work and all follow-ups are complete. Temporary account disabled/deleted by Owner. All credentials cleaned up.
+## Current safety/stop conditions
 
-## ST-72 Branch Protection Verification
+- No Production retry/data correction for ST-75 on behalf of Owner.
+- No schema migration or Production write without explicit Owner approval.
+- Stop on partial import, duplicate creation, auth-state ambiguity, unexpected 2xx/4xx/5xx, or mismatch between UI result and backend/history state.
+- Keep unrelated root causes in separate issues/PRs.
 
-- ST-72 branch protection configured and verified via Repository Ruleset "Protect main" (ID 20102920, enforcement: active).
-- Required approvals: 0 (single-maintainer repository).
-- Five universal checks required: `Foundation Validation`, `Lint`, `TypeScript Typecheck`, `Production Build`, `Unit Tests`.
-- Branch must be up to date before merging (strict policy).
-- Force pushes blocked. Branch deletion blocked.
-- Bypass list empty. Administrators cannot bypass.
-- ST-73 / GitHub #61 (Production 403 verification) — ✅ verified (smoke run 30615346890), secret + account cleaned up.
+## Next safe gates
+
+1. **Governance cleanup PR #80**: finish stale-document cleanup, synchronize with current `main`, re-run exact-head checks, remain Draft until Owner review.
+2. **ST-75 / #78**: continue only under its own scope/gates; PR #79 solved containment, not the entire import reliability problem.
+3. **ST-63 / PR #77**: continue separately with the performance/concurrency validation defined there.
 
 ## References
 
-- `AGENTS.md` — AI entry point
-- `process/DEFINITION_OF_DONE.md` — Task Completion Contract
-- `process/BUSINESS_RULES.md` — Section 8.5: Stable Error Codes
-- `src/lib/cancel-auth.ts` — Shared 401/403 auth helper
-- `src/lib/buy-cancellation-service.ts`, `sell-cancellation-service.ts`, `transfer-cancellation-service.ts` — extracted cancellation services with CAS guard (PR #58)
-- `tests/st71-postgres-runtime-harness.test.ts` — 21 PostgreSQL runtime tests (PR #58)
-- `tests/st71-cancel-auth-regression.test.ts` — 11 regression tests
-- `tests/st71-cancel-business-logic.test.ts` — 53 static contract tests (PR #57)
-- `.github/workflows/st71-postgres-runtime.yml` — PostgreSQL runtime CI workflow (PR #58)
-- `.github/workflows/production-smoke.yml` — Production smoke (401 + optional 403 with `STAFF_TOKEN_NO_HISTORY_EDIT`)
-- PR #49 (ST-70), PR #51 (ST-71 P0), PR #55–#58 (ST-71), Issue #50 (ST-71)
+- `AGENTS.md`
+- `process/GOVERNANCE.md`
+- `process/DEFINITION_OF_DONE.md`
+- `process/SAFETY_CHECKLIST.md`
+- GitHub issue #78 / PR #79 (ST-75)
+- GitHub PR #77 (ST-63)
+- GitHub PR #80 (governance cleanup)
+
+## Key takeaway
+
+**Current `main` is `9d6a416...`; ST-75 remains open beyond the merged auth-containment fix; governance cleanup is still Draft and must be synchronized before Ready. Production state beyond explicit evidence is not assumed.**
