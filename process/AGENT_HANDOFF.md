@@ -31,7 +31,7 @@ Do **not** use this file as a substitute for current state evidence. Do **not** 
 |---|---|
 | GitHub | code, tests, CI, technical policy / docs, exact technical evidence, PR / commit history |
 | Linear | task state, priority, blockers, acceptance criteria, current gate |
-| Notion | durable Owner / business context, decisions, SOP / business memory, concise cross-system summaries |
+| Notion | durable Owner / business context and decisions, cross-project context, SOP / business memory, concise routing summaries — not a duplicate of canonical technical policy |
 | Production | live runtime / data evidence only — never inferred from code alone |
 
 When sources conflict, follow `process/GOVERNANCE.md` authority hierarchy.
@@ -220,8 +220,8 @@ If work is unfinished but no new Owner decision, missing input, or Safety Gate i
 
 ## 12. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
 
-> **Effective:** Upon merge of PR #76
-> **Approved by:** Owner (pending merge)
+> **Effective:** Since merge of PR #76 on 2026-08-06 (merge commit `077c7dd8a34f5f4c2ca159ef1cbade196c02dab0`)
+> **Approved by:** Owner
 > **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
 > **Canonical location:** This section is the canonical full text. `process/SAFETY_CHECKLIST.md` §I and `AGENTS.md` contain summaries that must be kept in sync with this section.
 
@@ -369,11 +369,11 @@ After every push:
 
 ### Source-of-truth rules
 
-- **GitHub** = code, technical docs, exact commits, tests, CI, detailed evidence
+- **GitHub** = code, technical docs, exact commits, tests, CI, detailed technical evidence and technical policy
 - **Linear** = task status, priority, blocker, acceptance criteria, branch / PR links, next gate
-- **Notion** = durable Owner decisions, policy, high-level project checkpoint
+- **Notion** = durable Owner / business context and decisions, cross-project context, SOP / business memory, concise routing summaries — not a duplicate of canonical technical policy
 
-❌ Never write raw logs, secrets, command transcripts, or duplicate progress diary into Notion / Linear.
+❌ Never write raw logs, secrets, command transcripts, duplicate progress diary, or duplicate technical policy into Notion / Linear.
 
 ### Patch / ZIP is secondary only
 
@@ -381,8 +381,11 @@ Patch / ZIP files may be created as a **backup copy** only **after** work is pus
 
 ### Rollback
 
-- On branch (not main): `git revert <commit>` if a checkpoint introduces a problem
-- On main (after merge, requires Owner approval): `git revert` on main → Vercel auto-redeploy
+- On branch (not main): `git revert <commit>` if a checkpoint introduces a problem.
+- For changes already merged to `main`, rollback remains Owner-gated and must use a bounded revert branch → reviewed Draft PR → exact-head validation / CI → fresh independent review → explicit Owner merge approval → approved merge / deploy path.
+- Do not commit or push directly on `main`.
+- Do not rewrite history or force-push.
+- Database / Production recovery follows the task-specific Owner-approved plan in `process/SAFETY_CHECKLIST.md` §H.
 
 ### No Production impact
 
