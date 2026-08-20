@@ -1,7 +1,7 @@
 # Current State — YH Stock System
 
 > **Concise, current, dated. No progress diaries. No raw logs.**
-> Last reconciled: 2026-08-20 (ST-76 separate Merge/Deploy gate follow-up)
+> Last updated: 2026-08-20 (ST-76 separate Merge/Deploy gate follow-up)
 
 ## Version Identity
 
