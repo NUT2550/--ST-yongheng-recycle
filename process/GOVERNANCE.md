@@ -2,7 +2,7 @@
 
 > Canonical policy for resolving conflicts between AI instructions, repository documents, Notion context, and older handoff/runbook text.
 >
-> Effective: 2026-08-20 (ST-76 Governance Reconciliation v2)
+> Effective: 2026-08-20 (ST-76 Governance Reconciliation v2 + separate Merge/Deploy gate decision)
 
 ## 1. Purpose
 
@@ -19,7 +19,7 @@ When two instructions conflict, use this order:
    - `process/DATABASE_CONTEXT.md` — schema/stock-flow/data constraints
    - `process/DEFINITION_OF_DONE.md` — completion gates
    - `process/SAFETY_CHECKLIST.md` — migration/deploy/runtime safety procedures
-4. **`process/CURRENT_STATE.md` + current GitHub/CI/Production evidence** for current technical state. Runtime claims require runtime evidence.
+4. **`process/CURRENT_STATE.md` + current GitHub/CI/Production evidence** for current technical state. Runtime claims require runtime evidence. Exact current `main` SHA is read directly from GitHub rather than treated as self-updating text inside `CURRENT_STATE.md`.
 5. **Linear** for task state, priority, blocker, acceptance criteria, concise current gate.
 6. **Notion** for durable Owner/business context, cross-project decisions, policy summaries, and routing to canonical GitHub sources.
 7. **Runbooks/templates/worklogs/historical pages** as secondary guidance only. If they conflict with a higher source, the higher source wins and the older statement is superseded.
@@ -30,14 +30,14 @@ A newer timestamp alone does **not** override a higher-authority source unless i
 
 | Source | Canonical responsibility |
 |---|---|
-| GitHub | Code, tests, CI, technical docs, technical policy, exact evidence, PR/commit history |
+| GitHub | Code, tests, CI, technical docs, technical policy, exact evidence, PR/commit history, live branch head |
 | Linear | Task state, priority, blocker, acceptance criteria, concise current gate |
 | Notion | Owner/business context, durable decisions, SOP/business memory, cross-system index and summaries |
-| Production | Live runtime evidence only; never infer Production state from code/docs alone |
+| Vercel / Production | Deployment/runtime evidence only; never infer live runtime state from code/docs alone |
 
 Do not duplicate full technical policies into Notion. Notion should link to the canonical GitHub document and keep only the Owner/business meaning or durable decision.
 
-## 4. Current Git action policy
+## 4. Current Git / release action policy
 
 ### Autonomous within a clear approved task scope
 
@@ -73,6 +73,17 @@ AI agents must stop before:
 - closing GitHub/Linear issues when closure is an Owner gate
 - expanding scope into an unrelated issue/root cause
 
+### Merge and Deploy are separate gates
+
+Owner decision 2026-08-20:
+
+- **Merge approval does not authorize Deploy.**
+- A merge to `main` must not automatically create/promote a Production deployment.
+- Vercel Git-triggered deployment for `main` must be disabled through tracked project configuration or an approved Vercel setting.
+- Non-`main` Preview deployments may remain enabled for review/testing when they do not mutate Production data.
+- Production deployment occurs only after a **separate explicit Owner Deploy approval** using the approved manual deploy/promote path.
+- A deployment that appears automatically after a merge is an unexpected release-side effect and must be recorded/stopped on; it is not retroactively authorized by the Merge approval.
+
 ## 5. Superseded legacy instructions
 
 The following older instructions are **superseded** wherever they appear in historical pages, old PRs/issues, worklogs, or old revisions:
@@ -85,18 +96,22 @@ The following older instructions are **superseded** wherever they appear in hist
    - Direct main push is prohibited.
    - Changes reach `main` only through an Owner-approved PR merge.
 
-3. **Treating local sandbox files/patches/ZIPs as primary persistent artifacts.**
+3. **Treating a successful merge as implicit Production deployment approval.**
+   - Superseded by the explicit separate Merge and Deploy gates above.
+   - Automatic Git deployment from `main` is not an approved release path.
+
+4. **Treating local sandbox files/patches/ZIPs as primary persistent artifacts.**
    - GitHub remote branch is the persistent technical source of truth.
    - Patch/ZIP may be secondary backup only after remote checkpointing and must contain no secrets/sensitive data.
 
-4. **Changing the tracked Production `prisma/schema.prisma` provider to SQLite for routine local work.**
+5. **Changing the tracked Production `prisma/schema.prisma` provider to SQLite for routine local work.**
    - The tracked Production schema provider must remain `postgresql`.
    - Tests needing an alternate database must use an isolated fixture/test configuration that cannot be committed as the Production schema.
 
-5. **Using historical status/risk lists as current truth without re-verification.**
-   - Current state must be reloaded from `CURRENT_STATE.md`, GitHub/CI, and Production evidence when relevant.
+6. **Using historical status/risk lists as current truth without re-verification.**
+   - Current state must be reloaded from GitHub/CI, `CURRENT_STATE.md`, and Production/Vercel evidence when relevant.
 
-6. **Using `worklog.md` as the primary AI context source.**
+7. **Using `worklog.md` as the primary AI context source.**
    - `AGENTS.md` is the canonical AI entry point.
    - `worklog.md` is retained as historical evidence but is not a source of current truth.
 
@@ -119,12 +134,13 @@ When an agent encounters conflicting or stale guidance:
 - Preserve historical evidence in Git/PR/issues; do not keep obsolete current-state prose merely for history.
 - Never store secrets, credentials, Production dumps, large raw logs, or full chat transcripts in GitHub/Notion.
 - Separate `Verified`, `Inference`, `Unknown`, `Superseded`, `Blocked`, and `Needs Owner Decision` where uncertainty matters.
+- Do not hardcode an “always current” Git `main` SHA into a file that can only change by creating another Git commit; store a last-reconciled baseline and resolve the live head from GitHub.
 
 ## 8. Required AI reading order for YH Stock System
 
 1. `AGENTS.md` — mandatory entry point, safety rules, working method
-2. `process/GOVERNANCE.md` (this file) — authority hierarchy, conflict resolution, Git/autonomy boundaries
-3. `process/CURRENT_STATE.md` — current main SHA, Production SHA, active issues
+2. `process/GOVERNANCE.md` (this file) — authority hierarchy, conflict resolution, Git/autonomy/release boundaries
+3. `process/CURRENT_STATE.md` — last reconciled baseline, deployment identity, active risks, verified/unverified behavior; exact `main` SHA comes from GitHub
 4. `process/PROJECT_OPERATING_CONTEXT.md` — project summary, tech stack, file structure
 5. `process/BUSINESS_RULES.md` — bill number format, cancel behavior, FIFO, permissions
 6. `process/DATABASE_CONTEXT.md` — Prisma schema, stock flow, forbidden operations
@@ -136,4 +152,4 @@ Notion remains required context, but it must not override current canonical GitH
 
 ## 9. Key takeaway
 
-**Owner decides risk/business gates; GitHub holds canonical technical policy/evidence; Notion holds durable Owner/business context and links to GitHub. When documents conflict, follow the authority hierarchy instead of guessing.**
+**Owner decides risk/business gates; GitHub holds canonical technical policy/evidence and live branch identity; Notion holds durable Owner/business context; Vercel/Production holds deployment/runtime evidence. Merge and Deploy are separate Owner gates. When documents conflict, follow the authority hierarchy instead of guessing.**
