@@ -1,496 +1,229 @@
-# Agent Handoff — ยงเฮง มหาชัย รีไซเคิล
-
-> เอกสารสำหรับ owner ส่งให้ AI Agent ตัวอื่นได้ทันที
-> วันที่เริ่มต้น: 27/06/2569
-> อัปเดตล่าสุด: 2026-07-28 (ST-70 — billNumber, isCancelled, AuditLog, cancel routes ทั้ง 3 ถูก implement แล้ว; SortingBill cancellation เป็น atomic transaction)
-
----
-
-## 1. Project Summary
-
-**โปรเจกต์**: ยงเฮง มหาชัย รีไซเคิล — ระบบบันทึกสต็อกสำหรับร้านรับซื้อเหล็กและโลหะ
-
-**เทคโนโลยี**: Next.js 16 + TypeScript + Prisma + Supabase Postgres + Vercel
-
-**สถานะปัจจุบัน (verified 2026-07-28, ST-70)**:
-- ✅ ระบบหลักใช้งานได้ (login, buy, sell, sort, stock, history, dashboard)
-- ✅ billNumber (BUY-/SELL-/SORT- format), isCancelled soft delete, AuditLog, cancel routes ทั้ง 3 — implement แล้ว
-- ✅ SortingBill cancellation: atomic transaction, conditional claim, atomic compare-and-delete output lots, authoritative cost evidence, StockMovement reversals, AuditLog (ST-70)
-- ✅ Combined sorting history (server-side merge SortingBills + sorting-classified StockTransfers, bounded pagination)
-- ✅ UI error surfacing + data preservation + retry (history-page.tsx)
-- ❌ Excel import, Product Alias mapping, weightExpression DB storage — ยังขาด (P1/P0-post-migrate)
-- ⏳ รอ owner run weightExpression migration SQL ใน Supabase
-
-**Production URL**: https://st-yongheng-recycle.vercel.app
-**GitHub**: https://github.com/NUT2550/--ST-yongheng-recycle
-**Supabase**: https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx
-
----
-
-## 2. Current Source of Truth
-
-### เอกสารหลัก (ในโฟลเดอร์ `process/`)
-1. `PROJECT_OPERATING_CONTEXT.md` — เอกสารหลัก อ่านก่อน
-2. `PRODUCTION_LINKS.md` — URL ทั้งหมด
-3. `DEPLOYMENT_RUNBOOK.md` — ขั้นตอน deploy
-4. `DATABASE_CONTEXT.md` — schema + stock flow
-5. `BUSINESS_RULES.md` — กฎธุรกิจ
-6. `CURRENT_OPEN_ISSUES.md` — pending work P0/P1/P2
-7. `SAFETY_CHECKLIST.md` — migration + deploy checklist
-8. `REBUILD_SPEC.md` — spec สำหรับสร้างระบบใหม่
-9. `REPAIR_RUNBOOK.md` — คู่มือซ่อมปัญหา
-10. `FEATURE_INVENTORY.md` — ตาราง feature ทั้งหมด
-11. `AGENT_HANDOFF.md` — ไฟล์นี้
-
-### Codebase ปัจจุบัน (verified 27/06/2569)
-- **15 Prisma models** (ดู DATABASE_CONTEXT.md)
-- **22 API routes** (ดู PRODUCTION_LINKS.md)
-- **11 page components** (ดู PROJECT_OPERATING_CONTEXT.md)
-- **9 lib files** (auth, api, db, helpers, safe-math, store, types, utils, auth-constants)
-
-### Worklog
-- `worklog.md` ใน repo — บันทึก Task 1-24 (บาง task หายไปจาก codebase แต่มีบันทึก)
-- **อ่านก่อนเริ่มงาน** เพื่อเข้าใจ context
-
----
-
-## 3. Safe Operating Rules
-
-### ✅ ทำได้
-- อ่าน code + docs
-- รัน `bun run lint`, `npx tsc --noEmit`
-- รัน `bun run dev` (local — ถ้ามี JWT_SECRET ใน .env)
-- แก้ code + ทดสอบ local
-- สร้าง migration SQL (additive only)
-- สร้าง docs
-- Commit ใน local (แต่ห้าม push โดยไม่ได้รับอนุมัติ)
-
-### ❌ ห้าม (เด็ดขาด)
-- ห้ามใส่ secret ใน code/docs (DATABASE_URL value, password, JWT_SECRET value, API key)
-- ห้าม `git push` โดยไม่ได้รับอนุมัติ
-- ห้าม deploy โดยไม่ได้รับอนุมัติ
-- ห้าม migrate production DB โดยไม่ได้รับอนุมัติ
-- ห้าม `prisma migrate reset` บน production
-- ห้าม `bun run prisma/seed.ts` บน production
-- ห้าม hard delete bill ใน DB
-- ห้ามแก้ stock ตรงๆ ใน DB
-- ห้าม `eval()` หรือ `new Function()`
-- ห้าม hardcode password ใน source
-- ห้าม commit `.env`
-- ห้าม commit `db/custom.db`
-- ห้ามตั้ง `typescript.ignoreBuildErrors: true`
-- ห้ามเปลี่ยน schema.prisma provider เป็น sqlite แล้ว commit
-- ห้าม auto-match สินค้าข้ามหมวดวัสดุ
-- ห้ามลบ AuditLog entries
-
----
-
-## 4. Current Known Risks
-
-### 🔴 Critical
-1. **weightExpression DB storage ยังไม่มี** — schema.prisma ยังไม่มี weightExpression fields; ต้อง run `prisma/migrations/add_weight_expression.sql` ใน Supabase ก่อน (P0, รอ Owner)
-2. **Excel import + Product Alias mapping ยังไม่มี** — P1
-3. **`db/custom.db` ถูก track ใน git** — pre-existing issue (P1)
-4. **`next.config.ts` มี `typescript.ignoreBuildErrors: true`** — Vercel build ผ่านทั้งที่มี type error (P2)
-
-> 📜 **Historical note (superseded 2026-07-28, ST-70)**: กฎเดิมระบุว่า billNumber, cancel, AuditLog หายไปจาก codebase และต้อง recreate — ทั้งหมดถูก implement แล้วใน branch `st-70-sorting-cancellation-history` (ดู PR #49, `src/lib/bill-helpers.ts`, `src/lib/sorting-cancellation-service.ts`, `src/lib/combined-sorting-history.ts`)
-
-### 🟡 Warning
-1. **`.env` local ไม่มี `JWT_SECRET`** — dev server จะ fail
-2. **`prisma/schema.prisma` provider = postgresql แต่ .env DATABASE_URL = SQLite path** — local test ต้องเปลี่ยน provider ชั่วคราว (แล้ว revert ก่อน commit)
-3. **User 01 role ใน production ไม่แน่ใจ** — worklog Task 18 บอกว่าเป็น admin แต่ seed.ts สร้างเป็น staff
-4. **User 04 ยังไม่ได้สร้าง** — ไม่มี script สร้าง
-
-### 🟢 Info
-1. **docs เดิม (FIRST_USE_CHECKLIST.md, STAFF_TRAINING_SCRIPT.md)** เขียนตอนที่มี billNumber + cancel — บางส่วนอ้างถึง feature ที่หายไป
-2. **Supabase project ref `wefqhunzjvsxciiwdhjx`** อยู่ใน docs — เป็น project ID ไม่ใช่ secret
-
----
+# Agent Handoff — YH Stock System
 
-## 5. Priority Order (สำหรับ AI Agent ทำงานต่อ)
-
-### Phase 1: Verify Current Codebase
-**เป้าหมาย**: ทำความเข้าใจสถานะปัจจุบันให้ชัดเจน
-
-1. อ่าน `process/PROJECT_OPERATING_CONTEXT.md`
-2. อ่าน `process/FEATURE_INVENTORY.md`
-3. ตรวจ codebase state:
-   ```bash
-   cd /home/z/my-project
-   grep "provider" prisma/schema.prisma  # ต้องเป็น postgresql
-   grep -c "billNumber" prisma/schema.prisma  # ถ้า 0 → feature หาย
-   find src/app/api -name "route.ts" | sort
-   bun run lint
-   ```
-4. รายงานสถานะกลับ (ดู Section 8)
-
-### Phase 2: Stabilize Existing Buy/Sell/Sort/Stock
-**เป้าหมาย**: ให้ระบบปัจจุบันใช้งานได้ปลอดภัย
-
-1. ตรวจ lint ผ่าน
-2. ตรวจ tsc ไม่มี error ใหม่ (errors ใน examples/skills เป็น pre-existing)
-3. ตรวจ JWT_SECRET ใน Vercel env vars
-4. ตรวจ user 01 role ใน production DB
-5. ตรวจ db/custom.db ไม่ถูก commit ใน diff ถัดไป
-
-### Phase 3: billNumber + cancel + AuditLog — COMPLETED (ST-70, 2026-07-28)
-
-> ✅ Phase 3 ทำเสร็จแล้วใน ST-70 + commits ก่อนหน้า ไม่ต้อง redo
-
-**สิ่งที่ implement แล้ว**:
-- `billNumber` field บน Buy/Sell/SortingBill (`String? @unique`)
-- `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` fields
-- `AuditLog` model พร้อม indexes
-- `src/lib/bill-helpers.ts` — generateBillNumber + writeAuditLog
-- `src/app/api/{buy,sell,sorting}-bills/[id]/route.ts` — DELETE handlers
-- `src/lib/sorting-cancellation-service.ts` — atomic SortingBill cancellation (ST-70)
-- `src/lib/combined-sorting-history.ts` — combined pagination (ST-70)
-- history-page.tsx — billNumber display + cancel button + error surfacing (ST-70)
-
-**ดูรายละเอียด**: `process/BUSINESS_RULES.md` Section 2, `process/FEATURE_INVENTORY.md`, PR #49, `worklog.md` (ST-70)
-
-### Phase 3.5: SortingBill cancellation correctness (ST-70 — COMPLETED 2026-07-28)
-
-> ✅ ทำเสร็จแล้ว ไม่ต้อง redo
-
-- Atomic compare-and-delete output lots (TOCTOU fix)
-- Authoritative cost evidence (all-waste bills supported)
-- 401/403 separation
-- UI error surfacing + retry
-- Real PostgreSQL concurrency tests (14 scenarios)
-- GitHub Actions PostgreSQL workflow
-
-### Phase 4: Rebuild Excel Import (P1 — ยังไม่ได้ทำ)
-**เป้าหมาย**: คืนความสามารถ import บิลจาก Excel
-
-1. อ่าน `process/REBUILD_SPEC.md` Section 10
-2. สร้าง `src/app/api/excel/parse/route.ts` (TIS-620 encoding support)
-3. สร้าง `src/components/excel-import-dialog.tsx` (preview + auto-match)
-4. เพิ่มปุ่ม import ใน buy-page.tsx
-5. ทดสอบกับไฟล์ Excel จริง
-
-### Phase 5: Rebuild Product Alias
-**เป้าหมาย**: คืนความสามารถ map สินค้าเดิม → ใหม่
-
-1. อ่าน `process/BUSINESS_RULES.md` Section 3 (Cross-Category Prohibition)
-2. สร้างไฟล์ mapping CSV (ต้องการ Excel เดิมของ owner)
-3. ประยุกต์ owner business rules
-4. (Optional) สร้าง ProductAlias table + import logic
-
-### Phase 6: Rebuild Weight Formula Tracking
-**เป้าหมาย**: คืนความสามารถเก็บสูตรใน DB
-
-1. อ่าน `process/REBUILD_SPEC.md` Section 11
-2. รัน migration SQL `prisma/migrations/add_weight_expression.sql` (หลัง owner อนุมัติ)
-3. เพิ่ม weightExpression ใน schema.prisma (5 fields)
-4. เพิ่มใน types.ts
-5. อัปเดต 3 API routes (buy/sell/sorting) ให้รับ + เก็บ weightExpression
-6. อัปเดต 4 UI pages (buy/sell/sort/history) ให้แสดง live preview + formula hint
-7. ทดสอบ end-to-end
-
----
-
-## 6. Standard Prompt Template สำหรับสั่ง AI Agent ซ่อม
-
-### Template A: ซ่อมปัญหาเฉพาะจุด
-
-```
-Task: Repair <feature/issue name>
-
-Context:
-- Project: ยงเฮง มหาชัย รีไซเคิล (Next.js + Prisma + Supabase)
-- อ่านเอกสาร: process/AGENT_HANDOFF.md, process/REPAIR_RUNBOOK.md, process/FEATURE_INVENTORY.md
-- Codebase: /home/z/my-project
-
-อาการ:
-<อธิบายปัญหาที่เกิด>
-
-ขอบเขต:
-- ซ่อมเฉพาะปัญหานี้
-- ห้ามแก้ code อื่น
-- ห้าม push/deploy โดยไม่ได้รับอนุมัติ
-
-ข้อห้าม:
-- ห้ามใส่ secret ใน code/docs
-- ห้าม migrate DB โดยไม่ได้รับอนุมัติ
-- ห้าม eval() หรือ new Function()
-- ห้าม hardcode password
-
-รายงานกลับ:
-1. สาเหตุของปัญหา
-2. วิธีแก้ที่ใช้
-3. ไฟล์ที่แก้ไข
-4. ผลการทดสอบ
-5. คำแนะนำขั้นต่อไป
-```
-
-### Template B: ซ่อมหลายปัญหาพร้อมกัน
-
-```
-Task: Multi-issue Repair
-
-Context:
-- Project: ยงเฮง มหาชัย รีไซเคิล
-- อ่านเอกสาร: process/AGENT_HANDOFF.md (ทั้งหมดใน process/)
-- Codebase: /home/z/my-project
-
-ปัญหาที่ต้องซ่อม:
-1. <ปัญหาที่ 1>
-2. <ปัญหาที่ 2>
-3. <ปัญหาที่ 3>
-
-ลำดับความสำคัญ:
-- ปัญหา 1: P0 (บล็อกการใช้งาน)
-- ปัญหา 2: P1 (ควรซ่อม)
-- ปัญหา 3: P2 (ทำทีหลังได้)
-
-ขอบเขต:
-- ซ่อมตามลำดับ priority
-- ถ้าปัญหา P0 ต้อง migrate DB → ห้าม migrate โดยไม่ได้รับอนุมัติ
-- แจ้ง owner ก่อน ถ้าต้องแก้ข้ามปัญหา
-
-ข้อห้าม: <ดู Section 3 ของ AGENT_HANDOFF.md>
-
-รายงานกลับ:
-1. ปัญหาที่ซ่อมสำเร็จ (ตามลำดับ)
-2. ปัญหาที่ยังค้าง + เหตุผล
-3. ไฟล์ที่แก้ไขทั้งหมด
-4. การทดสอบที่ผ่าน
-5. คำแนะนำขั้นต่อไป
-```
-
----
-
-## 7. Standard Prompt Template สำหรับสั่ง AI Agent Rebuild
-
-### Template C: Rebuild ระบบใหม่ทั้งหมด
-
-```
-Task: Rebuild ยงเฮง มหาชัย รีไซเคิล system from scratch
-
-Context:
-- อ่านเอกสาร: process/REBUILD_SPEC.md (full spec)
-- อ่านเอกสาร: process/BUSINESS_RULES.md (กฎธุรกิจ)
-- อ่านเอกสาร: process/FEATURE_INVENTORY.md (features ทั้งหมด)
-- อ่านเอกสาร: process/DATABASE_CONTEXT.md (schema + stock flow)
-
-เป้าหมาย:
-สร้างระบบใหม่ที่มีฟีเจอร์เทียบเท่าระบบปัจจุบัน + features ที่หายไป
-
-Tech Stack (บังคับ):
-- Next.js 16 + TypeScript 5
-- Prisma 6 + Supabase Postgres
-- Tailwind CSS 4 + shadcn/ui
-- JWT (jose) + bcryptjs
-- Zustand
-
-Acceptance Criteria: <ดู REBUILD_SPEC.md Section 14>
-
-ข้อห้าบ:
-- ห้ามใช้ eval() หรือ new Function()
-- ห้าม hardcode password
-- ห้าม ignore type errors
-- ห้าม auto-match สินค้าข้ามหมวดวัสดุ
-
-รายงานกลับ:
-1. Phase ที่ทำเสร็จ
-2. Features ที่ rebuild สำเร็จ
-3. การทดสอบที่ผ่าน
-4. ปัญหาที่เจอ
-5. คำแนะนำขั้นต่อไป
-```
-
-### Template D: Rebuild feature เฉพาะ
-
-```
-Task: Rebuild <feature name>
-
-Context:
-- อ่านเอกสาร: process/REBUILD_SPEC.md Section <ที่เกี่ยวข้อง>
-- อ่านเอกสาร: process/FEATURE_INVENTORY.md (สถานะ feature)
-- Codebase: /home/z/my-project
-
-เป้าหมาย:
-Rebuild <feature> ให้กลับมาใช้งานได้
-
-ขั้นตอน:
-1. อ่าน spec ใน REBUILD_SPEC.md
-2. ตรวจ codebase ปัจจุบัน — มีอะไรอยู่แล้วบ้าง
-3. สร้าง/แก้ไขไฟล์ที่จำเป็น
-4. ทดสอบ local
-5. ถ้าต้อง migrate DB → เตรียม SQL แต่ห้าม run โดยไม่ได้รับอนุมัติ
-
-ข้อห้าม: <ดู Section 3 ของ AGENT_HANDOFF.md>
-
-รายงานกลับ:
-1. ไฟล์ที่สร้าง/แก้ไข
-2. การทดสอบที่ผ่าน
-3. SQL migration ที่ต้องการ (ถ้ามี)
-4. คำแนะนำขั้นต่อไป
-```
-
----
-
-## 8. Required Report Format (AI Agent ต้องตอบกลับ)
-
-### หลังทำงานเสร็จ ต้องรายงานในรูปแบบนี้:
-
-```markdown
-# Work Report — <Task name>
-
-**Date**: <วันที่>
-**Agent**: <ชื่อ agent>
-**Duration**: <ระยะเวลา>
-
-## สรุป
-<บรรทัดเดียวสรุปงาน>
-
-## งานที่ทำ
-1. <step 1>
-2. <step 2>
-3. <step 3>
-
-## ไฟล์ที่แก้ไข
-| ไฟล์ | การเปลี่ยนแปลง |
-|-----|---------------|
-| <path> | <สรุป> |
-
-## การทดสอบ
-- [x] <test 1 ที่ผ่าน>
-- [x] <test 2 ที่ผ่าน>
-- [ ] <test 3 ที่ยังไม่ผ่าน>
-
-## ปัญหาที่เจอ
-1. <ปัญหา 1 + วิธีแก้>
-2. <ปัญหา 2 + วิธีแก้>
-
-## Migration ที่ต้องการ (ถ้ามี)
-```sql
-<SQL script>
-```
-
-## ข้อห้ามที่ปฏิบัติตาม
-- ✅ ไม่ใส่ secret ใน code/docs
-- ✅ ไม่ push/deploy โดยไม่ได้รับอนุมัติ
-- ✅ ไม่ migrate DB โดยไม่ได้รับอนุมัติ
-- ✅ ไม่ eval() หรือ new Function()
-- ✅ ไม่ hardcode password
-
-## คำแนะนำขั้นต่อไป
-1. <recommendation 1>
-2. <recommendation 2>
-
-## คำถามสำหรับ owner (ถ้ามี)
-1. <question 1>
-2. <question 2>
-```
-
----
-
-## 9. วิธีเริ่มต้น (Quick Start สำหรับ AI Agent ใหม่)
+> Durable generic handoff contract for any AI agent taking over work on YH Stock System. Historical live-task / worklog / dated-feature-state snapshots remain available in Git history and must not be treated as current policy.
+> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
+
+## 1. Start here
+
+Read in this order before acting:
+
+1. `AGENTS.md`
+2. `process/GOVERNANCE.md`
+3. `process/CURRENT_STATE.md`
+4. current `origin/main` exact SHA — verify with `git fetch origin && git rev-parse origin/main`
+5. current Linear issue / GitHub issue / PR for the assigned task
+6. task-relevant canonical domain docs:
+   - `process/BUSINESS_RULES.md`
+   - `process/DATABASE_CONTEXT.md`
+   - `process/DEFINITION_OF_DONE.md`
+   - `process/SAFETY_CHECKLIST.md`
+   - `process/DEPLOYMENT_RUNBOOK.md`
+   - `process/REPAIR_RUNBOOK.md`
+7. related `knowledge/` records
+8. current code / tests / CI on the exact branch / head
+9. Notion `AI Read First — YH Stock System` and current Owner decisions when Owner / business context is relevant
+
+Do **not** use this file as a substitute for current state evidence. Do **not** trust an old workspace, chat transcript, worklog, or local patch as current truth without re-verification.
+
+## 2. Source of truth
+
+| Source | Responsibility |
+|---|---|
+| GitHub | code, tests, CI, technical policy / docs, exact technical evidence, PR / commit history |
+| Linear | task state, priority, blockers, acceptance criteria, current gate |
+| Notion | durable Owner / business context, decisions, SOP / business memory, concise cross-system summaries |
+| Production | live runtime / data evidence only — never inferred from code alone |
+
+When sources conflict, follow `process/GOVERNANCE.md` authority hierarchy.
+
+### Persistent execution state
+
+The **GitHub remote branch / PR** is the persistent execution state. The local workspace is ephemeral — sandbox resets, terminal history loss, and AI memory loss do not lose work that has been pushed to a remote branch.
+
+Do not treat old local patches, ZIPs, `public/` files, terminal scrollback, or chat transcripts as the current source of truth. Always re-verify from `git fetch origin` + `process/CURRENT_STATE.md` + the relevant GitHub PR / issue.
+
+## 3. Core operating principles
+
+- Correctness of stock, cost, ledger, history, and auditability over speed.
+- Read-only investigation first for stock / data / Production-impacting work.
+- Prove root cause before editing a defect.
+- Keep scope bounded; unrelated root causes belong in separate issues / PRs.
+- Distinguish `Verified`, `Inference`, `Unknown`, `Not verified`, `Superseded`, `Blocked`, and `Needs Owner Decision`.
+- Never claim Production verification without Production evidence.
+- Never treat a dated annotation as current truth without re-verification.
+
+## 4. Git workflow
+
+### Autonomous within a clear approved task scope
+
+An AI agent may:
+
+- fetch / reload current context
+- create a bounded branch from exact current `main`
+- push the initial branch checkpoint
+- create focused commits
+- fast-forward push focused checkpoints
+- open / update a Draft PR
+- create / comment on a GitHub issue when no duplicate exists
+- inspect CI and fix failures caused by the in-scope change
+- update affected technical documentation / knowledge
+
+These actions do **not** authorize Production access, merge, deploy, or release.
+
+### Owner approval required
+
+Stop before:
+
+- marking a PR Ready
+- merge
+- deploy
+- Production connection / query / write
+- Production data correction
+- credential validation or rotation
+- database migration
+- rollback affecting `main` or Production
+- direct push to `main`
+- force-push / history rewrite
+- repository visibility / settings / branch-protection changes
+- closing GitHub / Linear work when closure is Owner-gated
+- expanding scope into an unrelated issue / root cause
+
+Direct push to `main` is prohibited. Changes reach `main` only through an Owner-approved PR merge.
+
+## 5. Checkpoint policy for sandbox-hosted AI work
+
+Sandbox / local state is ephemeral. GitHub remote branches are the persistent technical source of truth.
+
+Before editing:
+
+1. `git fetch origin`
+2. verify exact `origin/main` SHA
+3. check for duplicate branch / PR
+4. create a bounded branch from exact current `main`
+5. push the initial branch checkpoint
+
+After each meaningful checkpoint, run the relevant minimum validation before push:
+
+- credential / secret scan when available
+- `git diff --check`
+- lint / typecheck for changed scope
+- targeted tests for changed behavior
+- staged-diff review for `.env`, secrets, database dumps, customer data, or other sensitive artifacts
+
+Full validation is **not** required for every checkpoint, but must pass before requesting Ready.
+
+Emergency WIP checkpoints are allowed only when sandbox-reset risk is concrete and the staged diff passes secret / sensitive-data checks plus `git diff --check`. WIP must remain Draft and must not be represented as complete.
+
+The full canonical Push-Early Checkpoint Policy is in §12 below.
+
+## 6. Files and data that must never be pushed
+
+- `.env` or real environment values
+- passwords, tokens, API keys, connection strings
+- GitHub / auth credential files
+- `db/custom.db`
+- Production database dumps
+- raw customer / sensitive rows
+- `node_modules/`
+- `.next/`, `dist/`, build output
+- large raw logs
+- full chat transcripts
+- repository ZIP / patch as the primary persistent artifact
+
+`.env.example` is allowed only with unusable placeholders.
+
+## 7. Prisma / database rule
+
+The tracked Production Prisma schema must remain PostgreSQL.
+
+- `prisma/schema.prisma` provider must remain `postgresql`.
+- Do not switch the tracked Production schema provider to SQLite for routine local testing.
+- Tests needing an alternate database must use isolated fixtures or test-specific configuration that cannot alter the committed Production schema.
+- No Production migration or direct SQL mutation without explicit Owner approval.
+- Never run destructive reset / seed operations against Production.
+
+Historical guidance that instructed agents to temporarily edit the tracked Prisma provider to SQLite is superseded.
+
+## 8. Defect workflow
+
+For a bug / incident:
+
+1. capture the reproducible symptom / evidence
+2. inspect actual code / state without mutation where practical
+3. separate verified facts from hypotheses / unknowns
+4. prove root cause
+5. create a bounded fix
+6. add a regression test that fails before and passes after (or document an equivalent evidence exception when a traditional test is not technically possible)
+7. run targeted validation
+8. run full validation before Ready
+9. perform fresh exact-head independent review
+10. update affected canonical docs / knowledge
+11. keep PR Draft until Owner gate
+
+If a partial write, data mismatch, unexpected 2xx / 5xx, or unclear contract appears, stop the risky path and report evidence. Do not retry mutating Production operations to investigate.
+
+## 9. Feature workflow
+
+For new behavior:
+
+- Owner confirms the business rule where required.
+- Acceptance criteria and failure modes must be explicit.
+- Auth / permission behavior must be defined and tested when relevant.
+- Stock / cost / history effects must be documented and verified.
+- Release / rollback impact must be documented.
+- Full validation + exact-head CI + review are required before Ready.
+
+## 10. Validation baseline
+
+Use the commands applicable to the current repository state and scope. The normal full gate includes:
 
 ```bash
-# 1. Clone repo (ถ้ายังไม่ได้)
-git clone https://github.com/NUT2550/--ST-yongheng-recycle.git
-cd --ST-yongheng-recycle
-
-# 2. Install dependencies
-bun install
-
-# 3. อ่านเอกสารหลัก
-cat process/PROJECT_OPERATING_CONTEXT.md
-cat process/FEATURE_INVENTORY.md
-cat worklog.md | tail -100  # ดูงานล่าสุด
-
-# 4. ตรวจสถานะ codebase
-grep "provider" prisma/schema.prisma  # ต้องเป็น postgresql
+bun install --frozen-lockfile
+bun run db:generate
 bun run lint
-find src/app/api -name "route.ts" | sort
-
-# 5. ตั้งค่า local dev (ถ้าต้องทดสอบ)
-echo "DATABASE_URL=file:./dev.db" > .env
-echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
-# เปลี่ยน schema.prisma provider เป็น sqlite ชั่วคราว (REVERT ก่อน commit!)
-bun run db:push
-bun run prisma/seed.ts
-
-# 6. เริ่ม dev server
-bun run dev
-# เปิด http://localhost:3000
-
-# 7. ทำงานตาม priority ใน Section 5
+npx tsc --noEmit
+bun test
+bun run build
+bash scripts/validate-foundation.sh
 ```
 
----
+Also run targeted tests and the credential scanner required by the changed scope.
 
-## 10. ข้อมูลติดต่อ / Escalation
+Never report a check as PASS if it was not actually run. State the exact reason when an environment prevents a check.
 
-### ถ้าเจอปัญหาที่ไม่รู้จัก
-1. อ่าน `process/REPAIR_RUNBOOK.md` Section 19 (Decision Tree)
-2. อ่าน `worklog.md` — อาจมีบันทึกปัญหาเดิม
-3. รายงาน owner พร้อมรายละเอียด:
-   - อาการ
-   - สิ่งที่ลองทำ
-   - error message หรือ log
-   - ไฟล์ที่เกี่ยวข้อง
+## 11. End-of-task report / handoff package
 
-### ถ้าต้องการข้อมูลเพิ่มเติม
-- **Owner decisions** (business rules): ดู `process/BUSINESS_RULES.md`
-- **Database schema**: ดู `prisma/schema.prisma` หรือ `process/DATABASE_CONTEXT.md`
-- **API routes**: ดู `src/app/api/` หรือ `process/PRODUCTION_LINKS.md`
-- **Pending work**: ดู `process/CURRENT_OPEN_ISSUES.md`
+Every task handoff should state:
 
-### ห้าม
-- 🚫 ห้ามตัดสินใจแทน owner ในเรื่อง business rules
-- 🚫 ห้าม push/deploy/migrate โดยไม่ได้รับอนุมัติ
-- 🚫 ห้ามแก้ secret หรือ password
-- 🚫 ห้ามลบ data ใดๆ ใน production DB
+1. Goal
+2. Result
+3. Verified discoveries
+4. Errors / root causes
+5. Files / functions changed
+6. Tests / CI actually run and results
+7. Production verification status (verified / not verified / not applicable)
+8. Documentation / knowledge updates
+9. Remaining risks / unknowns
+10. Next safe gate
 
----
+The handoff package should contain:
 
-## 11. Checklist สำหรับ AI Agent ก่อนส่งมอบงาน
+- objective
+- exact head SHA
+- diff scope
+- tests actually run
+- Production status
+- remaining risks
+- next gate
 
-ก่อนรายงานว่างานเสร็จ ต้องตรวจ:
-
-- [ ] อ่าน `process/AGENT_HANDOFF.md` (ไฟล์นี้) แล้ว
-- [ ] ปฏิบัติตามข้อห้ามทั้งหมดใน Section 3
-- [ ] ไม่มี secret ใน code/diff
-- [ ] `bun run lint` ผ่าน (exit 0)
-- [ ] `grep "provider" prisma/schema.prisma` = `postgresql`
-- [ ] `git diff` ไม่มี `.env` หรือ `db/custom.db`
-- [ ] ทดสอบ local ผ่าน (ถ้าเกี่ยวข้องกับ code)
-- [ ] เขียน report ตาม format ใน Section 8
-- [ ] ถ้ามี migration → เตรียม SQL แต่ห้าม run
-- [ ] ถ้าต้อง push/deploy → แจ้ง owner ขออนุมัติก่อน
-
----
-
-## สรุป
-
-เอกสารนี้เป็น **handoff document** สำหรับ AI Agent ตัวอื่นที่จะรับงานต่อ
-
-**สิ่งสำคัญที่ต้องจำ**:
-1. อ่าน `process/` ทั้งหมดก่อนเริ่ม
-2. ปฏิบัติตามข้อห้ามใน Section 3
-3. ทำตาม priority ใน Section 5
-4. รายงานตาม format ใน Section 8
-5. ห้าม push/deploy/migrate โดยไม่ได้รับอนุมัติ
-
-**ดูเอกสารประกอบ**:
-- `REBUILD_SPEC.md` — ถ้าต้องสร้างระบบใหม่/feature ใหม่
-- `REPAIR_RUNBOOK.md` — ถ้าต้องซ่อมปัญหา
-- `FEATURE_INVENTORY.md` — ถ้าต้องการรู้สถานะ feature
-- `BUSINESS_RULES.md` — ถ้าต้องการรู้กฎธุรกิจ
-- `SAFETY_CHECKLIST.md` — ถ้าต้อง deploy/migrate
-
----
+If work is unfinished but no new Owner decision, missing input, or Safety Gate is required, provide the next executable step. If an Owner decision / approval is required, stop at that gate.
 
 ## 12. Push-Early Checkpoint Policy (Sandbox-Hosted AI Work)
 
 > **Effective:** Upon merge of PR #76
 > **Approved by:** Owner (pending merge)
 > **Applies to:** Z.AI work on YH Stock System repo (sandbox environment)
-> **Canonical location:** This section is the canonical full text. `process/SAFETY_CHECKLIST.md` §10 and `AGENTS.md` contain summaries that must be kept in sync with this section.
+> **Canonical location:** This section is the canonical full text. `process/SAFETY_CHECKLIST.md` §I and `AGENTS.md` contain summaries that must be kept in sync with this section.
 
 ### Principle
 
@@ -504,25 +237,26 @@ Break work into short, focused checkpoints. After each checkpoint passes minimum
 
 1. `git fetch origin`
 2. Verify exact current `origin/main` SHA
-3. Check for duplicate branch/PR
+3. Check for duplicate branch / PR
 4. Create feature branch from exact main:
    - General work: `st-XX-short-description`
    - Security work: `security/short-description`
-   - Policy/docs: `policy/short-description`
+   - Policy / docs: `policy/short-description`
 5. Push empty branch as first remote checkpoint
 6. Then begin implementation
 
 ### Minimum validation before normal checkpoint push
 
 Run the relevant subset:
-- Credential/secret scan (if scanner exists)
+
+- Credential / secret scan (if scanner exists)
 - `git diff --check`
 - Lint for changed scope
-- TypeScript/typecheck for changed scope
+- TypeScript / typecheck for changed scope
 - Targeted tests for changed code
 - Verify staged diff has no `.env`, secret, database dump, or sensitive artifact
 
-Full build/full test is **not** required for every checkpoint, but **must** pass before requesting PR Ready.
+Full build / full test is **not** required for every checkpoint, but **must** pass before requesting PR Ready.
 
 ❌ Never report a check as PASS if it was not actually run.
 
@@ -531,11 +265,13 @@ Full build/full test is **not** required for every checkpoint, but **must** pass
 Emergency WIP is allowed **only** when there is concrete evidence that sandbox reset is imminent (e.g., explicit Owner warning, dev server process termination observed, or workspace files disappearing). The evidence must be stated in the WIP commit comment.
 
 If sandbox reset is imminent and minimum validation is incomplete, an emergency WIP checkpoint is allowed **only if**:
+
 - ✅ Secret scan passes
 - ✅ Staged diff has no credential or sensitive data
 - ✅ `git diff --check` passes
 
 Commit format: `wip(st-XX): preserve validated partial progress`
+
 - Push to feature branch only
 - PR must remain Draft
 - Add a comment listing which validations are still pending
@@ -543,6 +279,7 @@ Commit format: `wip(st-XX): preserve validated partial progress`
 - Must complete missing validation + fix WIP in next session
 
 **Never push** code that:
+
 - Contains a secret
 - Does not compile due to this change
 - Has destructive behavior without guards
@@ -558,7 +295,7 @@ Commit format: `wip(st-XX): preserve validated partial progress`
 - Push checkpoint fast-forward
 - Open Draft PR
 - Create GitHub issue (when no duplicate found)
-- Comment status in GitHub issue/PR
+- Comment status in GitHub issue / PR
 - Check CI status
 - Fix failures caused by in-scope work
 - Push focused follow-up commits
@@ -567,16 +304,17 @@ Commit format: `wip(st-XX): preserve validated partial progress`
 ### Actions still requiring explicit Owner approval
 
 ❌ Do **not** perform until Owner sends specific approval message:
+
 - Mark PR Ready
 - Merge
 - Deploy
-- Production connection/query/write
+- Production connection / query / write
 - Credential validation
 - Database migration
 - Git history rewrite
 - Force-push
 - Direct main push
-- Close GitHub issue/PR
+- Close GitHub issue / PR
 - Close Linear issue
 - Change repository visibility
 - Change branch protection
@@ -597,7 +335,7 @@ Commit format: `wip(st-XX): preserve validated partial progress`
 - Full chat transcript
 - Local credential files
 - GitHub auth token
-- Patch/ZIP containing repository or sensitive artifacts
+- Patch / ZIP containing repository or sensitive artifacts
 - Local progress diary duplicating GitHub content
 
 `.env.example` is allowed only with placeholders that cannot be used as real credentials.
@@ -605,13 +343,15 @@ Commit format: `wip(st-XX): preserve validated partial progress`
 ### Authentication rules
 
 If GitHub auth is missing or expired:
+
 - Stop before creating meaningful local work
 - Request Owner to perform GitHub device login
-- ❌ Never request PAT/token in chat
-- ❌ Never create patch/ZIP as primary workaround
+- ❌ Never request PAT / token in chat
+- ❌ Never create patch / ZIP as primary workaround
 - After auth succeeds: create remote branch **before** starting implementation
 
 If `workflow` permission is missing:
+
 - Do not push changes to `.github/workflows/*`
 - Quarantine workflow changes separately
 - Other work can proceed when safe
@@ -620,6 +360,7 @@ If `workflow` permission is missing:
 ### CI rules
 
 After every push:
+
 - Check CI on exact head
 - Failure from in-scope work → fix + push focused follow-up (autonomous)
 - Infrastructure failure → rerun once (autonomous)
@@ -629,14 +370,14 @@ After every push:
 ### Source-of-truth rules
 
 - **GitHub** = code, technical docs, exact commits, tests, CI, detailed evidence
-- **Linear** = task status, priority, blocker, acceptance criteria, branch/PR links, next gate
+- **Linear** = task status, priority, blocker, acceptance criteria, branch / PR links, next gate
 - **Notion** = durable Owner decisions, policy, high-level project checkpoint
 
-❌ Never write raw logs, secrets, command transcripts, or duplicate progress diary into Notion/Linear.
+❌ Never write raw logs, secrets, command transcripts, or duplicate progress diary into Notion / Linear.
 
-### Patch/ZIP is secondary only
+### Patch / ZIP is secondary only
 
-Patch/ZIP files may be created as a **backup copy** only **after** work is pushed to GitHub. They must never be the primary artifact. Do not rely on `public/` directory for delivery — Preview Panel access is not guaranteed.
+Patch / ZIP files may be created as a **backup copy** only **after** work is pushed to GitHub. They must never be the primary artifact. Do not rely on `public/` directory for delivery — Preview Panel access is not guaranteed.
 
 ### Rollback
 
@@ -646,3 +387,7 @@ Patch/ZIP files may be created as a **backup copy** only **after** work is pushe
 ### No Production impact
 
 This policy does not authorize any Production access. Production connection, query, write, migration, deploy, and credential validation remain Owner-gated.
+
+## Key takeaway
+
+**Reload current truth from GitHub + `CURRENT_STATE.md` + the relevant PR / issue. Work on a bounded remote branch. Prove and test changes. Push focused checkpoints under the Push-Early policy. Keep Ready / Merge / Deploy / Production / Migration / Rollback / Credential / Repository-settings behind explicit Owner gates. Never alter the tracked Production Prisma schema to SQLite. Never trust an old workspace, chat transcript, or worklog as current truth.**
