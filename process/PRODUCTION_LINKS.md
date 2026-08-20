@@ -1,50 +1,42 @@
-# Production Links — ยงเฮง มหาชัย รีไซเคิล
+# Production Links — YH Stock System
 
-> รวม URL ทั้งหมดที่ใช้ในโปรเจกต์ — สำหรับ owner และ ChatGPT
-> วันที่รวบรวม: 27/06/2569
+> Durable links and routes reference. Current route / status snapshots must be verified from current code / tests on the exact branch / head.
+> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
 
----
+## 1. Application
 
-## Application
-
-| รายการ | URL |
-|--------|-----|
+| Item | URL |
+|---|---|
 | **Production app** | https://st-yongheng-recycle.vercel.app |
 | **Login page** | https://st-yongheng-recycle.vercel.app/ (auto-redirect) |
 | **API base** | https://st-yongheng-recycle.vercel.app/api |
-| **Health check** | https://st-yongheng-recycle.vercel.app/ (ต้องได้ 200 แม้ไม่ login) |
+| **Health check** | https://st-yongheng-recycle.vercel.app/ (must return 200 even without login) |
 
----
+## 2. Source code
 
-## Source Code
-
-| รายการ | URL |
-|--------|-----|
+| Item | URL |
+|---|---|
 | **GitHub repo** | https://github.com/NUT2550/--ST-yongheng-recycle |
-| **Default branch** | `main` (deploy จาก branch นี้ไป Vercel อัตโนมัติ) |
+| **Default branch** | `main` (Vercel auto-deploys from merges into `main`; direct push to `main` is prohibited — see `process/GOVERNANCE.md`) |
 | **Commit history** | https://github.com/NUT2550/--ST-yongheng-recycle/commits/main |
 
-> ⚠️ ชื่อ repo มี `--` นำหน้า (เป็น default ของ GitHub ตอนสร้าง repo)
+> ⚠️ The repo name has a `--` prefix (GitHub default when the name starts with a hyphen).
 
----
+## 3. Vercel
 
-## Vercel
-
-| รายการ | ข้อมูล |
-|--------|-------|
+| Item | Value |
+|---|---|
 | **Project name** | st-yongheng-recycle |
-| **Dashboard URL** | https://vercel.com/dashboard (login ด้วย GitHub account ของ owner) |
-| **Project URL** | ผูกกับ repo `NUT2550/--ST-yongheng-recycle` |
-| **Auto-deploy** | ทุก push ไป `main` branch → Vercel build อัตโนมัติ |
-| **Build command** | `next build` (อัตโนมัติจาก package.json `build` script) |
-| **Output mode** | `standalone` (จาก next.config.ts) |
+| **Dashboard URL** | https://vercel.com/dashboard (login with the Owner's GitHub account) |
+| **Project URL** | bound to repo `NUT2550/--ST-yongheng-recycle` |
+| **Auto-deploy** | every merge into `main` → Vercel build (direct push to `main` is prohibited; deploy is Owner-gated — see `process/SAFETY_CHECKLIST.md`) |
+| **Build command** | `next build` (from `package.json` `build` script) |
+| **Output mode** | `standalone` (from `next.config.ts`) |
 
----
+## 4. Supabase
 
-## Supabase
-
-| รายการ | URL |
-|--------|-----|
+| Item | URL |
+|---|---|
 | **Project dashboard** | https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx |
 | **SQL Editor (new query)** | https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/sql/new |
 | **Table editor** | https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/editor |
@@ -53,78 +45,83 @@
 | **Project settings** | https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/settings |
 
 ### Project ref
+
 ```
 wefqhunzjvsxciiwdhjx
 ```
 
----
+> The Supabase project ref is a project identifier, not a secret. Connection strings, passwords, service-role keys, and `DATABASE_URL` values are secrets and must never appear in docs.
 
-## Local Development
+## 5. Local development (sandbox only)
 
-| รายการ | URL / Path |
-|--------|------------|
+| Item | URL / Path |
+|---|---|
 | **Local app** | http://localhost:3000 |
-| **Local DB (SQLite)** | `file:/home/z/my-project/db/custom.db` (เฉพาะใน sandbox — production ใช้ Supabase) |
-| **Caddy gateway** | http://localhost:81 (ใน sandbox — proxy ไป port 3000) |
+| **Local DB** | Use an isolated local SQLite or local PostgreSQL fixture. Do not assume a fixed sandbox path — determine the actual working directory from the current clone. Do not edit the tracked `prisma/schema.prisma` provider to SQLite for routine local testing. |
+| **Caddy gateway** | http://localhost:81 (sandbox — proxy to port 3000) |
 
----
+Local commands are sandbox-only. They do not authorize Production access. See `process/DEPLOYMENT_RUNBOOK.md` §10.
 
-## API Routes (Production)
+## 6. API routes (Production)
 
 Base URL: `https://st-yongheng-recycle.vercel.app/api`
 
+> The route list below is a discovery reference. Verify the exact current route set, method, and behavior from `src/app/api/**/route.ts` on the exact branch / head before relying on it.
+
 ### Auth
-| Method | Path | ใช้ทำอะไร |
-|--------|------|----------|
-| POST | `/api/auth/login` | Login → ได้ token |
-| GET | `/api/auth/me` | ตรวจสอบ token ปัจจุบัน |
-| POST | `/api/auth/logout` | Logout (client-side ล้าง token) |
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/auth/login` | Login → token |
+| GET | `/api/auth/me` | Verify current token |
+| POST | `/api/auth/logout` | Logout (client-side clears token) |
 
 ### Bills
-| Method | Path | สถานะ |
-|--------|------|-------|
-| POST | `/api/buy-bills` | ✅ สร้าง BuyBill |
-| GET | `/api/buy-bills` | ✅ List BuyBills (paginated) |
-| POST | `/api/sell-bills` | ✅ สร้าง SellBill (FIFO) |
-| GET | `/api/sell-bills` | ✅ List SellBills |
-| POST | `/api/sorting-bills` | ✅ สร้าง SortingBill (FIFO source + add output) |
-| GET | `/api/sorting-bills` | ✅ List SortingBills |
-| DELETE | `/api/buy-bills/{id}` | ✅ Cancel BuyBill (soft delete + stock restore) |
-| DELETE | `/api/sell-bills/{id}` | ✅ Cancel SellBill (soft delete + stock restore + credit delete) |
-| DELETE | `/api/sorting-bills/{id}` | ✅ Cancel SortingBill (ST-70 atomic transaction: validate outputs + claim + compare-and-delete + restore source + reverse movements + audit) |
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/buy-bills` | Create BuyBill |
+| GET | `/api/buy-bills` | List BuyBills (paginated) |
+| POST | `/api/sell-bills` | Create SellBill (FIFO) |
+| GET | `/api/sell-bills` | List SellBills |
+| POST | `/api/sorting-bills` | Create SortingBill (FIFO source + add output) |
+| GET | `/api/sorting-bills` | List SortingBills |
+| DELETE | `/api/buy-bills/{id}` | Cancel BuyBill (soft delete + stock restore) |
+| DELETE | `/api/sell-bills/{id}` | Cancel SellBill (soft delete + stock restore + credit delete) |
+| DELETE | `/api/sorting-bills/{id}` | Cancel SortingBill (ST-70 atomic transaction) |
 
 ### Master data
-| Method | Path | สถานะ |
-|--------|------|-------|
-| GET/POST | `/api/products` | ✅ |
-| GET/PATCH/DELETE | `/api/products/{id}` | ✅ |
-| GET/POST | `/api/customers` | ✅ |
-| GET/POST | `/api/employees` | ✅ |
-| GET/PATCH/DELETE | `/api/employees/{id}` | ✅ |
-| GET/POST | `/api/users` | ✅ |
-| GET/PATCH/DELETE | `/api/users/{id}` | ✅ |
+| Method | Path |
+|---|---|
+| GET / POST | `/api/products` |
+| GET / PATCH / DELETE | `/api/products/{id}` |
+| GET / POST | `/api/customers` |
+| GET / POST | `/api/employees` |
+| GET / PATCH / DELETE | `/api/employees/{id}` |
+| GET / POST | `/api/users` |
+| GET / PATCH / DELETE | `/api/users/{id}` |
 
 ### Operations
-| Method | Path | สถานะ |
-|--------|------|-------|
-| GET | `/api/stock` | ✅ |
-| GET | `/api/dashboard` | ✅ |
-| GET | `/api/credit` | ✅ |
-| POST | `/api/credit/{id}/pay` | ✅ |
-| GET | `/api/bonuses` | ✅ |
-| POST | `/api/bonuses` | ✅ |
-| GET/PATCH/DELETE | `/api/bonuses/{id}` | ✅ |
-| GET | `/api/bonus-calculation` | ✅ |
+| Method | Path |
+|---|---|
+| GET | `/api/stock` |
+| GET | `/api/dashboard` |
+| GET | `/api/credit` |
+| POST | `/api/credit/{id}/pay` |
+| GET | `/api/bonuses` |
+| POST | `/api/bonuses` |
+| GET / PATCH / DELETE | `/api/bonuses/{id}` |
+| GET | `/api/bonus-calculation` |
 
-### Missing Routes (features that were lost)
-| Method | Path | หมายเหตุ |
-|--------|------|---------|
-| POST | `/api/excel/parse` | ❌ Excel import หายไป |
+### Import
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/excel/parse` | Parse Excel file → preview rows |
+| POST | `/api/import/apply` | Apply an import batch |
+| POST | `/api/import/check-duplicates` | Check duplicates during import |
 
----
+> Import route existence and behavior must be verified from current code on the exact branch / head. ST-75 / PR #81 added import reliability + auth/session containment; current status is documented in `process/CURRENT_STATE.md`.
 
-## หมายเหตุ
+## 7. Notes
 
-- ทุก API route ต้องมี `Authorization: Bearer <token>` header (ยกเว้น `/api/auth/login`)
-- Token ได้จาก POST /api/auth/login → เก็บใน `localStorage` ภายใต้ key `auth_token`
-- ดู `src/lib/auth-constants.ts` สำหรับชื่อ key ที่แน่นอน
+- Every API route (except `/api/auth/login`) requires `Authorization: Bearer <token>` header.
+- Token is obtained from `POST /api/auth/login` and stored in `localStorage` under the key defined in `src/lib/auth-constants.ts`.
+- Production verification of any mutating route requires explicit Owner approval — see `process/SAFETY_CHECKLIST.md` §E.

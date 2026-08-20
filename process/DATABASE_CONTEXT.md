@@ -1,380 +1,164 @@
-# Database Context — ยงเฮง มหาชัย รีไซเคิล
+# Database Context — YH Stock System
 
-> Prisma schema และ stock flow สำหรับเข้าใจระบบ
-> วันที่: 27/06/2569
-> Source: `prisma/schema.prisma` (สถานะปัจจุบันใน repo)
+> Durable database / stock-flow context. Exact schema fields must be read from current `prisma/schema.prisma` and approved migrations.
+> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
 
----
+## 1. Canonical database sources
 
-## 1. Database Provider
+For any schema / data claim, use this order:
 
-| Environment | Provider | URL source |
-|-------------|----------|------------|
-| **Production** (Supabase) | `postgresql` | `DATABASE_URL` env var (Vercel) |
-| **Local sandbox** | `postgresql` (schema) / SQLite (actual .env) | `.env` file — ปัจจุบันเป็น `file:/home/z/my-project/db/custom.db` |
+1. current `prisma/schema.prisma` on the exact branch / head
+2. approved migration files and migration history
+3. `process/CURRENT_STATE.md` for known schema / runtime gaps
+4. current code / tests that read / write the models
+5. Production read-only evidence when authorized and runtime truth is required
 
-> ⚠️ schema.prisma ใน repo ใช้ `postgresql` เสมอ — ถ้าเปลี่ยนเป็น `sqlite` ชั่วคราวสำหรับ local test ต้อง revert ก่อน commit
+This document must not be used as a frozen field-by-field schema copy.
 
----
+## 2. Provider rule
 
-## 2. ตารางหลัก (Models)
+- Production database platform: **Supabase PostgreSQL**.
+- Tracked Production `prisma/schema.prisma` provider must remain `postgresql`.
+- Do **not** switch the tracked Production schema provider to SQLite for routine local testing.
+- Alternate test databases must use isolated fixtures / test configuration that cannot alter the committed Production schema.
+- Database URLs, passwords, tokens, and connection strings are secrets and must never appear in docs / source.
 
-### Master Data
+## 3. Core data domains
 
-#### `ProductCategory`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | PK |
-| name | String (unique) | ชื่อหมวด เช่น "เหล็ก", "ทองแดง" |
-| type | String | `STEEL` หรือ `METAL` |
-| sortOrder | Int | ลำดับแสดงผล |
-| products | Product[] | relation |
+The current schema may include models across these domains. Exact model / field names must be verified from current schema:
 
-> มี 7 หมวด: เหล็ก, ทองแดง, ทองเหลือง, แสตนเลส, อลูมีเนียม, ตะกั่ว, อื่นๆ
+- product / category master data
+- customers / users / employees
+- buy bills / items
+- sell bills / items
+- sorting bills / items
+- stock transfers / items
+- stock lots
+- stock movement / ledger evidence
+- physical count / adjustment data
+- credit / payment data
+- bonus data
+- audit logs
+- idempotency records
 
-#### `Product`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | PK |
-| name | String (unique) | ชื่อสินค้า |
-| categoryId | String | FK → ProductCategory |
-| defaultBuyPrice | Float (default 0) | ราคารับซื้อ default (user กรอกเองในแต่ละ transaction) |
-| sortOrder | Int | |
-| stockLots | StockLot[] | lots ในสต็อก |
-| buyItems, sellItems, sortingSource, sortingItems | relations | |
+Do not assume a model / field is present or absent from an old document.
 
-> มี 56 สินค้าใน seed.ts
+## 4. Stock / cost invariants
 
-#### `Customer`
-| Field | Type |
-|-------|------|
-| id | String (cuid) |
-| name | String |
-| phone | String? |
-| sellBills | SellBill[] |
-| creditEntry | CreditEntry[] |
+Unless a newer Owner-approved business rule says otherwise:
 
-#### `Employee`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| name | String | |
-| phone | String? | |
-| hireDate | DateTime? | ใช้คำนวณสัดส่วนโบนัส |
-| isActive | Boolean (default true) | |
-| bonuses | SortingBonus[] | |
+- Stock changes must be traceable to a business transaction or explicit adjustment / reversal.
+- Stock / cost / history mutations must avoid silent partial writes.
+- FIFO behavior and deterministic ordering must follow current `BUSINESS_RULES.md`, current implementation, and tests.
+- Cancellation / reversal must preserve auditability and must not guess historical cost.
+- Downstream usage must be considered before destructive reversal of source / output lots.
+- Duplicate / retry-sensitive writes require durable protection where the current design specifies it.
+- Current stock / cost totals are Production facts and must not be inferred from schema / docs.
 
-#### `User`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| username | String (unique) | |
-| password | String | bcrypt hash |
-| name | String | ชื่อ display |
-| role | String (default "staff") | `admin` หรือ `staff` |
-| isActive | Boolean (default true) | false = deactivated, login ไม่ได้ |
+## 5. Data mutation safety
 
----
+### Read-only first
 
-### Stock
+For incidents, reconciliation, migration planning, or Production discrepancies:
 
-#### `StockLot`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | PK |
-| productId | String | FK → Product |
-| remainingWeight | Float | น้ำหนักคงเหลือ (กก.) |
-| costPerKg | Float | ต้นทุนต่อกก. (ใช้คิด FIFO) |
-| dateAdded | DateTime | วันที่เพิ่ม lot |
-| source | String | `BUY`, `SORTING`, `BUY_CANCEL`, `SORT_CANCEL`, `SELL_CANCEL` |
-| sourceId | String? | FK ไปยัง bill ที่สร้าง lot นี้ |
+1. inspect schema / code
+2. gather read-only evidence
+3. classify Verified / Inference / Unknown
+4. define expected invariants
+5. stop for Owner gate before Production mutation where required
 
-> แต่ละ lot = ก้อนสต็อกที่ซื้อมาในราคาเดียวกัน
-> FIFO = ขายจาก lot เก่าก่อน (orderBy dateAdded ASC)
+### Prohibited without explicit approval
 
----
+- direct Production SQL mutation
+- stock / cost correction
+- destructive migration
+- Production seed / reset
+- migration execution
+- ad-hoc deletion of business / audit history
 
-### Bills
+Use current application / API / service paths for normal business operations rather than manual SQL shortcuts.
 
-#### `BuyBill` (ใบรับซื้อ)
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| date | DateTime | |
-| isCredit | Boolean (default false) | ซื้อเชื่อ = สร้าง PAYABLE CreditEntry |
-| note | String? | |
-| items | BuyBillItem[] | relation |
-| totalAmount | Float (default 0) | ผลรวม amount ของ items |
-| createdAt, updatedAt | DateTime | |
+## 6. Schema drift handling
 
-> ⚠️ **ไม่มี** `billNumber`, `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` ในสถานะปัจจุบัน
+Code schema and Production schema can differ temporarily. If behavior suggests drift:
 
-#### `BuyBillItem`
-| Field | Type |
-|-------|------|
-| id | String (cuid) |
-| buyBillId | String (FK) |
-| productId | String (FK) |
-| weight | Float |
-| pricePerKg | Float |
-| totalAmount | Float |
+1. prove the exact field / table / index mismatch
+2. identify which code path selects / writes the missing structure
+3. avoid broad queries that accidentally depend on unapplied fields when a bounded compatibility fix is approved
+4. treat migration as a separate Owner-gated action
+5. verify pre / post invariants if migration is approved
 
-> ⚠️ ไม่มี `weightExpression` field ในสถานะปัจจุบัน
+Historical examples (such as `weightExpression`) are evidence of the pattern, not proof of current Production schema state.
 
-#### `SellBill` (ใบขาย)
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| date | DateTime | |
-| customerId | String? | null = ลูกค้าทั่วไป |
-| customer | Customer? | relation |
-| isCredit | Boolean (default false) | ขายเชื่อ = สร้าง RECEIVABLE CreditEntry |
-| note | String? | |
-| items | SellBillItem[] | |
-| totalAmount | Float | ยอดขายรวม |
-| totalCost | Float (default 0) | ต้นทุน FIFO รวม |
-| createdAt, updatedAt | DateTime | |
+## 7. Transaction and partial-write rules
 
-> ⚠️ ไม่มี `billNumber`, `isCancelled` fields
+Critical mutation flows should have an explicit atomicity / compensation design appropriate to the current implementation.
 
-#### `SellBillItem`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| sellBillId | String (FK) | |
-| productId | String (FK) | |
-| weight | Float | |
-| pricePerKg | Float | ราคาขาย |
-| totalAmount | Float | weight × pricePerKg |
-| costPerKg | Float (default 0) | ต้นทุน FIFO (weighted average) |
-| totalCost | Float (default 0) | weight × costPerKg |
+For each stock-affecting flow, verification should answer:
 
-> ⚠️ ไม่มี `weightExpression` field
+- What is read before mutation?
+- What rows are created / updated / deleted?
+- What is the transaction boundary?
+- What happens after an intermediate failure?
+- Is retry safe?
+- Is concurrent execution safe?
+- What audit / ledger evidence is written?
+- How is cost evidence preserved?
 
-#### `SortingBill` (ใบคัดแยก)
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| date | DateTime | |
-| sourceProductId | String | สินค้าต้นทาง (เช่น เหล็กผสม) |
-| sourceProduct | Product | relation ("SortingSource") |
-| sourceWeight | Float | น้ำหนักที่คัดมา |
-| sourcePricePerKg | Float (default 0) | ราคารับซื้อต้นทาง (พนักงานใส่) |
-| weighedTotal | Float (default 0) | น้ำหนักรวมที่ชั่งแยกได้ |
-| lossWeight | Float (default 0) | sourceWeight - sum(item weight) |
-| lossCost | Float (default 0) | lossWeight × sourceCostPerKg |
-| note | String? | |
-| items | SortingBillItem[] | |
-| bonuses | SortingBonus[] | |
-| createdAt, updatedAt | DateTime | |
+If any answer is unknown for a risky incident, stop before Production experimentation.
 
-> ⚠️ ไม่มี `billNumber`, `isCancelled`, `sourceWeightExpression`, `weighedTotalExpression`
+## 8. Idempotency
 
-#### `SortingBillItem`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| sortingBillId | String (FK) | |
-| productId | String (FK) | |
-| weight | Float | |
-| isWaste | Boolean (default false) | true = ขยะ |
-| costPerKg | Float (default 0) | ต้นทุน FIFO จาก source |
-| totalCost | Float (default 0) | weight × costPerKg |
-| sortedPricePerKg | Float (default 0) | ราคารับซื้อสินค้าที่คัดได้ |
-| bonusAmount | Float (default 0) | (sortedPrice - sourcePrice) × weight × 10% |
+Where current code supports request-level / durable idempotency:
 
-> ⚠️ ไม่มี `weightExpression` field
+- verify the key / state model from current schema / code
+- verify duplicate and concurrent request behavior from tests
+- do not assume UI button-disable alone is durable idempotency
+- ambiguous commit acknowledgement must not automatically trigger another business write
 
----
+ST-62 introduced durable stock-transfer idempotency; inspect current implementation and schema for exact behavior before relying on it.
 
-### Credit (ค้างชำระ)
+## 9. Audit / history
 
-#### `CreditEntry`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| type | String | `RECEIVABLE` (ค้างรับ) หรือ `PAYABLE` (ค้างจ่าย) |
-| amount | Float | ยอดเต็ม |
-| paidAmount | Float (default 0) | ยอดที่จ่ายแล้ว |
-| customerId | String? | สำหรับ RECEIVABLE |
-| referenceType | String | `BUY_BILL` หรือ `SELL_BILL` |
-| referenceId | String? | FK ไปยัง bill |
-| description | String? | |
-| date | DateTime | |
-| isSettled | Boolean (default false) | true = จ่ายครบ |
-| payments | CreditPayment[] | |
+Business-critical changes should remain reconstructable through the current bill / history / ledger / audit mechanisms.
 
-#### `CreditPayment`
-| Field | Type |
-|-------|------|
-| id | String (cuid) |
-| creditEntryId | String (FK) |
-| amount | Float |
-| date | DateTime |
-| note | String? |
+Do not:
 
----
+- hard-delete history merely to make totals look right
+- remove AuditLog / ledger evidence casually
+- rewrite source history when an auditable reversal / adjustment is the approved model
 
-### Bonus
+Exact current audit structures must be verified from schema / code.
 
-#### `SortingBonus`
-| Field | Type | หมายเหตุ |
-|-------|------|---------|
-| id | String (cuid) | |
-| date | DateTime | |
-| employeeId | String (FK) | |
-| sortingBillId | String? | อาจเป็น null สำหรับ bonus ที่สร้าง manual |
-| totalWeight | Float (default 0) | น้ำหนักรวมที่คัดแยก |
-| ratePerKg | Float (default 0) | อัตราโบนัส บาท/กก. |
-| totalAmount | Float (default 0) | ยอดโบนัสรวม |
-| note | String? | |
-| isPaid | Boolean (default false) | |
-| paidDate | DateTime? | |
+## 10. Migration checklist routing
 
----
+For an approved migration, follow `process/SAFETY_CHECKLIST.md` rather than embedding one-off migration instructions here.
 
-## 3. Relations สำคัญ
+Required concerns include:
 
-```
-ProductCategory 1───* Product 1───* StockLot
-                          │
-                          ├───* BuyBillItem *───1 BuyBill
-                          ├───* SellBillItem *───1 SellBill *───1 Customer
-                          ├───* SortingBillItem *───1 SortingBill (source)
-                          └───1 SortingBill (source)
+- exact head and migration identity
+- backup / recovery readiness
+- pre-mutation counts / invariants
+- independent SQL / schema review
+- post-migration verification
+- rollback / recovery plan
+- Production evidence and write-back
 
-SellBill 1───* CreditEntry (RECEIVABLE)
-BuyBill 1───* CreditEntry (PAYABLE)
-CreditEntry 1───* CreditPayment
+## 11. What does not belong here
 
-Employee 1───* SortingBonus *───1 SortingBill
-```
+Do not maintain:
 
----
+- exact current row counts
+- dated “model X missing field Y” snapshots
+- current Production user / account records
+- current issue priorities
+- sandbox-local DB paths
+- SQLite-switch instructions
+- raw SQL credentials
+- historical schema copies presented as current
 
-## 4. Stock Flow
+Historical versions remain available in Git history.
 
-### Buy (รับซื้อ) → เพิ่ม stock
-```
-POST /api/buy-bills
-  ↓
-1. Create BuyBill + BuyBillItem
-2. For each item: create StockLot
-   - productId = item.productId
-   - remainingWeight = item.weight
-   - costPerKg = item.pricePerKg
-   - source = "BUY"
-   - sourceId = bill.id
-   - dateAdded = bill.date
-```
+## Key takeaway
 
-### Sell (ขาย) → ตัด stock (FIFO)
-```
-POST /api/sell-bills
-  ↓
-1. Pre-validate stock พอ (sum ของ lots ที่ remainingWeight > 0)
-2. For each item:
-   - Call deductStockFIFO(productId, weight, tx)
-     - Find lots WHERE productId AND remainingWeight > 0 ORDER BY dateAdded ASC
-     - Deduct จาก lot เก่าสุดก่อน → ลด remainingWeight
-     - Track totalCost = sum(deductedWeight × lot.costPerKg)
-     - Return { costPerKg: totalCost/weight, totalCost }
-   - Create SellBillItem พร้อม costPerKg + totalCost
-3. If isCredit: create CreditEntry (RECEIVABLE)
-```
-
-### Sort (คัดแยก) → ตัด source + เพิ่ม output
-```
-POST /api/sorting-bills
-  ↓
-1. Pre-validate source stock พอ
-2. Deduct source stock (FIFO) — ได้ sourceCostPerKg
-3. For each output item (not waste):
-   - Create SortingBillItem พร้อม costPerKg = sourceCostPerKg
-   - Create new StockLot:
-     - productId = item.productId
-     - remainingWeight = item.weight
-     - costPerKg = sourceCostPerKg (สืบทอดจาก source)
-     - source = "SORTING"
-     - sourceId = bill.id
-4. lossWeight = sourceWeight - sum(item.weight)
-5. lossCost = lossWeight × sourceCostPerKg
-```
-
-### Cancel Bill → restore stock (verified 2026-07-28, ST-70)
-> ✅ **Cancel feature มีใน codebase ปัจจุจบัน** — routes: `DELETE /api/{buy,sell,sorting}-bills/{id}`
-
-ใน codebase ปัจจุบัน:
-- Cancel BuyBill → ตรวจ StockLot ที่ sourceId = bill.id ถ้า consumed > 0 → 409; ถ้า consumed = 0 → ลบ StockLot + restore
-- Cancel SellBill → เพิ่ม StockLot ใหม่ source = "SELL_CANCEL" remainingWeight = item.weight costPerKg = item.costPerKg + ลบ CreditEntry (ถ้า isCredit)
-- Cancel SortingBill (ST-70 atomic transaction):
-  1. Read bill + items
-  2. Validate output lots (`assertIntact` — product + count + six-decimal weight)
-  3. Derive authoritative cost evidence (StockMovement metadata `sourceCostPerKg` หรือ non-waste SortingBillItem.costPerKg)
-  4. Conditional claim (`updateMany({id, isCancelled: false})` → `count=1` required)
-  5. **Atomic compare-and-delete output lots** (`deleteMany({id, productId, remainingWeight})` per lot — CAS guard)
-  6. Restore source StockLot (`source='SORT_CANCEL'`, `sourceId=bill.id`)
-  7. Delete SortingBonus
-  8. Reverse StockMovements (`CANCELLATION_REVERSAL` rows, fresh `idempotencyKey`, `reversalOfId=original.id`)
-  9. Write CANCEL AuditLog
-
-> 📜 **Historical note (superseded 2026-07-28, ST-70)**: กฎเดิมระบุว่า "Cancel SortingBill → output stock left untouched by design" — กฎนี้ถูก supersede โดย ST-70 Owner decision (PR #49 comment #9): output StockLots ต้องถูก atomic compare-and-delete ใน transaction เดียวกับ source restore; ถ้า output ขาด/consume บางส่วน/เปลี่ยน → fail closed 409 + rollback ทุก mutation
-
----
-
-## 5. จุดที่ห้ามทำ (Forbidden Operations)
-
-### Production Database
-- ❌ ห้าม `prisma migrate reset` — จะลบข้อมูลทั้งหมด
-- ❌ ห้าม `prisma db push --force-reset`
-- ❌ ห้าม `bun run prisma/seed.ts` บน production (จะ overwrite ข้อมูล)
-- ❌ ห้าม `TRUNCATE TABLE` ใดๆ บน production
-- ❌ ห้าม `DELETE FROM "Product"` (จะ break FK)
-- ❌ ห้าม `DROP TABLE` ใดๆ
-- ❌ ห้ามแก้ stock ตรงๆ ใน DB (ใช้ bill/cancel เท่านั้น)
-- ❌ ห้าม hard delete bill (ใช้ soft delete `isCancelled = true` ถ้ามี)
-
-### Schema
-- ❌ ห้ามเปลี่ยน provider จาก postgresql → sqlite แล้ว commit
-- ❌ ห้ามลบ field ที่มีอยู่ (จะ break production)
-- ✅ เพิ่ม field ใหม่ได้ ถ้าเป็น nullable หรือมี default
-
-### Code
-- ❌ ห้ามใช้ `eval()` หรือ `new Function()`
-- ❌ ห้าม hardcode password ใน source
-- ❌ ห้าม commit `.env` หรือไฟล์ที่มี secret
-- ❌ ห้ามแก้ `src/lib/auth.ts` โดยใส่ hardcoded JWT_SECRET fallback
-
----
-
-## 6. Useful Queries
-
-### ดู stock คงเหลือทั้งหมด
-```sql
-SELECT
-  p.name AS product,
-  c.name AS category,
-  COALESCE(SUM(sl."remainingWeight"), 0) AS total_weight,
-  COALESCE(SUM(sl."remainingWeight" * sl."costPerKg"), 0) AS total_cost
-FROM "Product" p
-LEFT JOIN "StockLot" sl ON sl."productId" = p.id AND sl."remainingWeight" > 0
-LEFT JOIN "ProductCategory" c ON c.id = p."categoryId"
-GROUP BY p.id, p.name, c.name
-ORDER BY c."sortOrder", p."sortOrder";
-```
-
-### ดู bills ล่าสุด
-```sql
-SELECT 'BUY' AS type, id, date, "totalAmount" FROM "BuyBill"
-UNION ALL
-SELECT 'SELL', id, date, "totalAmount" FROM "SellBill"
-UNION ALL
-SELECT 'SORT', id, date, "totalAmount" FROM "SortingBill"
-ORDER BY date DESC
-LIMIT 20;
-```
-
-### ดู user ทั้งหมด + role
-```sql
-SELECT username, name, role, "isActive" FROM "User" ORDER BY username;
-```
+**`prisma/schema.prisma` + migrations + current code / tests define the intended current data model; Production evidence defines live reality. This file defines durable data / stock safety context, not a stale schema snapshot.**

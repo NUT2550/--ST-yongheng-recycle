@@ -1,184 +1,96 @@
-# Project Operating Context — ยงเฮง มหาชัย รีไซเคิล
+# Project Operating Context — YH Stock System
 
-> เอกสารหลักสำหรับ ChatGPT และ owner — ใช้พาโปรเจกต์ต่อได้อย่างปลอดภัยโดยไม่ต้องเดาจากความจำ
-> วันที่รวบรวม: 27/06/2569
-> ผู้รวบรวม: Z.AI (จาก codebase state ปัจจุบัน + worklog)
+> Durable project context only. Dynamic technical state belongs in `process/CURRENT_STATE.md` and current GitHub / CI / Production evidence.
+> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
 
----
+## 1. Project identity
 
-## 1. Project Identity
+- **Project**: YH Stock System — ระบบสต็อกของ บริษัท ยงเฮง มหาชัย รีไซเคิล
+- **Business purpose**: รองรับงานรับซื้อ ขาย คัดแยก / ย้ายสต็อก ตรวจประวัติ และการควบคุม stock / cost / ledger ให้ตรวจย้อนหลังได้
+- **Repository**: `NUT2550/--ST-yongheng-recycle`
+- **Production app**: `https://st-yongheng-recycle.vercel.app`
+- **Primary stack**: Next.js + TypeScript + Prisma + Supabase PostgreSQL + Vercel
 
-| รายการ | ค่า |
-|--------|-----|
-| **ชื่อโปรเจกต์** | ยงเฮง มหาชัย รีไซเคิล (Yongheng Mahachai Recycle) |
-| **จุดประสงค์** | ระบบบันทึกสต็อกสำหรับร้านรับซื้อเหล็กและโลหะ — รองรับการรับซื้อ/ขาย/คัดแยก พร้อม FIFO stock tracking |
-| **สถานะปัจจุบัน** | ⚠️ ระบบหลักใช้งานได้ (login/buy/sell/sort/stock/history/dashboard) — แต่ features ขั้นสูงบางตัวหายไปจาก codebase (ดู CURRENT_OPEN_ISSUES.md) |
-| **Production URL** | https://st-yongheng-recycle.vercel.app |
-| **GitHub repo** | https://github.com/NUT2550/--ST-yongheng-recycle |
-| **Vercel project** | (ผูกกับ GitHub repo ข้างบน, auto-deploy จาก main branch) |
-| **Supabase dashboard** | https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx |
-| **Supabase SQL Editor** | https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/sql/new |
+This document intentionally does **not** list current feature status, current users, current issue priorities, current PR heads, Production row counts, or current risks. Those values change too often and become stale.
 
----
+## 2. Required routing
 
-## 2. Tech Stack
+Before work:
 
-| ชั้น | เทคโนโลยี |
-|------|-----------|
-| Framework | Next.js 16 (App Router) + TypeScript 5 |
-| Runtime | Bun (dev) + Node.js (production บน Vercel) |
-| Styling | Tailwind CSS 4 + shadcn/ui (New York style) |
-| Database | Supabase Postgres (production) + SQLite (local dev ชั่วคราว) |
-| ORM | Prisma 6 |
-| Auth | JWT (jose) + bcryptjs + localStorage token + Authorization header |
-| State | Zustand (client) |
-| Hosting | Vercel (Next.js) + Supabase (Postgres) |
-| Icons | lucide-react |
+1. `AGENTS.md`
+2. `process/GOVERNANCE.md`
+3. `process/CURRENT_STATE.md`
+4. task-relevant domain docs
+5. current issue / PR / code / tests
+6. Notion `AI Read First — YH Stock System` and current Owner decisions when relevant
 
----
+When documents conflict, follow `process/GOVERNANCE.md`.
 
-## 3. Project Status Summary
+## 3. Source-of-truth responsibilities
 
-### ✅ ใช้งานได้ใน production ปัจจุบัน
-- Login + logout (JWT token ใน localStorage + Authorization header)
-- บัญชี 2 ตัว: `01` (admin — นัท ผู้จัดการ) + `admin` (deactivated)
-- Buy bill (รับซื้อ) — สร้างได้, stock เพิ่มอัตโนมัติ
-- Sell bill (ขาย) — สร้างได้, FIFO stock deduction + cost tracking
-- Sorting bill (คัดแยก) — สร้างได้, source stock หักด้วย FIFO, output stock เพิ่มใหม่
-- Stock page — ดูสต็อกคงเหลือแยกตามหมวด
-- History page — ดูประวัติบิล 3 ประเภท
-- Dashboard — สรุปยอด
-- User management — ดู/เพิ่ม/แก้/deactivate ผู้ใช้
-- Product management — ดู/เพิ่ม/แก้/ลบสินค้า
-- Customer management
-- Credit tracking (ค้างรับ/ค้างจ่าย)
-- Employee + Sorting bonus
-- Weight formula parsing (`860-3` → 857) — ใช้ในหน้า buy/sell/sort แต่ **ไม่ได้เก็บ expression ใน DB**
+| Source | Responsibility |
+|---|---|
+| GitHub | code, tests, CI, technical docs / policy, exact technical evidence |
+| Linear | task state, priority, blockers, acceptance criteria, current gate |
+| Notion | durable Owner / business context, decisions, SOP / business memory, concise routing summaries |
+| Production | live runtime / data evidence only |
 
-### ✅ มีใน codebase ปัจจุบัน (verified 2026-07-28) — แต่ยังไม่ได้ verify ใน Production
+Do not copy a live task list into this file. Do not infer Production state from this file.
 
-> ⚠️ **หมายเหตุสำคัญ**: features ด้านล่างมีอยู่ใน codebase และผ่าน CI (รวม real PostgreSQL concurrency tests) แต่ **ยังไม่ได้ verify ใน Production** — ST-70 PR #49 ยังเป็น Draft, ยังไม่ merge/deploy, และไม่มี Production access. Production verification จะเกิดขึ้นหลัง Owner อนุมัติ merge + deploy.
+## 4. Stable technical invariants
 
-- `billNumber` (BUY-/SELL-/SORT-2569-XXXXX format) — `src/lib/bill-helpers.ts` generateBillNumber
-- `isCancelled`, `cancelledAt`, `cancelledBy`, `cancelReason` บน Buy/Sell/SortingBill
-- `AuditLog` model + `src/lib/bill-helpers.ts` writeAuditLog
-- Cancel bill routes: `DELETE /api/{buy,sell,sorting}-bills/{id}`
-- SortingBill cancellation (ST-70): atomic transaction, conditional claim, atomic compare-and-delete output lots, authoritative cost evidence, StockMovement reversals, AuditLog
-- Combined sorting history (SortingBills + sorting-classified StockTransfers, server-side merge, deterministic ordering)
-- UI error surfacing + data preservation + retry (history-page.tsx HistoryErrorBanner)
-- 401 AUTH_REQUIRED / 403 PERMISSION_DENIED separation
+- Production database technology is PostgreSQL via Supabase.
+- The tracked Production Prisma schema must remain `postgresql`.
+- Alternate test databases, if required, must use isolated test configuration / fixtures and must not require editing the tracked Production provider to SQLite.
+- Secrets and credentials must never be committed or copied into documentation.
+- Stock / cost / history correctness and auditability take priority over speed.
+- Production mutations, migrations, merge, deploy, and other Owner-gated operations follow `AGENTS.md` + `process/GOVERNANCE.md`.
 
-### ❌ หายไปจาก codebase (verified 2026-07-28)
-- Excel import (parse + dialog) — P1
-- `weightExpression` DB field (เก็บสูตรใน DB) — P0 (หลัง migrate)
-- Product alias mapping files — P1
+## 5. Stable business / engineering domains
 
-### ⏳ รอ owner อนุมัติ / ดำเนินการ
-- Weight Formula Tracking production migration (SQL script พร้อมที่ `prisma/migrations/add_weight_expression.sql`)
-- Product alias mapping proposal (ต้อง recreate)
+The system may contain or evolve across these domains. Exact implementation status must be verified from current code and `CURRENT_STATE.md`:
 
----
+- authentication and permissions
+- product / customer / user masters
+- buy bills and stock creation
+- sell bills and FIFO / cost deduction
+- sorting / dismantling / transfer flows
+- stock lots and inventory views
+- bill cancellation / reversal
+- physical count / stock adjustment
+- credit / receivable / payable workflows
+- employee / bonus workflows
+- import workflows
+- history / audit trail
+- dashboard / reporting
 
-## 4. โครงสร้างไฟล์สำคัญ
+## 6. Canonical domain documents
 
-```
-prisma/
-├── schema.prisma           # Prisma schema (provider = postgresql)
-├── seed.ts                 # Initial seed (admin/staff users, 7 categories, 56 products)
-├── create-user-01.ts       # สร้าง user 01 (รับ password จาก CLI arg)
-└── migrations/
-    └── add_weight_expression.sql  # Migration script สำหรับ weightExpression (รอ run)
+- `process/BUSINESS_RULES.md` — Owner-approved behavior that affects the system
+- `process/DATABASE_CONTEXT.md` — schema / stock-flow / data constraints
+- `process/DEFINITION_OF_DONE.md` — completion gates
+- `process/SAFETY_CHECKLIST.md` — migration / deploy / Production safety
+- `process/DEPLOYMENT_RUNBOOK.md` — release / deploy process
+- `process/REPAIR_RUNBOOK.md` — evidence-first defect workflow
+- `process/FEATURE_INVENTORY.md` — durable feature map and verification method, not a stale status snapshot
+- `process/REBUILD_SPEC.md` — rebuild / reference specification; verify against current code before use
 
-src/
-├── app/
-│   ├── api/                # API routes (App Router)
-│   │   ├── auth/           # /login, /me, /logout
-│   │   ├── buy-bills/      # POST (create) + GET (list)
-│   │   ├── sell-bills/     # POST + GET (มี FIFO deduction)
-│   │   ├── sorting-bills/  # POST + GET (มี FIFO + output stock)
-│   │   ├── products/       # CRUD + [id]/route.ts
-│   │   ├── stock/          # GET
-│   │   ├── users/          # CRUD + [id]/route.ts
-│   │   ├── customers/      # CRUD
-│   │   ├── employees/      # CRUD
-│   │   ├── bonuses/        # CRUD + [id]/route.ts
-│   │   ├── bonus-calculation/
-│   │   ├── credit/         # GET + POST pay
-│   │   └── dashboard/      # GET
-│   └── page.tsx            # Main entry (login/dashboard shell)
-├── components/
-│   ├── login-page.tsx
-│   ├── dashboard-page.tsx
-│   ├── buy-page.tsx        # ใช้ parseWeightExpression จาก safe-math
-│   ├── sell-page.tsx       # ใช้ parseWeightExpression
-│   ├── sort-page.tsx       # ใช้ parseWeightExpression (3 ช่อง)
-│   ├── stock-page.tsx
-│   ├── history-page.tsx    # list + collapsible bill cards
-│   ├── users-page.tsx
-│   ├── products-page.tsx
-│   ├── credit-page.tsx
-│   ├── bonus-page.tsx
-│   └── ui/                 # shadcn/ui components
-└── lib/
-    ├── auth.ts             # JWT (ใช้ JWT_SECRET env var)
-    ├── auth-constants.ts   # TOKEN_STORAGE_KEY
-    ├── api.ts              # fetchJSON + auth header
-    ├── db.ts               # Prisma client
-    ├── helpers.ts          # formatBaht, formatWeight, formatDate
-    ├── safe-math.ts        # parseWeightExpression (no eval)
-    ├── store.ts            # Zustand (cart state)
-    └── types.ts            # TypeScript interfaces
-```
+## 7. What does not belong here
 
----
+Do not store:
 
-## 5. Owner / ผู้ใช้งาน
+- dated “current status” snapshots
+- issue priority lists
+- branch / PR SHAs expected to remain current
+- Production row counts
+- user-role assumptions that can change in the database
+- sandbox-local paths
+- instructions to direct-push `main`
+- instructions to switch tracked Prisma schema to SQLite
+- raw logs, progress diary, full chat transcript
 
-| Username | Role | Name | สถานะ |
-|----------|------|------|-------|
-| `01` | admin | นัท ผู้จัดการ | ✅ active (เจ้าของร้าน) |
-| `admin` | admin | ผู้ดูแลระบบ | ❌ deactivated (default account — ไม่ใช้) |
-| `04` | staff | พนักงาน ยงเฮง | ✅ active (ต้องสร้างด้วย create-user-01.ts pattern หรือผ่านหน้า Users) |
+Historical versions remain available in Git history.
 
-> **หมายเหตุ**: ใน codebase ปัจจุบัน, `prisma/seed.ts` สร้างเพียง `admin` + `01` (staff) — role ของ `01` ใน DB production อาจเป็น admin (เคยถูก promote ใน Task 18) หรือ staff (ถ้า reset) — ต้องตรวจสอบใน DB
+## Key takeaway
 
----
-
-## 6. Environment Variables (ชื่อเท่านั้น — ห้ามใส่ค่า)
-
-| ตัวแปร | ใช้ที่ไหน | หมายเหตุ |
-|--------|---------|---------|
-| `DATABASE_URL` | prisma/schema.prisma | Supabase Postgres connection string (production) |
-| `JWT_SECRET` | src/lib/auth.ts | ถ้าไม่มี → auth ทุก route จะ throw error |
-
-> ⚠️ ห้ามใส่ค่า secret ในเอกสารนี้ — ดูเฉพาะใน Vercel env vars หรือ Supabase dashboard
-
----
-
-## 7. Documents ที่เกี่ยวข้อง (ในโฟลเดอร์ `process/` นี้)
-
-- `PRODUCTION_LINKS.md` — URL ทั้งหมดที่ใช้
-- `DEPLOYMENT_RUNBOOK.md` — ขั้นตอน deploy
-- `DATABASE_CONTEXT.md` — schema + stock flow
-- `BUSINESS_RULES.md` — กฎธุรกิจ
-- `CURRENT_OPEN_ISSUES.md` — pending work แยก P0/P1/P2
-- `SAFETY_CHECKLIST.md` — migration + deploy checklist
-
----
-
-## 8. Documents เดิมใน repo
-
-- `docs/FIRST_USE_CHECKLIST.md` — checklist พนักงาน
-- `docs/STAFF_TRAINING_SCRIPT.md` — สคริปต์ฝึกงาน
-
-> ⚠️ เอกสารเดิมเขียนตอนที่ codebase มี billNumber + cancel feature — บางส่วนอาจอ้างถึง feature ที่หายไปแล้ว
-
----
-
-## 9. Critical Warnings
-
-1. **อย่า deploy code โดยไม่ได้ดู diff** — codebase ถูก reset หลายครั้งในอดีต
-2. **schema.prisma provider ต้องเป็น `postgresql`** ก่อน push/deploy
-3. **`db/custom.db` (SQLite binary) ถูก track ใน git** — pre-existing issue (P1)
-4. **Feature ที่ยังหายไป** (verified 2026-07-28): Excel import, weightExpression DB storage, Product alias mapping — ต้อง recreate (billNumber/cancel/AuditLog ถูก implement แล้วใน ST-70 + commits ก่อนหน้า)
-5. **migration SQL `add_weight_expression.sql` พร้อม run** แต่ถ้า run โดยที่ code ยังไม่ได้ deploy ที่ใช้ weightExpression — columns จะว่างเปล่า (ไม่เป็นไร เพราะ additive only)
+**This file explains what the project is and how to route context. For what is true right now, reload `CURRENT_STATE.md`, GitHub / CI, Linear, and Production evidence as applicable.**
