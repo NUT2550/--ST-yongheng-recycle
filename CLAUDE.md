@@ -1,29 +1,38 @@
-# CLAUDE.md — คำสั่งเริ่มต้นสำหรับ AI ทุกตัว
+# CLAUDE.md — AI Entry Point (Legacy Compatibility)
 
-> **⚠️ อ่านไฟล์นี้ก่อนเริ่มทำงานทุกครั้ง**
+> **⚠️ This file is retained for backward compatibility only.**
+>
+> **The canonical AI entry point is `AGENTS.md`.**
+> Read `AGENTS.md` first. This file defers to it.
+>
+> For conflict resolution and authority hierarchy, see `process/GOVERNANCE.md`.
 
-## กฎเหล็ก (ทำทุกครั้งก่อนเริ่มงาน)
+## Project Identity
 
-1. **อ่าน `worklog.md` ก่อนเริ่มทำงานทุกครั้ง** — เพื่อเข้าใจสิ่งที่ทำไปแล้ว และไม่ทำซ้ำ/ทำลายงานเดิม
-2. **อัปเดต `worklog.md` ทุกครั้งหลังเสร็จงาน** — append บันทึกใหม่ในส่วน 8 (ประวัติการทำงาน)
-3. **Commit + push `worklog.md` ทุกครั้ง** — ให้ข้อมูลล่าสุดอยู่บน GitHub เสมอ
-4. **อ่าน `UPDATE_WORKLOG.md`** — สำหรับรูปแบบการบันทึก
-
-## โปรเจกท์นี้คืออะไร
-
-- **ชื่อ**: ยงเฮง มหาชัย รีไซเคิล — ระบบจัดการสต๊อกร้านรับซื้อเหล็กและโลหะ
-- **Tech**: Next.js 16 + Prisma + Supabase PostgreSQL + TypeScript
-- **Deploy**: Vercel ที่ https://st-yongheng-recycle.vercel.app
+- **Name**: ยงเฮง มหาชัย รีไซเคิล (Yongheng Mahachai Recycle)
+- **Tech**: Next.js 16 + Prisma 6 + Supabase PostgreSQL + TypeScript
+- **Deploy**: Vercel at https://st-yongheng-recycle.vercel.app
 - **GitHub**: https://github.com/NUT2550/--ST-yongheng-recycle
 
-## ห้ามทำ
+## Canonical AI Reading Order
 
-- ห้าม commit `.env`
-- ห้ามใช้ git email อื่นนอกจาก `207142776+NUT2550@users.noreply.github.com`
-- ห้ามใส่ `output: "standalone"` ใน next.config.ts
-- ห้ามเปลี่ยน Prisma provider เป็นอย่างอื่นนอกจาก `postgresql` (production)
-- ห้ามลบ `worklog.md` หรือไฟล์นี้
+1. `AGENTS.md` — mandatory entry point, safety rules, working method
+2. `process/GOVERNANCE.md` — authority hierarchy, conflict resolution
+3. `process/CURRENT_STATE.md` — current main SHA, Production SHA
+4. Task-specific code, tests, issues, PRs
+5. `knowledge/` — durable technical knowledge
 
-## ข้อมูลละเอียด
+> `worklog.md` is retained as historical evidence but is **not** a source of current truth. Do not use it as the primary context source.
 
-ดูทั้งหมดใน `worklog.md` — มี schema, API routes, ฟีเจอร์, วิธีสร้างแอปขึ้นมาใหม่
+## Safety Rules (Summary)
+
+- Never commit `.env`, secrets, tokens, or Production dumps
+- Git email must be `207142776+NUT2550@users.noreply.github.com`
+- Prisma provider must remain `postgresql` in production schema
+- No direct push to `main` — merge via Owner-approved PR only
+- No force-push or history rewrite
+- No Production mutation without explicit Owner approval
+- No migration/deploy/rollback without explicit Owner approval
+
+> Full safety rules and working method: see `AGENTS.md`.
+> Full authority hierarchy and conflict resolution: see `process/GOVERNANCE.md`.

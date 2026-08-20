@@ -1,229 +1,213 @@
-# Deployment Runbook — ยงเฮง มหาชัย รีไซเคิล
+# Deployment Runbook — YH Stock System
 
-> ขั้นตอน deployment ทั้งหมด — ทำตามได้ทีละขั้น
-> วันที่: 27/06/2569
+> Current release/deployment handoff. Historical direct-main-push and ad-hoc Production migration instructions remain in Git history only and must not be treated as current policy.
+> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
 
----
+## 1. Authority
 
-## 1. Branch & Deploy Flow
+Read before any release work:
 
-```
-Local main  ──push──>  GitHub origin/main  ──auto-deploy──>  Vercel production
-```
+1. `AGENTS.md`
+2. `process/GOVERNANCE.md`
+3. `process/CURRENT_STATE.md`
+4. `process/SAFETY_CHECKLIST.md`
+5. current task issue/PR and exact-head CI
 
-- **Branch ที่ deploy**: `main` (branch เดียว — ไม่มี staging)
-- **Auto-deploy**: ทุก push ไป `main` → Vercel จะ build อัตโนมัติ
-- **Build time**: ~1-3 นาที
-- **Production URL**: https://st-yongheng-recycle.vercel.app
+This runbook does **not** authorize merge, deploy, Production access, migration, rollback, credential action, or repository settings changes. Those remain Owner-gated per `process/GOVERNANCE.md` §4.
 
----
+## 2. Release flow
 
-## 2. Commands
+Current flow:
 
-### Development (Local sandbox)
-```bash
-bun run dev          # Start dev server on port 3000
-bun run lint         # ESLint check
-npx tsc --noEmit     # TypeScript type check (มี error ใน examples/ ที่เป็น pre-existing)
-bun run db:push      # Apply Prisma schema → DB (ใช้กับ local SQLite เท่านั้น)
-bun run db:generate  # Regenerate Prisma client
-```
-
-### Build (Production — Vercel ทำเอง)
-```bash
-bun run build        # next build + copy standalone files
-bun run start        # รัน standalone server (production)
+```text
+bounded branch from exact current main
+→ Draft PR
+→ targeted and full validation (lint / tsc / tests / build / foundation)
+→ exact-head CI
+→ fresh independent review
+→ Owner Ready approval
+→ Owner merge approval
+→ approved PR merge into main (squash, head-guarded)
+→ approved deploy path
+→ separately approved Production verification when applicable
+→ observation / write-back when applicable
 ```
 
-> ⚠️ ห้าม run `bun run build` ใน sandbox — ใช้ `bun run dev` เท่านั้น
+Direct push to `main` is prohibited. There is no staging branch. Production receives changes only through an Owner-approved PR merge followed by the approved deploy path.
 
-### Database (Production — Supabase)
-- ใช้ Supabase SQL Editor สำหรับ migration ที่ additive (ADD COLUMN, CREATE TABLE)
-- ใช้ `prisma db push` เฉพาะ local dev เท่านั้น
-- **ห้าม** `prisma migrate dev` หรือ `prisma migrate reset` บน production
+## 3. Before requesting Ready
 
----
+- [ ] Scope matches the issue / Owner intent.
+- [ ] Root cause or business rule is proven / confirmed as applicable.
+- [ ] Regression / feature tests exist for required behavior.
+- [ ] Targeted tests pass.
+- [ ] Full validation passes:
 
-## 3. Environment Variables
-
-### Required (production)
-| ชื่อ | ใช้ที่ไหน | ห้ามขาด? |
-|-----|---------|---------|
-| `DATABASE_URL` | prisma/schema.prisma + src/lib/db.ts | ✅ ขาดไม่ได้ — Prisma จะ connect ไม่ได้ |
-| `JWT_SECRET` | src/lib/auth.ts | ✅ ขาดไม่ได้ — auth.ts จะ throw error ทุก request |
-
-### ตั้งค่าใน Vercel
-- https://vercel.com/dashboard → project → Settings → Environment Variables
-- ตั้งค่าทั้ง 2 ตัวสำหรับ environment: `Production`, `Preview`, `Development`
-
-### ตั้งค่าใน local sandbox (.env)
-```
-DATABASE_URL=<local SQLite path หรือ Supabase connection string>
-JWT_SECRET=<random string อย่างน้อย 32 chars>
-```
-
-> ⚠️ ห้าม commit `.env` — .gitignore บล็อก `.env*` อยู่แล้ว
-
----
-
-## 4. Pre-deploy Verification
-
-ก่อน push ไป GitHub main ให้ตรวจ:
-
-### 4.1 Schema provider
-```bash
-grep "provider" prisma/schema.prisma
-```
-**Expected**: `provider = "postgresql"` (ไม่ใช่ sqlite)
-
-### 4.2 Lint
 ```bash
 bun run lint
-```
-**Expected**: exit code 0
-
-### 4.3 No secrets in diff
-```bash
-git diff origin/main..HEAD | grep -iE "password|secret|token|key" | grep -v "REDACTED\|process\.\|env\.\|require\|import"
-```
-**Expected**: empty output
-
-### 4.4 Git status check
-```bash
-git status
-```
-**Expected**: มีเฉพาะไฟล์ที่ตั้งใจเปลี่ยน — ไม่มี `.env`, `db/custom.db`, หรือ temp files
-
----
-
-## 5. Deploy Steps (Standard)
-
-### Step 1: Commit changes
-```bash
-git add <files>
-git commit -m "feat: <description>"
+npx tsc --noEmit
+bun test
+bun run build
+bash scripts/validate-foundation.sh
 ```
 
-### Step 2: Push
-```bash
-git push origin main
-```
+- [ ] Credential scan required by repository policy passes (ST-27).
+- [ ] `git diff --check` passes.
+- [ ] Staged diff contains no `.env`, secret, `db/custom.db`, Production dump, or other sensitive artifact.
+- [ ] Exact-head CI passes (Foundation, Lint, TypeScript Typecheck, Unit Tests, Production Build, ST-27 Credential Scan).
+- [ ] Fresh exact-head independent review is complete; no unresolved P0/P1 finding remains.
+- [ ] Release / rollback / Production verification plan is documented.
+- [ ] Tracked `prisma/schema.prisma` provider remains `postgresql`.
 
-### Step 3: รอ Vercel build
-- ไปที่ https://vercel.com/dashboard
-- ดู deployment status — รอจนเห็น "Ready" (ปกติ 1-3 นาที)
+PR remains Draft until the Owner approves Ready.
 
-### Step 4: Smoke test
-- เปิด https://st-yongheng-recycle.vercel.app/
-- ตรวจ login page แสดง
-- Login ด้วย `01` / <password>
-- ตรวจ dashboard โหลดสำเร็จ
+## 4. Schema / database release work
 
----
+The tracked Production Prisma schema must remain PostgreSQL.
 
-## 6. Deploy with Database Migration
+- Do not switch the tracked `prisma/schema.prisma` provider to SQLite.
+- Tests needing an alternate database must use isolated fixtures or test-specific configuration that cannot alter the committed Production schema.
+- Migration requires explicit Owner approval for the specific task.
+- Production query, write, or data correction requires explicit Owner approval.
+- Follow `process/SAFETY_CHECKLIST.md` for migration and runtime gates.
+- Never run `prisma migrate reset`, `prisma db push --force-reset`, or seed scripts against Production.
+- Never use Supabase SQL Editor as a normal shortcut for tracked schema changes.
 
-ใช้เมื่อมีการเปลี่ยนแปลง Prisma schema:
+## 5. Merge
 
-### Step 1: Backup Supabase DB
-- ไปที่ https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/database/backups
-- กด "Create backup" ตั้งชื่อ `pre-<feature-name>-migration`
+Merge is Owner-gated.
 
-### Step 2: บันทึก row counts ก่อน migration
-```sql
--- รันใน Supabase SQL Editor
-SELECT 'BuyBill' AS t, COUNT(*) FROM "BuyBill"
-UNION ALL SELECT 'SellBill', COUNT(*) FROM "SellBill"
-UNION ALL SELECT 'SortingBill', COUNT(*) FROM "SortingBill"
-UNION ALL SELECT 'BuyBillItem', COUNT(*) FROM "BuyBillItem"
-UNION ALL SELECT 'SellBillItem', COUNT(*) FROM "SellBillItem"
-UNION ALL SELECT 'SortingBillItem', COUNT(*) FROM "SortingBillItem"
-UNION ALL SELECT 'Product', COUNT(*) FROM "Product"
-UNION ALL SELECT 'User', COUNT(*) FROM "User";
-```
-บันทึกผลลัพธ์ไว้
+- Use the approved PR workflow only.
+- Confirm the exact PR head before merge.
+- Do not bypass branch protection.
+- Do not force-push or rewrite history.
+- Do not use `git push origin main` as a release step.
+- Do not merge while required exact-head CI is pending or failing.
 
-### Step 3: Run migration SQL ใน Supabase SQL Editor
-- วาง SQL จากไฟล์ `prisma/migrations/*.sql`
-- กด Run
-- ตรวจผลลัพธ์ — ต้องไม่มี error
+## 6. Deploy
 
-### Step 4: Verify migration สำเร็จ
-- รัน verification queries (มีในไฟล์ migration SQL)
-- ตรวจ row counts ต้องเท่ากับ Step 2
+Deploy is Owner-gated.
 
-### Step 5: Push code ไป GitHub
-```bash
-git push origin main
-```
+Before requesting / performing deploy:
 
-### Step 6: รอ Vercel deploy แล้ว smoke test
-- รอจน Vercel status = Ready
-- ทดสอบ feature ใหม่ใน production
+- [ ] merge identity is known and recorded
+- [ ] expected deployment target is known
+- [ ] migration ordering (if any) is explicitly approved and completed first
+- [ ] rollback plan is ready
+- [ ] Production verification plan is ready and approved where mutation is involved
 
----
+After deploy:
 
-## 7. Rollback
+- [ ] confirm deployment identity and status
+- [ ] run only the approved Production verification
+- [ ] stop on any unexpected response / state
+- [ ] record verified / not-verified status accurately — never claim Production verification that did not occur
 
-### 7.1 Rollback code
-```bash
-git revert <commit-hash>
-git push origin main
-```
+## 7. Production verification
 
-### 7.2 Rollback database migration
-```sql
--- ตัวอย่าง rollback สำหรับ weight expression migration:
-ALTER TABLE "BuyBillItem" DROP COLUMN IF EXISTS "weightExpression";
-ALTER TABLE "SellBillItem" DROP COLUMN IF EXISTS "weightExpression";
-ALTER TABLE "SortingBillItem" DROP COLUMN IF EXISTS "weightExpression";
-ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "sourceWeightExpression";
-ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "weighedTotalExpression";
-```
+Production verification is **not** automatic. Default to non-mutating checks.
 
-### 7.3 Rollback จาก Supabase backup
-- ไปที่ https://supabase.com/dashboard/project/wefqhunzjvsxciiwdhjx/database/backups
-- เลือก backup ก่อน migration
-- กด Restore
+### Read-only checks (preferred)
 
----
+Examples that do not require separate Production-write approval:
 
-## 8. ข้อห้ามเด็ดขาด
+- deployment identity / version
+- login page / auth behavior using an approved test path
+- endpoint status / error contract (e.g. 401 without token, 403 with valid token lacking permission)
+- page / runtime health
+- read-only history / query verification
 
-- ❌ ห้าม `prisma migrate reset` บน production
-- ❌ ห้าม `prisma db push` บน production (ใช้ SQL Editor แทน)
-- ❌ ห้าม seed production DB (`bun run prisma/seed.ts` ใช้ local เท่านั้น)
-- ❌ ห้าม hard delete bill ใน DB (ใช้ soft delete ถ้ามี)
-- ❌ ห้ามแก้ stock ตรงๆ ใน DB (ใช้ cancel bill เพื่อ restore)
-- ❌ ห้าม push โดยไม่ตรวจ schema.prisma provider
-- ❌ ห้าม push โดยมี `db/custom.db` ใน diff
-- ❌ ห้าม deploy โดย DB ยังไม่ได้ migrate (ถ้ามี schema changes)
+### Mutating checks (require separate explicit Owner approval)
 
----
+Any test that creates, edits, cancels, transfers, sorts, imports, adjusts, or otherwise mutates Production data requires **separate explicit Owner approval for that exact verification**. This includes:
 
-## 9. การเตรียม Local Dev Environment (ถ้าเริ่มใหม่)
+- creating test bills or stock movements
+- Buy / Sell / Sorting smoke tests that write to Production
+- cancel tests against Production bills
+- Excel import against Production
+- direct SQL writes
+- any POST / PUT / PATCH / DELETE against Production endpoints
+
+Read-only approval does **not** imply mutating approval. Each gate is separate.
+
+## 8. Rollback
+
+Rollback affecting `main`, deployment, database, or Production is Owner-gated.
+
+- Prefer a reviewed revert through the PR / repository workflow.
+- Do not directly push a revert to `main`.
+- Do not rewrite history.
+- Database recovery must use the task-specific approved recovery plan.
+- Do not normalize destructive rollback SQL (e.g. `DROP COLUMN`, `DROP TABLE`, `TRUNCATE`) as an automatic response to incidents.
+- If safe rollback is uncertain, stop and request Owner decision rather than guessing.
+
+## 9. Environment variables
+
+Required environment variables (names only — never values in docs):
+
+| Name | Used by | Required? |
+|---|---|---|
+| `DATABASE_URL` | `prisma/schema.prisma` + `src/lib/db.ts` | ✅ Prisma cannot connect without it |
+| `JWT_SECRET` | `src/lib/auth.ts` | ✅ Auth throws on every request without it |
+
+- Production values are stored only in Vercel environment variables and Supabase configuration.
+- Local sandbox `.env` uses non-Production placeholders only.
+- Never commit `.env`. `.gitignore` blocks `.env*`.
+- `.env.example` may contain only unusable placeholders.
+
+## 10. Local development commands (sandbox only)
+
+These commands are for local sandbox development only. They do not authorize Production access.
 
 ```bash
-# 1. Clone repo
-git clone https://github.com/NUT2550/--ST-yongheng-recycle.git
-cd --ST-yongheng-recycle
-
-# 2. Install dependencies
-bun install
-
-# 3. สร้าง .env
-echo "DATABASE_URL=file:./dev.db" > .env
-echo "JWT_SECRET=$(openssl rand -hex 32)" >> .env
-
-# 4. สร้าง local DB schema
-bun run db:push
-
-# 5. Seed data
-bun run prisma/seed.ts
-
-# 6. (Optional) สร้าง user 01
-bun run prisma/create-user-01.ts <password>
-
-# 7. Start dev server
-bun run dev
+bun install --frozen-lockfile
+bun run db:generate
+bun run dev          # Start dev server on port 3000
+bun run lint
+npx tsc --noEmit
+bun test
+bun run build        # Avoid in sandbox — prefer `bun run dev`
 ```
+
+Local database setup (sandbox only — never Production):
+
+- Use an isolated local SQLite or local PostgreSQL fixture.
+- Do not edit the tracked `prisma/schema.prisma` provider to SQLite for routine local testing.
+- `bun run db:push` only against the local sandbox database.
+
+## 11. Evidence / write-back
+
+Record as applicable:
+
+- exact PR / head / merge identity
+- validation and CI actually run (not checks claimed without running)
+- migration status
+- deploy status
+- Production verification status: verified / not verified / not applicable
+- remaining risks / unknowns
+- observation status
+- next safe gate
+
+Write back only to the source systems whose canonical state changed:
+
+- GitHub for technical evidence / policy
+- Linear for task state or gate
+- Notion for durable Owner / business context (never raw logs, transcripts, or duplicate technical policy)
+
+## 12. Absolute prohibitions
+
+- ❌ Direct push to `main`
+- ❌ Force-push or history rewrite
+- ❌ `prisma migrate reset` or `prisma db push --force-reset` against Production
+- ❌ Seed Production (`bun run prisma/seed.ts` is local only)
+- ❌ Hard-delete bills, stock, or audit history in Production
+- ❌ Direct stock / cost correction via SQL in Production
+- ❌ Switch tracked `prisma/schema.prisma` provider to SQLite and commit
+- ❌ Commit `.env`, `db/custom.db`, Production dumps, secrets, or credentials
+- ❌ Deploy while required exact-head CI is pending or failing
+- ❌ Mark Ready / merge / deploy without explicit Owner approval
+- ❌ Treat read-only Production verification as authorization for mutating Production verification
+
+## Key takeaway
+
+**Release happens through a validated Draft PR plus Owner approval — never by direct main push. Production access, mutation, migration, deploy, and rollback are all separate explicit Owner gates. This runbook does not authorize any of them.**
