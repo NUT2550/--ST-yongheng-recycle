@@ -183,7 +183,45 @@ Before changing the percentage / formula, require explicit Owner confirmation; d
 
 Do not use an old `admin vs staff` table as the full current permission matrix. Verify current permissions from code / tests and Owner decisions.
 
-## 10. General business prohibitions
+## 10. Physical Count APPLY — approved Owner rule
+
+Approved behavior:
+
+- used for real physical stock counting / correction workflows, especially copper / brass workflows initially;
+- resulting stock must not become negative;
+- an authorized employee can Apply; it is not necessarily Admin-only;
+- separate Owner approval on every normal Apply is not required under the approved business rule;
+- system must record actor, date / time, before value, and after value;
+- note / photo evidence may be optional unless a newer rule makes them mandatory;
+- reversal is performed through a new adjustment / reversal action, not by deleting or rewriting the original record;
+- audit trail must remain reconstructable.
+
+Implementation and Production availability of Physical Count APPLY must be verified from current code / tests / `CURRENT_STATE.md` before use.
+
+## 11. StockTransfer failure protection — approved Owner rule
+
+When a StockTransfer workflow has already deducted source stock and a later step fails:
+
+- the system must not leave stock silently lost;
+- it must either complete atomically or perform a durable / traceable compensation according to the current design;
+- failure should produce Error / Audit evidence appropriate to the current implementation;
+- before / after stock effects must be verifiable;
+- retries must not create duplicate business effects.
+
+ST-62 later introduced durable stock-transfer idempotency; the exact current mechanism is technical state and must be verified from current code / schema / tests.
+
+## 12. Owner gate — steel-stock work paused under ST-21
+
+Approved Owner decision:
+
+- steel-stock reconciliation / cost-correction work remains paused until the Owner explicitly reopens it;
+- do not fold steel-stock correction into unrelated work;
+- tasks that depend on unresolved steel-stock cost may remain blocked by this decision;
+- this pause does not prohibit unrelated normal system development that does not perform the blocked steel-stock reconciliation / correction.
+
+If a newer Owner decision reopens or supersedes ST-21, reconcile this section again from the current Owner decision.
+
+## 13. General business prohibitions
 
 Unless explicitly superseded:
 
@@ -197,7 +235,7 @@ Unless explicitly superseded:
 - no cross-category product auto-match;
 - no business-rule change invented by an AI agent without Owner confirmation where Owner intent is required.
 
-## 11. Technical contracts are not business rules
+## 14. Technical contracts are not business rules
 
 The following should **not** be frozen in this file as “current” unless they are truly business-facing contracts:
 
