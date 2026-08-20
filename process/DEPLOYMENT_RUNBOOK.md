@@ -1,7 +1,7 @@
 # Deployment Runbook — YH Stock System
 
-> Current release/deployment handoff. Historical direct-main-push and ad-hoc Production migration instructions remain in Git history only and must not be treated as current policy.
-> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
+> Current release/deployment handoff. Historical direct-main-push, auto-deploy-by-merge, and ad-hoc Production migration instructions remain in Git history only and must not be treated as current policy.
+> Last reconciled: 2026-08-20 (ST-76 separate Merge/Deploy gate follow-up)
 
 ## 1. Authority
 
@@ -28,12 +28,33 @@ bounded branch from exact current main
 → Owner Ready approval
 → Owner merge approval
 → approved PR merge into main (squash, head-guarded)
-→ approved deploy path
+→ STOP: no Production deployment from merge alone
+→ separate Owner Deploy approval
+→ approved manual Vercel Production deploy/promote path
 → separately approved Production verification when applicable
 → observation / write-back when applicable
 ```
 
-Direct push to `main` is prohibited. There is no staging branch. Production receives changes only through an Owner-approved PR merge followed by the approved deploy path.
+Direct push to `main` is prohibited. There is no staging branch.
+
+### Enforced Vercel Git behavior
+
+Tracked `vercel.json` must keep automatic Git deployment from `main` disabled:
+
+```json
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "main": false
+    }
+  }
+}
+```
+
+This preserves the ability to use non-`main` Preview deployments while ensuring a merge to `main` does **not** itself authorize or trigger a Production deployment.
+
+Changing/removing this control, or changing the Vercel project setting to re-enable automatic `main` deployment, is a release-policy/settings change and requires explicit Owner approval.
 
 ## 3. Before requesting Ready
 
@@ -58,6 +79,7 @@ bash scripts/validate-foundation.sh
 - [ ] Fresh exact-head independent review is complete; no unresolved P0/P1 finding remains.
 - [ ] Release / rollback / Production verification plan is documented.
 - [ ] Tracked `prisma/schema.prisma` provider remains `postgresql`.
+- [ ] If deployment behavior is in scope, tracked `vercel.json` still enforces `main: false` unless the Owner explicitly approved a different release model.
 
 PR remains Draft until the Owner approves Ready.
 
@@ -83,22 +105,29 @@ Merge is Owner-gated.
 - Do not force-push or rewrite history.
 - Do not use `git push origin main` as a release step.
 - Do not merge while required exact-head CI is pending or failing.
+- **Merge approval ends at the Git merge. It does not authorize a Vercel Production deploy.**
+- After merge, verify that no automatic `target=production` deployment was created from `main`. If one appears unexpectedly, stop and record it as a release-policy violation/side effect.
 
 ## 6. Deploy
 
-Deploy is Owner-gated.
+Deploy is a **separate Owner gate after merge**.
 
 Before requesting / performing deploy:
 
 - [ ] merge identity is known and recorded
-- [ ] expected deployment target is known
+- [ ] exact `main` SHA to deploy is confirmed from GitHub
+- [ ] explicit Owner Deploy approval names the intended release/commit
+- [ ] expected Vercel project and Production target are known
 - [ ] migration ordering (if any) is explicitly approved and completed first
 - [ ] rollback plan is ready
 - [ ] Production verification plan is ready and approved where mutation is involved
 
+Approved deploy paths are manual/explicit Vercel actions such as a controlled Production deploy or promotion of a known deployment. Automatic Git deployment from `main` is not an approved release path.
+
 After deploy:
 
-- [ ] confirm deployment identity and status
+- [ ] confirm Vercel deployment identity, Git SHA, target=`production`, and READY/success state
+- [ ] confirm the production alias/domain points to the intended deployment when evidence is available
 - [ ] run only the approved Production verification
 - [ ] stop on any unexpected response / state
 - [ ] record verified / not-verified status accurately — never claim Production verification that did not occur
@@ -180,7 +209,9 @@ Local database setup (sandbox only — never Production):
 Record as applicable:
 
 - exact PR / head / merge identity
+- exact Git `main` SHA at the time of the gate
 - validation and CI actually run (not checks claimed without running)
+- Vercel deployment identity / Git SHA / target when deploy is performed
 - migration status
 - deploy status
 - Production verification status: verified / not verified / not applicable
@@ -198,6 +229,8 @@ Write back only to the source systems whose canonical state changed:
 
 - ❌ Direct push to `main`
 - ❌ Force-push or history rewrite
+- ❌ Treat Merge approval as Deploy approval
+- ❌ Automatic Git-triggered Production deployment from `main` as the normal release path
 - ❌ `prisma migrate reset` or `prisma db push --force-reset` against Production
 - ❌ Seed Production (`bun run prisma/seed.ts` is local only)
 - ❌ Hard-delete bills, stock, or audit history in Production
@@ -205,9 +238,9 @@ Write back only to the source systems whose canonical state changed:
 - ❌ Switch tracked `prisma/schema.prisma` provider to SQLite and commit
 - ❌ Commit `.env`, `db/custom.db`, Production dumps, secrets, or credentials
 - ❌ Deploy while required exact-head CI is pending or failing
-- ❌ Mark Ready / merge / deploy without explicit Owner approval
+- ❌ Mark Ready / merge / deploy without the corresponding explicit Owner approval
 - ❌ Treat read-only Production verification as authorization for mutating Production verification
 
 ## Key takeaway
 
-**Release happens through a validated Draft PR plus Owner approval — never by direct main push. Production access, mutation, migration, deploy, and rollback are all separate explicit Owner gates. This runbook does not authorize any of them.**
+**Merge and Deploy are separate Owner gates. A validated PR may be merged only with Merge approval; Production changes only after a separate Deploy approval through an explicit Vercel action. `main` Git auto-deploy must remain disabled.**
