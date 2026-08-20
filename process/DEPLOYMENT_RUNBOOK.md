@@ -106,7 +106,7 @@ git commit -m "feat: <description>"
 
 ### Step 2: Push
 ```bash
-git push origin main
+# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)
 ```
 
 ### Step 3: รอ Vercel build
@@ -154,7 +154,7 @@ UNION ALL SELECT 'User', COUNT(*) FROM "User";
 
 ### Step 5: Push code ไป GitHub
 ```bash
-git push origin main
+# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)
 ```
 
 ### Step 6: รอ Vercel deploy แล้ว smoke test
@@ -168,7 +168,7 @@ git push origin main
 ### 7.1 Rollback code
 ```bash
 git revert <commit-hash>
-git push origin main
+# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)
 ```
 
 ### 7.2 Rollback database migration

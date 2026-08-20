@@ -113,7 +113,7 @@ FROM "BuyBillItem";
 ### 4.4 Commit + Push
 - [ ] `git add <files>` — เฉพาะไฟล์ที่ตั้งใจ
 - [ ] `git commit -m "feat: <description>"`
-- [ ] `git push origin main`
+- [ ] `# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)`
 
 ---
 
@@ -232,7 +232,7 @@ ALTER TABLE "SortingBill" DROP COLUMN IF EXISTS "weighedTotalExpression";
 
 ### 7.2 ถ้า code มี bug
 - [ ] `git revert <commit-hash>`
-- [ ] `git push origin main`
+- [ ] `# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)`
 - [ ] รอ Vercel redeploy
 
 ### 7.3 ถ้า DB พัง

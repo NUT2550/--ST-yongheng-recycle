@@ -447,7 +447,7 @@ cat next.config.ts
 #### Case D: Rollback
 ```bash
 git revert <commit-hash>
-git push origin main
+# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)
 # รอ Vercel redeploy
 ```
 
@@ -636,7 +636,7 @@ git log --oneline -10
 
 # 2. Revert commit (สร้าง commit ใหม่ที่กลับการเปลี่ยนแปลง)
 git revert <commit-hash>
-git push origin main
+# Changes reach main only through Owner-approved PR merge (see process/GOVERNANCE.md §4)
 
 # 3. ห้าม git reset --hard บน main (จะทำลาย history)
 ```

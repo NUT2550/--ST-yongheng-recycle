@@ -15,12 +15,15 @@
 ## Required Reading Order
 
 1. **`AGENTS.md`** (this file) — entry point, safety rules, working method
-2. **`process/CURRENT_STATE.md`** — current main SHA, Production SHA, active issues, verified/unverified behavior
-3. **`process/PROJECT_OPERATING_CONTEXT.md`** — project summary, tech stack, file structure
-4. **`process/BUSINESS_RULES.md`** — bill number format, cancel behavior, FIFO, permissions, stable error codes
-5. **`process/DATABASE_CONTEXT.md`** — Prisma schema, stock flow, forbidden operations
-6. **`knowledge/`** — durable technical knowledge (incidents, invariants, decisions)
-7. Task-specific code, tests, and docs
+2. **`process/GOVERNANCE.md`** — authority hierarchy, conflict resolution, Git/autonomy boundaries
+3. **`process/CURRENT_STATE.md`** — current main SHA, Production SHA, active issues, verified/unverified behavior
+4. **`process/PROJECT_OPERATING_CONTEXT.md`** — project summary, tech stack, file structure
+5. **`process/BUSINESS_RULES.md`** — bill number format, cancel behavior, FIFO, permissions, stable error codes
+6. **`process/DATABASE_CONTEXT.md`** — Prisma schema, stock flow, forbidden operations
+7. **`knowledge/`** — durable technical knowledge (incidents, invariants, decisions)
+8. Task-specific code, tests, and docs
+
+> **Conflict resolution:** When instructions conflict, follow `process/GOVERNANCE.md` authority hierarchy. Do not guess.
 
 ## Source-of-Truth Responsibilities
 
