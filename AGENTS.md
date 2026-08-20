@@ -56,7 +56,7 @@
 5. **Run targeted and full validation** — lint, tsc, tests, build
 6. **Perform exact-head independent review** — re-open actual files, challenge every requirement
 7. **Update canonical documentation** — only affected docs, current-truth replacement
-8. **Write back to GitHub, Linear, and Notion** — concise, evidence-based
+8. **Write back only to the source(s) whose canonical state changed** — keep GitHub, Linear, and Notion concise and non-duplicative
 9. **Distinguish code verification from Production verification** — never claim Production-verified without evidence
 
 ## Test Commands
@@ -109,7 +109,7 @@ Every task response must include:
 
 ## Push-Early Checkpoint Policy (Sandbox-Hosted Work)
 
-> **Effective:** Upon merge of PR #76 — see `process/AGENT_HANDOFF.md` §12 (canonical) and `process/SAFETY_CHECKLIST.md` §10 (summary) for full text.
+> **Effective:** Since merge of PR #76 on 2026-08-06 — see `process/AGENT_HANDOFF.md` §12 (canonical) and `process/SAFETY_CHECKLIST.md` §I (summary) for full text.
 
 Sandbox workspace is ephemeral. All meaningful work must be pushed to GitHub as focused checkpoints immediately after minimum validation (lint + tsc + `git diff --check` + credential scan + targeted tests for changed scope). GitHub remote branch is the persistent source of truth. Do not rely on local state (patches, ZIPs, local commits, `public/` files) as the primary artifact.
 
