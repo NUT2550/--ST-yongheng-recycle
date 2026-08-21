@@ -1,5 +1,11 @@
 # Weight Formula Tracking — Deploy Checklist
 
+> **HISTORICAL / SUPERSEDED — DO NOT EXECUTE.** This checklist predates the ST-76 governance and release-policy reconciliation. It is retained only as audit/history evidence and contains retired instructions such as direct push to `main`, automatic Vercel deployment/redeployment, Production migration/testing, and rollback steps that are **not current authorization**.
+>
+> For any current/future release, use `AGENTS.md`, `process/GOVERNANCE.md`, `process/DEPLOYMENT_RUNBOOK.md`, and `process/SAFETY_CHECKLIST.md`. A new scoped task must obtain the applicable separate Owner approvals for migration, Mark Ready, Merge, Deploy, and any Production access/query/write. **Merge approval does not imply Deploy approval.**
+>
+> All commands/checklists below are historical records only. Do not execute them without a fresh task, current evidence, and the required Owner gates.
+
 > ใช้สำหรับ owner ตรวจสอบขั้นตอน deployment ของ Weight Formula Tracking
 > วันที่: 27/06/2569
 > Local test: ✅ ผ่านครบทุก case (Buy/Sell/Sort + error cases)
@@ -7,7 +13,7 @@
 
 ---
 
-## ขั้นตอน Deployment (ตามลำดับ)
+## ขั้นตอน Deployment (Historical — ห้ามใช้เป็น current runbook)
 
 ### □ Step 1: Pre-deploy backup
 - [ ] เปิด Supabase Dashboard → Database → Backups
@@ -162,7 +168,7 @@ LIMIT 20;
 
 ---
 
-## Rollback Plan (ถ้ามีปัญหา)
+## Rollback Plan (Historical — ห้ามใช้เป็น current rollback runbook)
 
 ### ถ้า migration ล้มเหลว:
 1. รัน rollback SQL:
