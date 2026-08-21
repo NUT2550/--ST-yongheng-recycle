@@ -1,7 +1,7 @@
 # Production Links — YH Stock System
 
 > Durable links and routes reference. Current route / status snapshots must be verified from current code / tests on the exact branch / head.
-> Last reconciled: 2026-08-20 (ST-76 Governance Reconciliation v2)
+> Last reconciled: 2026-08-21 (ST-76 separate Merge/Deploy gate follow-up)
 
 ## 1. Application
 
@@ -17,7 +17,7 @@
 | Item | URL |
 |---|---|
 | **GitHub repo** | https://github.com/NUT2550/--ST-yongheng-recycle |
-| **Default branch** | `main` (Vercel auto-deploys from merges into `main`; direct push to `main` is prohibited — see `process/GOVERNANCE.md`) |
+| **Default branch** | `main` (Git-triggered deployment from `main` is disabled by tracked `vercel.json`; merge does not authorize/deploy Production; direct push to `main` is prohibited — see `process/GOVERNANCE.md`) |
 | **Commit history** | https://github.com/NUT2550/--ST-yongheng-recycle/commits/main |
 
 > ⚠️ The repo name has a `--` prefix (GitHub default when the name starts with a hyphen).
@@ -29,7 +29,7 @@
 | **Project name** | st-yongheng-recycle |
 | **Dashboard URL** | https://vercel.com/dashboard (login with the Owner's GitHub account) |
 | **Project URL** | bound to repo `NUT2550/--ST-yongheng-recycle` |
-| **Auto-deploy** | every merge into `main` → Vercel build (direct push to `main` is prohibited; deploy is Owner-gated — see `process/SAFETY_CHECKLIST.md`) |
+| **Git deployment behavior** | `main` Git-triggered deployment is disabled; non-`main` Preview deployments may remain enabled. Production deploy/promote requires a separate explicit Owner Deploy approval — see `process/DEPLOYMENT_RUNBOOK.md`. |
 | **Build command** | `next build` (from `package.json` `build` script) |
 | **Output mode** | `standalone` (from `next.config.ts`) |
 
