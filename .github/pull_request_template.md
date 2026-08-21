@@ -60,8 +60,8 @@
 ## Migration/Deploy/Rollback Requirements
 
 - [ ] No migration required
-- [ ] No special deploy steps
-- [ ] Rollback: `git revert <SHA>` on main → Vercel auto-redeploy
+- [ ] Production deploy is not required, or a separate explicit Owner Deploy approval is recorded before any Production deploy/promote action
+- [ ] Rollback plan uses a bounded revert PR (no direct push to `main`), Owner-approved merge, then a separate explicit Owner Deploy approval for the manual Vercel Production deploy/promote step
 
 <!-- If migration IS required, describe it here and note Owner approval status -->
 
@@ -71,7 +71,7 @@
 
 ## Owner Approval Gates
 
-<!-- What Owner decisions are required before merge/deploy? -->
+<!-- State the applicable gates explicitly. Mark Ready, Merge, and Deploy are separate Owner decisions; Merge approval does not imply Deploy approval. -->
 
 ## Safety Checklist
 

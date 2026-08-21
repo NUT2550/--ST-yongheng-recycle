@@ -16,7 +16,7 @@
 
 1. **`AGENTS.md`** (this file) — entry point, safety rules, working method
 2. **`process/GOVERNANCE.md`** — authority hierarchy, conflict resolution, Git/autonomy boundaries
-3. **`process/CURRENT_STATE.md`** — current main SHA, Production SHA, active issues, verified/unverified behavior
+3. **`process/CURRENT_STATE.md`** — last reconciled baseline, deployment identity, active risks, verified/unverified behavior; read the exact current `main` SHA directly from GitHub
 4. **`process/PROJECT_OPERATING_CONTEXT.md`** — project summary, tech stack, file structure
 5. **`process/BUSINESS_RULES.md`** — bill number format, cancel behavior, FIFO, permissions, stable error codes
 6. **`process/DATABASE_CONTEXT.md`** — Prisma schema, stock flow, forbidden operations
@@ -40,7 +40,7 @@
 2. **Read-only first** — inspect before mutating
 3. **No Production mutation without explicit Owner approval** — including cancel, sell, stock adjustment
 4. **No direct SQL mutation** unless separately approved — use API routes
-5. **No migration, merge, deploy, rollback, or permission changes** without explicit Owner approval
+5. **No migration, merge, deploy, rollback, or permission changes** without explicit Owner approval. **Merge approval does not imply Deploy approval.**
 6. **Stop on partial write, data mismatch, unexpected 2xx/5xx, or unclear contract**
 7. **Separate unrelated root causes** into separate issues/PRs
 8. **Never commit `.env`, `db/custom.db`, tokens, passwords, or Production dumps**
@@ -49,7 +49,7 @@
 
 ## Required Working Method
 
-1. **Reload exact current state** — fetch latest, verify HEAD SHA, read `CURRENT_STATE.md`
+1. **Reload exact current state** — fetch latest, verify HEAD SHA from GitHub, then read `CURRENT_STATE.md` for the last reconciled baseline and known evidence
 2. **Prove root cause before editing** — read actual code, do not guess
 3. **Create bounded branch** from current `main`
 4. **Add a regression test** that would fail before the fix and pass after
